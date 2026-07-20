@@ -1,6 +1,8 @@
 # pi-cc-extensions
 
-个人使用的 [Pi](https://github.com/earendil-works/pi) 自定义扩展集合。
+> 借鉴了claude code tui 交互设计并结合了自己的喜好自定义扩展集合。
+
+![1784513908237](image/README/1784513908237.png)
 
 ## 扩展
 
