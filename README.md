@@ -6,15 +6,40 @@
   一组面向 Pi coding agent 的个人扩展 · <a href="https://github.com/minuque/pi-cc-extensions">查看源码</a>
 </p>
 
-## 预览
+---
 
-真实运行截图：
+`pi-cc-extensions` 为 Pi 补充一套更接近 Claude Code 的终端工作流：统一工具调用输出、查看上下文窗口占用，并通过 `@` 补全引用历史 Session。
 
-<p align="center">
-  <img src="./assets/readme/showcase.webp" width="100%" alt="Pi 终端中的 Claude Code 风格扩展界面，包含工具调用摘要、Diff 预览、Powerline 状态栏和上下文信息">
-</p>
+## 截图
 
-## 包含什么
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./assets/readme/showcase.webp" width="100%" alt="Pi 终端中的 Claude Code 风格扩展界面，包含工具调用摘要、Diff 预览和 Powerline 状态栏">
+      <br>
+      <sub><b>Claude Code 风格界面</b><br>工具调用摘要、Diff 预览与 Powerline 状态栏</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./assets/readme/session-reference.webp" width="100%" alt="在 Pi 中通过 @ 补全选择历史 Session">
+      <br>
+      <sub><b>历史 Session 引用</b><br>通过 @ 补全快速找到并引用历史会话</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./assets/readme/context-usage.webp" width="100%" alt="Pi 上下文窗口用量查看器">
+      <br>
+      <sub><b>上下文用量</b><br>查看 System prompt、Tools、Skills 等占用分布</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./assets/readme/context-preview.webp" width="100%" alt="Pi 中展开查看 System Prompt 内容">
+      <br>
+      <sub><b>上下文预览</b><br>按类别展开查看实际注入的上下文内容</sub>
+    </td>
+  </tr>
+</table>
+
+## 功能
 
 ### Claude Code 风格界面
 
@@ -58,9 +83,9 @@
 
 一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。更多细节见 [`extensions/session-reference/README.md`](./extensions/session-reference/README.md)。
 
-## 快速开始
+## 安装
 
-### 从 Git 安装
+从 Git 安装指定版本：
 
 ```bash
 pi install git:github.com/minuque/pi-cc-extensions@v0.1.0
@@ -72,17 +97,11 @@ pi install git:github.com/minuque/pi-cc-extensions@v0.1.0
 pi install git:github.com/minuque/pi-cc-extensions
 ```
 
-### 第一次使用
+安装后可以先运行：
 
 ```text
 /context
 /ccstyle status
-```
-
-修改扩展后，在 Pi 中执行：
-
-```text
-/reload
 ```
 
 ## 本地开发
@@ -96,6 +115,12 @@ pi -e .
 
 ```bash
 pi install /absolute/path/to/pi-cc-extensions
+```
+
+修改扩展后，在 Pi 中执行：
+
+```text
+/reload
 ```
 
 ## 兼容性
