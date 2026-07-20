@@ -9,6 +9,7 @@
   ],
   "files": [
     "extensions",
+    "assets/readme",
     "README.md"
   ],
   "pi": {

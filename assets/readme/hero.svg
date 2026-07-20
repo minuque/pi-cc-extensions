@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">pi-cc-extensions</title>
+  <desc id="desc">一组为 Pi coding agent 提供 Claude Code 风格界面、上下文查看和历史 Session 引用的扩展。</desc>
+
+  <rect width="1200" height="360" rx="24" fill="#0b1016"/>
+  <path d="M0 70H1200M0 290H1200" stroke="#27313d" stroke-width="1"/>
+  <path d="M56 70V290M714 70V290" stroke="#27313d" stroke-width="1"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <text x="56" y="46" fill="#6f7d8b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="2">PI PACKAGE / TERMINAL WORKFLOW</text>
+
+    <text x="56" y="140" fill="#f4f7fa" font-size="46" font-weight="700">pi-cc-extensions</text>
+    <text x="59" y="181" fill="#aeb9c5" font-size="22">让 Pi 更接近你喜欢的 Claude Code 工作台</text>
+    <text x="59" y="224" fill="#6f7d8b" font-size="16">界面风格 · 上下文可视化 · 历史 Session 引用</text>
+
+    <g transform="translate(56 313)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">
+      <text x="0" y="0" fill="#42d6c5">●</text>
+      <text x="18" y="0" fill="#8895a3">TYPESCRIPT</text>
+      <text x="138" y="0" fill="#34404c">·</text>
+      <text x="158" y="0" fill="#58b7ff">PI PACKAGE</text>
+      <text x="278" y="0" fill="#34404c">·</text>
+      <text x="298" y="0" fill="#8895a3">NODE ≥ 22.19.0</text>
+    </g>
+  </g>
+
+  <g transform="translate(758 96)">
+    <rect width="378" height="166" rx="12" fill="#111923" stroke="#344250"/>
+    <circle cx="20" cy="20" r="5" fill="#ef6b73"/>
+    <circle cx="38" cy="20" r="5" fill="#e6b45c"/>
+    <circle cx="56" cy="20" r="5" fill="#42d6c5"/>
+    <text x="78" y="25" fill="#6f7d8b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">pi / extensions</text>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">
+      <text x="20" y="61" fill="#42d6c5">✓</text>
+      <text x="42" y="61" fill="#f4f7fa">/ccstyle</text>
+      <text x="142" y="61" fill="#8895a3">Claude Code UI</text>
+
+      <text x="20" y="95" fill="#58b7ff">›</text>
+      <text x="42" y="95" fill="#f4f7fa">/context</text>
+      <text x="142" y="95" fill="#8895a3">context window</text>
+
+      <text x="20" y="129" fill="#e6b45c">@</text>
+      <text x="42" y="129" fill="#f4f7fa">session:…</text>
+      <text x="142" y="129" fill="#8895a3">history reference</text>
+    </g>
+    <path d="M20 145H356" stroke="#27313d"/>
+    <text x="20" y="158" fill="#42d6c5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">▌ ready</text>
+  </g>
+
+  <path d="M714 70V290" stroke="#42d6c5" stroke-width="2" opacity=".8"/>
+  <circle cx="714" cy="70" r="4" fill="#42d6c5"/>
+  <circle cx="714" cy="290" r="4" fill="#42d6c5"/>
+</svg>
