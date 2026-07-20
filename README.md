@@ -1,14 +1,19 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：为 Pi 提供 Claude Code 风格界面、上下文可视化和历史 Session 引用">
+  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：为 Pi 提供 Claude Code 风格界面、上下文洞察和历史 Session 引用">
 </p>
 
 <p align="center">
-  一组面向 Pi coding agent 的个人扩展 · <a href="https://github.com/minuque/pi-cc-extensions">查看源码</a>
+  <a href="#安装"><img alt="Pi package" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
+  <a href="./package.json"><img alt="Version 0.1.1" src="https://img.shields.io/badge/version-0.1.1-66E3C4?style=flat-square"></a>
+  <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
+  <a href="./extensions"><img alt="TypeScript extensions" src="https://img.shields.io/badge/TypeScript-extensions-3178C6?style=flat-square"></a>
+</p>
+
+<p align="center">
+  为 Pi 补充一套更接近 Claude Code 的终端工作流 · 上下文洞察 · 历史 Session 引用
 </p>
 
 ---
-
-`pi-cc-extensions` 为 Pi 补充一套更接近 Claude Code 的终端工作流：统一工具调用输出、查看上下文窗口占用，并通过 `@` 补全引用历史 Session。
 
 ## 截图
 
