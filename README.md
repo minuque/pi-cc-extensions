@@ -2,13 +2,13 @@
 
 > 借鉴了claude code tui 交互设计并结合了自己的喜好自定义扩展集合。
 
-![1784513908237](image/README/1784513908237.png)
+![预览](image/README/1784513908237.png)
 
 ## 扩展
 
-- `claude-code-style.ts`：Claude Code 风格界面、Powerline 状态栏、Bash 模式及工作提示。
-- `context.ts`：通过 `/context` 查看当前上下文窗口分布。
-- `session-reference/`：在提示词中使用 `@session:<session-id>` 引用历史 Session。
+- `extensions/claude-code-style.ts`：Claude Code 风格界面、Powerline 状态栏、工具调用摘要、Diff 预览及工作状态提示。
+- `extensions/context.ts`：通过 `/context` 查看当前上下文窗口分布，并预览系统提示词、工具、上下文文件和 Skills。
+- `extensions/session-reference/index.ts`：在提示词中使用 `@session:<session-id>` 引用历史 Session；输入 `@` 可从补全列表选择历史 Session。
 
 ## 本地开发
 
@@ -27,16 +27,18 @@ pi install /absolute/path/to/pi-cc-extensions
 
 ## Git 安装
 
-仓库推送到 GitHub 后：
+本仓库地址：<https://github.com/minuque/pi-cc-extensions>
+
+安装主分支：
 
 ```bash
-pi install git:github.com/OWNER/pi-cc-extensions
+pi install git:github.com/minuque/pi-cc-extensions
 ```
 
-固定到发布标签：
+固定到已发布的 `v0.1.0` 标签：
 
 ```bash
-pi install git:github.com/OWNER/pi-cc-extensions@v0.1.0
+pi install git:github.com/minuque/pi-cc-extensions@v0.1.0
 ```
 
 ## 发布检查
