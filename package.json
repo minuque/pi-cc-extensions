@@ -1,0 +1,32 @@
+{
+  "name": "pi-cc-extensions",
+  "version": "0.1.0",
+  "description": "Personal extensions for the Pi coding agent",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "files": [
+    "extensions",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/claude-code-style.ts",
+      "./extensions/context.ts",
+      "./extensions/session-reference/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test extensions/session-reference/core.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
