@@ -974,7 +974,6 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
   let sessionGeneration = 0;
   let currentCtx: any = null;
   let footerDataRef: ReadonlyFooterDataProvider | null = null;
-  let getThinkingLevelFn: (() => string) | null = null;
   let currentThinkingLevel: string | null = null;
   let liveAssistantUsage: SessionAssistantUsage | null = null;
   let isStreaming = false;
@@ -1242,10 +1241,9 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     bashTranscript = new BashTranscriptStore(bashModeSettings);
     bashCompletionEngine = new BashCompletionEngine();
 
-    getThinkingLevelFn = typeof ctx.getThinkingLevel === "function"
-      ? () => ctx.getThinkingLevel()
-      : null;
-    currentThinkingLevel = getThinkingLevelFn?.() ?? null;
+    // Read from the extension runtime rather than retaining a session context
+    // method across /reload. The runtime already restored the effective level.
+    currentThinkingLevel = pi.getThinkingLevel();
 
     if (ctx.hasUI) {
       ctx.ui.setStatus("stash", undefined);
@@ -1307,7 +1305,6 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     bashModeActive = false;
     currentCtx = null;
     footerDataRef = null;
-    getThinkingLevelFn = null;
     currentThinkingLevel = null;
     liveAssistantUsage = null;
     pendingNewMessages = 0;
@@ -1366,7 +1363,9 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
 
   pi.on("thinking_level_select", async (event, ctx) => {
     currentCtx = ctx;
-    currentThinkingLevel = getThinkingLevelFn?.() ?? (typeof event.level === "string" ? event.level : null);
+    // The event carries the newly selected effective level; using it directly
+    // avoids rendering one frame with a stale value during runtime transitions.
+    currentThinkingLevel = typeof event.level === "string" ? event.level : null;
     currentEditor?.invalidate?.();
     fixedEditorContainer?.invalidate?.();
     fixedStatusContainer?.invalidate?.();
@@ -1378,7 +1377,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
 
   pi.on("session_tree", async (_event, ctx) => {
     currentCtx = ctx;
-    currentThinkingLevel = null;
+    currentThinkingLevel = pi.getThinkingLevel();
     liveAssistantUsage = null;
     requestImmediateStatusRender({ deferDuringTyping: false });
   });
@@ -2192,7 +2191,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
       ? ctx.modelRegistry?.isUsingOAuth?.(ctx.model) ?? false
       : false;
 
-    const thinkingLevel = currentThinkingLevel ?? thinkingLevelFromSession ?? getThinkingLevelFn?.() ?? "off";
+    const thinkingLevel = currentThinkingLevel ?? thinkingLevelFromSession ?? "off";
 
     return {
       model: ctx.model,
@@ -2952,7 +2951,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
           return originalRender(width);
         }
 
-        const thinkingLevel = currentThinkingLevel ?? getThinkingLevelFn?.() ?? "off";
+        const thinkingLevel = currentThinkingLevel ?? "off";
         // Use the factory-provided theme. Reading ctx.ui after /reload can
         // touch a stale extension context while the old editor is torn down.
         const bc = (s: string) => colorThinking(editorTheme, thinkingLevel, s);
