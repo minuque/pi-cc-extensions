@@ -1244,6 +1244,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     // Read from the extension runtime rather than retaining a session context
     // method across /reload. The runtime already restored the effective level.
     currentThinkingLevel = pi.getThinkingLevel();
+    recalculateUsageFromEvents(ctx);
 
     if (ctx.hasUI) {
       ctx.ui.setStatus("stash", undefined);
@@ -1379,6 +1380,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     currentCtx = ctx;
     currentThinkingLevel = pi.getThinkingLevel();
     liveAssistantUsage = null;
+    recalculateUsageFromEvents(ctx);
     requestImmediateStatusRender({ deferDuringTyping: false });
   });
 
@@ -1388,6 +1390,8 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     // intentionally unknown until the next model response, so the segment will
     // display "?" rather than a stale percentage.
     liveAssistantUsage = null;
+    // Recalculate usage after compaction (old events removed, summary added).
+    recalculateUsageFromEvents(ctx);
     fixedEditorCompositor?.resetTranscriptLayout();
     resetLayoutCache();
     requestImmediateStatusRender({ deferDuringTyping: false });
@@ -1455,6 +1459,13 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
         liveAssistantUsage = null;
       } else if (getUsageTokenTotal(event.message.usage) > 0) {
         liveAssistantUsage = event.message.usage;
+        // Incrementally update cached usage (O(1) instead of rescanning all events).
+        cachedUsage.input += event.message.usage.input;
+        cachedUsage.output += event.message.usage.output;
+        cachedUsage.cacheRead += event.message.usage.cacheRead;
+        cachedUsage.cacheWrite += event.message.usage.cacheWrite;
+        cachedUsage.cost += event.message.usage.cost.total;
+        cachedLastAssistantUsage = event.message.usage;
       }
     }
     requestImmediateStatusRender({ deferDuringTyping: false });
@@ -2130,46 +2141,47 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     },
   });
 
+  // ═══ Incremental usage stats cache ═══
+  // Avoids scanning all session events on every render (was O(n) per frame).
+  // Updated incrementally on message_end / session_start / session_compact.
+  let cachedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  let cachedLastAssistantUsage: SessionAssistantUsage | null = null;
+  let cachedThinkingLevel: string | null = null;
+
+  function recalculateUsageFromEvents(ctx: any): void {
+    cachedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+    cachedLastAssistantUsage = null;
+    cachedThinkingLevel = null;
+    const events = ctx?.sessionManager?.getBranch?.() ?? [];
+    for (const e of events) {
+      if (!isRecord(e)) continue;
+      if (e.type === "thinking_level_change" && typeof e.thinkingLevel === "string") {
+        cachedThinkingLevel = e.thinkingLevel;
+      }
+      if (e.type !== "message" || !isSessionAssistantMessage(e.message)) continue;
+      const m = e.message;
+      if (m.stopReason === "error" || m.stopReason === "aborted") continue;
+      cachedUsage.input += m.usage.input;
+      cachedUsage.output += m.usage.output;
+      cachedUsage.cacheRead += m.usage.cacheRead;
+      cachedUsage.cacheWrite += m.usage.cacheWrite;
+      cachedUsage.cost += m.usage.cost.total;
+      if (getUsageTokenTotal(m.usage) > 0) {
+        cachedLastAssistantUsage = m.usage;
+      }
+    }
+  }
+
   function buildSegmentContext(ctx: any, theme: Theme): SegmentContext {
     const presetDef = getPreset(config.preset);
     const colors: ColorScheme = presetDef.colors ?? getDefaultColors();
 
-    // Build usage stats and get thinking level from session
-    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, cost = 0;
-    let lastAssistant: AssistantMessage | undefined;
-    let thinkingLevelFromSession: string | null = null;
-    
-    const sessionEvents = ctx.sessionManager?.getBranch?.() ?? [];
-    for (const e of sessionEvents) {
-      if (!isRecord(e)) {
-        continue;
-      }
-
-      // Check for thinking level change entries
-      if (e.type === "thinking_level_change" && typeof e.thinkingLevel === "string") {
-        thinkingLevelFromSession = e.thinkingLevel;
-      }
-
-      if (e.type !== "message" || !isSessionAssistantMessage(e.message)) {
-        continue;
-      }
-
-      const m = e.message;
-      if (m.stopReason === "error" || m.stopReason === "aborted") {
-        continue;
-      }
-      input += m.usage.input;
-      output += m.usage.output;
-      cacheRead += m.usage.cacheRead;
-      cacheWrite += m.usage.cacheWrite;
-      cost += m.usage.cost.total;
-      if (getUsageTokenTotal(m.usage) > 0) {
-        lastAssistant = m;
-      }
-    }
+    // Use cached incremental stats (O(1)) instead of scanning all events.
+    const { input, output, cacheRead, cacheWrite, cost } = cachedUsage;
+    const thinkingLevelFromSession = currentThinkingLevel ?? cachedThinkingLevel ?? "off";
 
     // Calculate context percentage.
-    const latestUsage = isStreaming ? liveAssistantUsage ?? lastAssistant?.usage : lastAssistant?.usage;
+    const latestUsage = isStreaming ? liveAssistantUsage ?? cachedLastAssistantUsage : cachedLastAssistantUsage;
     const coreContextUsage = isStreaming && liveAssistantUsage ? null : readCoreContextUsage(ctx);
     const fallbackContextTokens = latestUsage ? getUsageTokenTotal(latestUsage) : 0;
     const contextWindow = coreContextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -2191,7 +2203,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
       ? ctx.modelRegistry?.isUsingOAuth?.(ctx.model) ?? false
       : false;
 
-    const thinkingLevel = currentThinkingLevel ?? thinkingLevelFromSession ?? "off";
+    const thinkingLevel = thinkingLevelFromSession;
 
     return {
       model: ctx.model,
@@ -2523,8 +2535,13 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
         key: expandableRootComponentKey(component),
       };
     };
-    const isExpandableRootLine = (line: number, _col: number, text: string): boolean =>
-      Boolean(findExpandableRootComponentAtText(line, text));
+    const isExpandableRootLine = (_line: number, _col: number, text: string): boolean => {
+      // O(1) regex check instead of full tree traversal + component.render().
+      // Click handler (onRootClick) still uses findExpandableRootComponentAtText for accurate matching.
+      if (!text) return false;
+      const stripped = stripAnsiForToolClick(text);
+      return stripped ? /(?:expand|\/ click)/.test(stripped) : false;
+    };
     const readRenderTheme = (): Theme => {
       if (!currentCtx) return fallbackTheme;
       try {
@@ -2547,12 +2564,31 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
       (line.match(/\x1b\[[0-9;]*m/g) ?? []).some((sequence) =>
         sequence.slice(2, -1).split(";").includes("3"),
       );
+    // Cache for decorateThinkingLines to avoid per-frame regex processing.
+    let lastDecoratedLines: string[] | null = null;
+    let lastDecoratedInput: string[] | null = null;
+    let lastDecoratedTheme: Theme | null = null;
+
     const decorateThinkingLines = (lines: string[]): string[] => {
+      // Fast path: return cached result if input and theme haven't changed.
+      if (lastDecoratedInput === lines && lastDecoratedTheme === readRenderTheme() && lastDecoratedLines) {
+        return lastDecoratedLines;
+      }
+
       const theme = readRenderTheme();
       const marker = "__ccstyle_thinking__";
       const themedMarker = theme.fg("thinkingText", marker);
       const markerIndex = themedMarker.indexOf(marker);
       const thinkingColor = markerIndex > 0 ? themedMarker.slice(0, markerIndex) : "";
+      
+      // Fast path: if no thinking color, skip expensive regex processing.
+      if (!thinkingColor) {
+        lastDecoratedInput = lines;
+        lastDecoratedTheme = theme;
+        lastDecoratedLines = lines;
+        return lines;
+      }
+
       const isThinking = lines.map((line) =>
         Boolean(thinkingColor && line.includes(thinkingColor) && hasItalicStyle(line)),
       );
@@ -2570,9 +2606,14 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
 
       // Keep the native thinking text styling, but do not add a guide line.
       // The guide conflicted visually with the tool status markers.
-      return lines.map((line, index) =>
+      const result = lines.map((line, index) =>
         decorated[index] ? removeThinkingBold(line) : line,
       );
+
+      lastDecoratedInput = lines;
+      lastDecoratedTheme = theme;
+      lastDecoratedLines = result;
+      return result;
     };
 
     let compositor: TerminalSplitCompositor;

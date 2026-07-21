@@ -178,31 +178,46 @@ function animationFrame(frames: string[], intervalMs = 120): string {
 	return frames[Math.floor(Date.now() / intervalMs) % frames.length] ?? frames[0] ?? "";
 }
 
-const activeAnimationTimers = new Set<ReturnType<typeof setTimeout>>();
+const activeAnimationContexts = new Set<any>();
+let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearAnimation(context: any) {
-	const timer = context?.state?.ccstyleAnimationTimer as ReturnType<typeof setTimeout> | undefined;
-	if (!timer) return;
-	clearTimeout(timer);
-	activeAnimationTimers.delete(timer);
-	context.state.ccstyleAnimationTimer = undefined;
+	if (!context?.state?.ccstyleAnimationScheduled) return;
+	context.state.ccstyleAnimationScheduled = false;
+	activeAnimationContexts.delete(context);
+	if (activeAnimationContexts.size === 0 && sharedAnimationTimer) {
+		clearTimeout(sharedAnimationTimer);
+		sharedAnimationTimer = null;
+	}
 }
 
 function clearAllAnimations() {
-	for (const timer of activeAnimationTimers) clearTimeout(timer);
-	activeAnimationTimers.clear();
+	for (const ctx of activeAnimationContexts) {
+		ctx.state.ccstyleAnimationScheduled = false;
+	}
+	activeAnimationContexts.clear();
+	if (sharedAnimationTimer) {
+		clearTimeout(sharedAnimationTimer);
+		sharedAnimationTimer = null;
+	}
 }
 
 function scheduleAnimation(context: any, intervalMs = 80) {
 	const state = (context.state ??= {});
-	if (state.ccstyleAnimationTimer) return;
-	const timer = setTimeout(() => {
-		activeAnimationTimers.delete(timer);
-		state.ccstyleAnimationTimer = undefined;
-		context.invalidate?.();
-	}, intervalMs);
-	state.ccstyleAnimationTimer = timer;
-	activeAnimationTimers.add(timer);
+	if (state.ccstyleAnimationScheduled) return;
+	state.ccstyleAnimationScheduled = true;
+	activeAnimationContexts.add(context);
+	if (!sharedAnimationTimer) {
+		sharedAnimationTimer = setTimeout(() => {
+			sharedAnimationTimer = null;
+			const contexts = Array.from(activeAnimationContexts);
+			activeAnimationContexts.clear();
+			for (const ctx of contexts) {
+				ctx.state.ccstyleAnimationScheduled = false;
+				ctx.invalidate?.();
+			}
+		}, intervalMs);
+	}
 }
 
 function pendingIcon(name: string): string {
