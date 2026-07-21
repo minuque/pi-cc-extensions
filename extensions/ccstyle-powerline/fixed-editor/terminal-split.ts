@@ -681,7 +681,8 @@ export class TerminalSplitCompositor {
       const start = this.refreshRootWindow(width);
       return this.visibleRootLines.map((line, index) => {
         const hovered = this.renderHoverHighlight(line, start + index, "root");
-        return this.renderSelectionHighlight(hovered, start + index, "root");
+        const selected = this.renderSelectionHighlight(hovered, start + index, "root");
+        return sanitizeLine(selected, Math.max(1, width));
       });
     } finally {
       this.renderingScrollableRoot = false;
