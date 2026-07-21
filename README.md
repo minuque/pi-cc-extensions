@@ -97,13 +97,7 @@ Session 模糊查询默认显示 5 个候选；若已加载 `pi-subagents`，也
 
 ## 安装
 
-从 Git 安装指定版本：
-
-```bash
-pi install git:github.com/minuque/pi-cc-extensions@v0.1.0
-```
-
-安装后启动 Pi，即可使用上述扩展。更新到主分支版本：
+从 Git 安装：
 
 ```bash
 pi install git:github.com/minuque/pi-cc-extensions
