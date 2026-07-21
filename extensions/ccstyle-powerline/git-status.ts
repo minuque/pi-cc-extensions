@@ -141,6 +141,15 @@ async function fetchDiffStat(cwd: string): Promise<{ added: number; deleted: num
 }
 
 /**
+ * Fetch git status asynchronously.
+ */
+async function fetchGitStatus(cwd: string): Promise<{ staged: number; unstaged: number; untracked: number } | null> {
+  const output = await runGit(["status", "--porcelain"], cwd, 500);
+  if (output === null) return null;
+  return parseGitStatusOutput(output);
+}
+
+/**
  * Get the current git branch with caching.
  * Falls back to provider branch if our cache is empty.
  */
