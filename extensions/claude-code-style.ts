@@ -256,10 +256,13 @@ function isToolExpanded(options: any, context: any): boolean {
 
 /** Keep the guide aligned when long result lines wrap at the viewport edge. */
 class ExpandedToolResultText {
-	constructor(
-		private readonly text: string,
-		private readonly prefix: string,
-	) {}
+	private readonly text: string;
+	private readonly prefix: string;
+
+	constructor(text: string, prefix: string) {
+		this.text = text;
+		this.prefix = prefix;
+	}
 
 	render(width: number): string[] {
 		const prefixWidth = visibleWidth(this.prefix);
