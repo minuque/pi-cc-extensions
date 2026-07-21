@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="#安装"><img alt="Pi package" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="./package.json"><img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.1.3-66E3C4?style=flat-square"></a>
+  <a href="./package.json"><img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-66E3C4?style=flat-square"></a>
   <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
   <a href="./extensions"><img alt="TypeScript extensions" src="https://img.shields.io/badge/TypeScript-extensions-3178C6?style=flat-square"></a>
 </p>
