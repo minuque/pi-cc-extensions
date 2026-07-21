@@ -23,10 +23,11 @@
   "scripts": {
     "test": "node --test tests/**/*.test.ts",
     "typecheck": "node scripts/typecheck.mjs",
-    "postversion": "npm run typecheck && npm test && git push && git push --tags",
+    "preversion": "npm run typecheck && npm test",
     "release": "npm version patch && npm publish",
     "release:minor": "npm version minor && npm publish",
-    "release:major": "npm version major && npm publish"
+    "release:major": "npm version major && npm publish",
+    "postpublish": "git push && git push --tags"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
