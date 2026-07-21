@@ -1,6 +1,4 @@
-import { Buffer } from "node:buffer";
-
-export const SESSION_REFERENCE_CUSTOM_TYPE = "session-reference";
+const SESSION_REFERENCE_CUSTOM_TYPE = "session-reference";
 export const SESSION_REFERENCE_PREFIX = "@session:";
 
 const SESSION_REFERENCE_PATTERN =
