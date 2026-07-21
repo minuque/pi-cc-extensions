@@ -22,11 +22,24 @@ import {
 	type ReferenceSource,
 } from "./core.ts";
 
-const MAX_SESSION_SUGGESTIONS = 3;
+const MAX_SESSION_SUGGESTIONS = 5;
 const MAX_FILE_SUGGESTIONS = 10;
 const MAX_REFERENCED_SESSIONS = 5;
 const MENTION_PATTERN = /(?:^|[\t ])@([^\s@]*)$/;
 const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
+
+// ── In-process subagent record tracker ──────────────────────────────
+// pi-subagents does not expose a global manager; we track records
+// ourselves by listening to the events it emits.
+
+type SubagentLiveRecord = {
+	runId: string;
+	sessionId: string;
+	agent: string;
+	cwd: string;
+	startedAt: number;
+	completedAt?: number;
+};
 
 type ReferenceDetails = {
 	sessions: Array<{ id: string; title: string; cwd: string }>;
@@ -40,26 +53,71 @@ type SessionReference = {
 	messages?: unknown[];
 };
 
-type LiveSubagentSession = {
-	sessionManager: {
-		getSessionId(): string;
-		getCwd(): string;
-		buildSessionContext(): { messages: unknown[] };
-	};
-	sessionName?: string;
-};
-
 type SubagentRecord = {
 	id: string;
 	description?: string;
 	startedAt?: number;
 	completedAt?: number;
-	session?: LiveSubagentSession;
 };
 
 type SubagentManager = {
 	getRecord(id: string): SubagentRecord | undefined;
 };
+
+// Local subagent record tracking (pi-subagents does not expose a global manager).
+const liveSubagentRecords = new Map<string, SubagentLiveRecord>();
+
+function trackSubagentFromEvent(data: unknown): void {
+	if (!data || typeof data !== "object") return;
+	const event = data as Record<string, unknown>;
+	// subagent:async-started payload has "id" as the run ID
+	// subagent:async-complete payload has "runId" as the run ID
+	const runId = (typeof event.id === "string" ? event.id : undefined)
+		?? (typeof event.runId === "string" ? event.runId : undefined);
+	if (!runId) return;
+	const sessionId = typeof event.sessionId === "string" ? event.sessionId : undefined;
+	if (!sessionId) return;
+
+	const existing = liveSubagentRecords.get(runId);
+	if (existing) {
+		// Completion event — mark completedAt
+		if (typeof event.endedAt === "number" || typeof event.lastUpdate === "number") {
+			existing.completedAt = (typeof event.endedAt === "number" ? event.endedAt : event.lastUpdate) as number;
+		}
+		return;
+	}
+	// Started event — create new record
+	const agent = typeof event.agent === "string" ? event.agent : "";
+	const cwd = typeof event.cwd === "string" ? event.cwd : "";
+	const startedAt = typeof event.startedAt === "number" ? event.startedAt as number : Date.now();
+	liveSubagentRecords.set(runId, {
+		runId,
+		sessionId,
+		agent,
+		cwd,
+		startedAt,
+	});
+}
+
+function getSubagentManager(): SubagentManager | undefined {
+	// Try the global manager first (future-proof), fall back to local records.
+	const manager = (globalThis as any)[SUBAGENT_MANAGER_KEY] as SubagentManager | undefined;
+	if (manager && typeof manager.getRecord === "function") return manager;
+	// If no global manager, use our local tracking.
+	if (liveSubagentRecords.size === 0) return undefined;
+	return {
+		getRecord(id: string): SubagentRecord | undefined {
+			const record = liveSubagentRecords.get(id);
+			if (!record) return undefined;
+			return {
+				id: record.runId,
+				description: record.agent || undefined,
+				startedAt: record.startedAt,
+				completedAt: record.completedAt,
+			};
+		},
+	};
+}
 
 function extractMentionQuery(textBeforeCursor: string): string | undefined {
 	return textBeforeCursor.match(MENTION_PATTERN)?.[1];
@@ -108,67 +166,34 @@ function filterSessions(references: SessionReference[], query: string, currentCw
 	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => sessionItem(reference, currentCwd));
 }
 
-function getSubagentManager(): SubagentManager | undefined {
-	const manager = (globalThis as any)[SUBAGENT_MANAGER_KEY] as SubagentManager | undefined;
-	return manager && typeof manager.getRecord === "function" ? manager : undefined;
-}
-
-function textFromMessage(message: unknown): string {
-	if (!message || typeof message !== "object") return "";
-	const value = message as Record<string, unknown>;
-	if (typeof value.content === "string") return value.content;
-	if (!Array.isArray(value.content)) return "";
-	return value.content
-		.filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object")
-		.filter((part) => part.type === "text" && typeof part.text === "string")
-		.map((part) => part.text as string)
-		.join("\n");
-}
-
-function firstUserMessage(messages: unknown[]): string {
-	for (const message of messages) {
-		if (!message || typeof message !== "object") continue;
-		const role = (message as Record<string, unknown>).role;
-		if (role !== "user") continue;
-		const text = textFromMessage(message).trim();
-		if (text) return text;
-	}
-	return "(no messages)";
-}
-
-function liveSubagentReferences(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
+function filterSessions(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
 	const manager = getSubagentManager();
 	if (!manager) return [];
 
 	const references: SessionReference[] = [];
 	for (const agentId of agentIds) {
 		const record = manager.getRecord(agentId);
-		const session = record?.session;
-		if (!session) continue;
+		if (!record) continue;
 
-		try {
-			const sessionManager = session.sessionManager;
-			const sessionId = sessionManager.getSessionId();
-			if (!sessionId || sessionId === currentSessionId) continue;
-			const messages = sessionManager.buildSessionContext().messages;
-			const name = record.description?.trim() || session.sessionName?.trim();
-			const modifiedAt = record.completedAt ?? record.startedAt ?? Date.now();
-			references.push({
-				kind: "subagent",
-				referenceIds: [sessionId, agentId],
-				info: {
-					id: sessionId,
-					name,
-					cwd: sessionManager.getCwd(),
-					firstMessage: firstUserMessage(messages),
-					messageCount: messages.length,
-					modified: new Date(modifiedAt),
-				},
-				messages,
-			});
-		} catch {
-			// A subagent can finish or be disposed while the suggestion list is loading.
-		}
+		// Try the global manager's live session first (future-proof).
+		const liveRecord = liveSubagentRecords.get(agentId);
+		const sessionId = liveRecord?.sessionId ?? record.id;
+		if (!sessionId || sessionId === currentSessionId) continue;
+
+		const name = record.description?.trim() || liveRecord?.agent || undefined;
+		const modifiedAt = record.completedAt ?? record.startedAt ?? Date.now();
+		references.push({
+			kind: "subagent",
+			referenceIds: [sessionId, agentId],
+			info: {
+				id: sessionId,
+				name,
+				cwd: liveRecord?.cwd ?? "",
+				firstMessage: "",
+				messageCount: 0,
+				modified: new Date(modifiedAt),
+			},
+		});
 	}
 	return references;
 }
@@ -239,11 +264,18 @@ function samePath(left: string | undefined, right: string): boolean {
 export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	let getAvailableReferences: (() => Promise<SessionReference[]>) | undefined;
 	const subagentIds = new Set<string>();
-	const unsubscribeSubagentEvents = ["subagents:created", "subagents:started", "subagents:completed", "subagents:failed"].map(
+	// pi-subagents emits "subagent:async-started" and "subagent:async-complete" events.
+	// We track records locally so @[SubAgent] suggestions work even without a global manager.
+	const subagentEventNames = ["subagent:async-started", "subagent:async-complete"];
+	const unsubscribeSubagentEvents = subagentEventNames.map(
 		(eventName) =>
 			pi.events.on(eventName, (data) => {
+				trackSubagentFromEvent(data);
 				if (!data || typeof data !== "object") return;
-				const id = (data as Record<string, unknown>).id;
+				const payload = data as Record<string, unknown>;
+				// subagent:async-started uses "id", subagent:async-complete uses "runId"
+				const id = (typeof payload.id === "string" ? payload.id : undefined)
+					?? (typeof payload.runId === "string" ? payload.runId : undefined);
 				if (typeof id === "string" && id) subagentIds.add(id);
 			}),
 	);

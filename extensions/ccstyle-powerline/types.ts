@@ -90,6 +90,7 @@ export interface StatusLineSegmentOptions {
     showStaged?: boolean;
     showUnstaged?: boolean;
     showUntracked?: boolean;
+    showLines?: boolean;
     polling?: "full" | "branch" | "off";
   };
   time?: { format?: "12h" | "24h"; showSeconds?: boolean };
@@ -136,6 +137,8 @@ export interface GitStatus {
   staged: number;
   unstaged: number;
   untracked: number;
+  added: number;
+  deleted: number;
 }
 
 // Usage statistics

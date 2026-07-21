@@ -19,6 +19,13 @@
 
 <table>
   <tr>
+    <td colspan="2" align="center">
+      <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 的 Welcome 界面，展示 Tips、已加载上下文、扩展和最近会话">
+      <br>
+      <sub><b>Welcome 界面</b><br>启动时查看已加载上下文、扩展与最近会话</sub>
+    </td>
+  </tr>
+  <tr>
     <td width="50%" align="center">
       <img src="./assets/readme/showcase.webp" width="100%" alt="Pi 终端中的 Claude Code 风格扩展界面，包含工具调用摘要、Diff 预览和 Powerline 状态栏">
       <br>
@@ -86,7 +93,7 @@
 2. 从 `[Session] ...` 或 `[SubAgent] ...` 补全项中选择要引用的上下文。
 3. 提交时以 `@session:<session-id>` 引用其当前有效上下文。
 
-Session 模糊查询默认显示 3 个候选；若已加载 `pi-subagents`，也可直接引用现有 SubAgent。一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。更多细节见 [`extensions/session-reference/README.md`](./extensions/session-reference/README.md)。
+Session 模糊查询默认显示 5 个候选；若已加载 `pi-subagents`，也可直接引用现有 SubAgent。一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。更多细节见 [`extensions/session-reference/README.md`](./extensions/session-reference/README.md)。
 
 ## 安装
 
@@ -133,9 +140,23 @@ pi install /absolute/path/to/pi-cc-extensions
 - Node.js `>=22.19.0`
 - 作为 Pi package 加载，入口由根目录 `package.json` 的 `pi.extensions` 显式声明
 
-## 发布检查
+## 发布
+
+发布前检查：
 
 ```bash
 npm test
 npm pack --dry-run
 ```
+
+使用 npm 发布。未指定 tag 时使用 `latest`：
+
+```bash
+npm run release
+npm run release -- --tag next
+npm run release -- --tag beta
+```
+
+## 致谢
+
+本项目中的 Powerline 状态栏、Welcome 界面、Working Vibes 等功能基于 [nicobailon/pi-powerline-footer](https://github.com/nicobailon/pi-powerline-footer) 二次开发，感谢原作者的开源贡献。

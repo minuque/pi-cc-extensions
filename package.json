@@ -20,7 +20,9 @@
     ]
   },
   "scripts": {
-    "test": "node --test extensions/session-reference/core.test.ts"
+    "test": "node --test extensions/session-reference/core.test.ts",
+    "prepublishOnly": "npm test",
+    "release": "npm publish"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

@@ -837,6 +837,25 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("ccstyle", {
 		description: "Configure Claude Code style and Powerline preset",
+		getArgumentCompletions: (prefix) => {
+			const topLevel = [
+				{ value: "on", label: "on", description: "Enable Claude Code style" },
+				{ value: "off", label: "off", description: "Disable Claude Code style" },
+				{ value: "status", label: "status", description: "Show current toggle and mode" },
+				{ value: "minimal", label: "minimal", description: "Hide most tool output in collapsed view" },
+				{ value: "compact", label: "compact", description: "Show short summaries in collapsed view" },
+				{ value: "powerline", label: "powerline", description: "Set Powerline preset (e.g. powerline compact)" },
+			];
+			// If the user typed "powerline " — suggest available presets
+			const match = prefix.match(/^powerline\s+/i);
+			if (match) {
+				const after = prefix.slice(match[0].length);
+				return powerline.getPresets()
+					.filter((p) => p.startsWith(after))
+					.map((p) => ({ value: `powerline ${p}`, label: p, description: `Powerline preset: ${p}` }));
+			}
+			return topLevel.filter((item) => item.value.startsWith(prefix));
+		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 			const parts = arg.split(/\s+/).filter(Boolean);

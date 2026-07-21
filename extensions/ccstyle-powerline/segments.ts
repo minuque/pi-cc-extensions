@@ -130,7 +130,7 @@ const gitSegment: StatusLineSegment = {
   render(ctx) {
     const icons = getIcons();
     const opts = ctx.options.git ?? {};
-    const { branch, staged, unstaged, untracked } = ctx.git;
+    const { branch, staged, unstaged, untracked, added, deleted } = ctx.git;
     const gitStatus = (staged > 0 || unstaged > 0 || untracked > 0) 
       ? { staged, unstaged, untracked } 
       : null;
@@ -167,6 +167,16 @@ const gitSegment: StatusLineSegment = {
           content = color(ctx, branchColor, icons.git ? `${icons.git} ` : "") + indicatorText;
         } else {
           content += content ? ` ${indicatorText}` : indicatorText;
+        }
+      }
+
+      // Line-change indicators (added / deleted)
+      if (opts.showLines && (added > 0 || deleted > 0)) {
+        const lineParts: string[] = [];
+        if (added > 0) lineParts.push(applyColor(ctx.theme, "success", `+${added}`));
+        if (deleted > 0) lineParts.push(applyColor(ctx.theme, "error", `-${deleted}`));
+        if (lineParts.length > 0) {
+          content += ` ${lineParts.join(" ")}`;
         }
       }
     }

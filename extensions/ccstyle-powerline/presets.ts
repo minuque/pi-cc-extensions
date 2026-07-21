@@ -31,7 +31,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     segmentOptions: {
       model: { showThinkingLevel: false },
       path: { mode: "basename" },
-      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true },
+      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true, showLines: true },
     },
   },
 
@@ -42,7 +42,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     colors: MINIMAL_COLORS,
     segmentOptions: {
       path: { mode: "basename" },
-      git: { showBranch: true, showStaged: false, showUnstaged: false, showUntracked: false },
+      git: { showBranch: true, showStaged: false, showUnstaged: false, showUntracked: false, showLines: false },
     },
   },
 
@@ -53,7 +53,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     colors: DEFAULT_COLORS,
     segmentOptions: {
       model: { showThinkingLevel: true },
-      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: false },
+      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: false, showLines: true },
     },
   },
 
@@ -65,7 +65,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     segmentOptions: {
       model: { showThinkingLevel: false },
       path: { mode: "abbreviated", maxLength: 50 },
-      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true },
+      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true, showLines: true },
       time: { format: "24h", showSeconds: false },
     },
   },
@@ -78,7 +78,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     segmentOptions: {
       model: { showThinkingLevel: false },
       path: { mode: "abbreviated", maxLength: 60 },
-      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true },
+      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true, showLines: true },
       time: { format: "24h", showSeconds: true },
     },
   },
@@ -91,7 +91,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     segmentOptions: {
       model: { showThinkingLevel: true },
       path: { mode: "abbreviated", maxLength: 40 },
-      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true },
+      git: { showBranch: true, showStaged: true, showUnstaged: true, showUntracked: true, showLines: false },
     },
   },
 
@@ -100,7 +100,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     rightSegments: ["token_total", "cost", "context_pct"],
     separator: "pipe",
     colors: DEFAULT_COLORS,
-    segmentOptions: {},
+    segmentOptions: {
   },
 };
 

@@ -2181,7 +2181,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
 
     // Get git status (cached)
     const gitBranch = footerDataRef?.getGitBranch() ?? null;
-    const gitStatus = getGitStatus(gitBranch, segmentOptions.git?.polling);
+    const gitStatus = getGitStatus(gitBranch, ctx.cwd, segmentOptions.git?.polling);
     const extensionStatuses = footerDataRef?.getExtensionStatuses() ?? new Map();
     const customItemsById = new Map(config.customItems.map((item) => [item.id, item]));
     const hiddenExtensionStatusKeys = collectHiddenExtensionStatusKeys(config.customItems);
