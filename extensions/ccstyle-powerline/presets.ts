@@ -100,7 +100,7 @@ export const PRESETS: Record<StatusLinePreset, PresetDef> = {
     rightSegments: ["token_total", "cost", "context_pct"],
     separator: "pipe",
     colors: DEFAULT_COLORS,
-    segmentOptions: {
+    segmentOptions: {},
   },
 };
 

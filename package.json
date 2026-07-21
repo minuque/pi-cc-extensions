@@ -20,8 +20,9 @@
     ]
   },
   "scripts": {
-    "test": "node --test extensions/session-reference/core.test.ts",
-    "prepublishOnly": "npm test",
+    "test": "node --test tests/**/*.test.ts",
+    "typecheck": "node scripts/typecheck.mjs",
+    "prepublishOnly": "npm run typecheck && npm test",
     "release": "npm publish"
   },
   "peerDependencies": {
@@ -31,5 +32,8 @@
   },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
   }
 }

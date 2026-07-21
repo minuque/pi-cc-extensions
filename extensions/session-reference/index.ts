@@ -166,7 +166,7 @@ function filterSessions(references: SessionReference[], query: string, currentCw
 	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => sessionItem(reference, currentCwd));
 }
 
-function filterSessions(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
+function liveSubagentReferences(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
 	const manager = getSubagentManager();
 	if (!manager) return [];
 
