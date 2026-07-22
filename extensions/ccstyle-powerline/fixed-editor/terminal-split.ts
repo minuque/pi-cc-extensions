@@ -899,6 +899,10 @@ export class TerminalSplitCompositor {
           this.clearSelection();
           this.lastLeftPress = null;
           this.consumedClusterClick = true;
+          // refreshRootWindow() updated the logical lines above, but the TUI
+          // render is scheduled asynchronously. Paint the collapsed/expanded
+          // viewport immediately so stale rows cannot remain until the next drag.
+          this.repaintScrollableViewport(Math.max(1, this.terminal.columns || 80));
           this.requestRender();
           return;
         }

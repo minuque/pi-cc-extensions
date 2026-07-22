@@ -2532,8 +2532,9 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
         component.setExpanded(!expanded);
       } else {
         const state = (component.rendererState ??= {});
-        state.ccstyleToolExpanded = !expanded;
-        component.setExpanded?.(Boolean(component.expanded));
+        const nextExpanded = !expanded;
+        state.ccstyleToolExpanded = nextExpanded;
+        component.setExpanded?.(nextExpanded);
         component.invalidate?.();
       }
       // The compositor refreshes and renders once after applying its viewport
