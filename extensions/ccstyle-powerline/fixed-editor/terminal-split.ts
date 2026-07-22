@@ -388,6 +388,8 @@ export class TerminalSplitCompositor {
   private maxScrollOffset = 0;
   private lastRootLineCount = 0;
   private rootLines: string[] = [];
+  private rootWindowWidth = 0;
+  private rootWindowRawRows = 0;
   private suppressRootGrowthAdjustment = false;
   private readonly toolExpansionStarts = new Map<string, number>();
   private visibleRootStart = 0;
@@ -399,6 +401,8 @@ export class TerminalSplitCompositor {
   private selectionAnchor: SelectionPoint | null = null;
   private selectionFocus: SelectionPoint | null = null;
   private selectionDragging = false;
+  private batchingMouseInput = false;
+  private selectionRepaintPending = false;
   private preserveSelectionFocusOnRelease = false;
   private lastLeftPress: { area: SelectionArea; line: number; at: number } | null = null;
   private consumedClusterClick = false;
@@ -554,6 +558,8 @@ export class TerminalSplitCompositor {
     this.lastLeftPress = null;
     this.hoveredRootLine = null;
     this.rootLines = [];
+    this.rootWindowWidth = 0;
+    this.rootWindowRawRows = 0;
     this.visibleRootLines = [];
     this.visibleRootStart = 0;
     this.lastRootLineCount = 0;
@@ -597,6 +603,17 @@ export class TerminalSplitCompositor {
     const rawRows = this.getRawRows();
     const width = Math.max(1, this.terminal.columns || 80);
     const cluster = this.getCluster(width, rawRows);
+    const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+    // A cluster-only paint cannot change the split point safely. Fall back to
+    // the normal frame when width, terminal height, or cluster height changed.
+    if (
+      this.rootWindowWidth !== width
+      || this.rootWindowRawRows !== rawRows
+      || (this.visibleScrollableRows > 0 && this.visibleScrollableRows !== scrollableRows)
+    ) {
+      this.requestRender();
+      return;
+    }
     if (cluster.lines.length === 0) return;
 
     this.originalWrite(
@@ -694,6 +711,8 @@ export class TerminalSplitCompositor {
 
     const rawRows = this.getRawRows();
     const renderWidth = Math.max(1, width);
+    this.rootWindowWidth = renderWidth;
+    this.rootWindowRawRows = rawRows;
     const cluster = this.getCluster(renderWidth, rawRows);
     const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
     const renderedLines = this.originalRender(renderWidth);
@@ -717,6 +736,28 @@ export class TerminalSplitCompositor {
     return this.updateVisibleRootWindow(scrollableRows);
   }
 
+  private ensureRootWindow(width: number): void {
+    if (!this.originalRender) return;
+
+    const renderWidth = Math.max(1, width);
+    const rawRows = this.getRawRows();
+    const cluster = this.getCluster(renderWidth, rawRows);
+    const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+    const sameRootDimensions = this.rootWindowWidth === renderWidth && this.rootWindowRawRows === rawRows;
+
+    if (sameRootDimensions && this.visibleScrollableRows > 0) {
+      if (this.visibleScrollableRows !== scrollableRows) {
+        this.maxScrollOffset = Math.max(0, this.rootLines.length - scrollableRows);
+        this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.maxScrollOffset));
+        this.pendingImageCleanup = true;
+        this.updateVisibleRootWindow(scrollableRows);
+      }
+      return;
+    }
+
+    this.refreshRootWindow(renderWidth);
+  }
+
   private handleInput(data: string): { consume?: boolean; data?: string } | undefined {
     if (this.disposed || this.hasVisibleOverlay()) return undefined;
 
@@ -735,8 +776,17 @@ export class TerminalSplitCompositor {
 
     const mousePackets = this.mouseScroll ? parseSgrMousePackets(data) : null;
     if (mousePackets) {
-      for (const packet of mousePackets) {
-        this.handleMousePacket(packet);
+      this.batchingMouseInput = true;
+      try {
+        for (const packet of mousePackets) {
+          this.handleMousePacket(packet);
+        }
+      } finally {
+        this.batchingMouseInput = false;
+      }
+      if (this.selectionRepaintPending) {
+        this.selectionRepaintPending = false;
+        this.repaintSelection(Math.max(1, this.terminal.columns || 80));
       }
       return { consume: true };
     }
@@ -777,7 +827,11 @@ export class TerminalSplitCompositor {
       return;
     }
 
-    this.refreshRootWindow(Math.max(1, this.terminal.columns || 80));
+    const width = Math.max(1, this.terminal.columns || 80);
+    // Mouse selection and clicks operate on the last painted root window. Avoid
+    // re-rendering the complete transcript for every mouse packet; refresh only
+    // on the first packet or after a terminal resize.
+    this.ensureRootWindow(width);
     const location = this.selectionLocationForPacket(packet);
 
     if (isRightPress(packet)) {
@@ -869,7 +923,7 @@ export class TerminalSplitCompositor {
       this.lastLeftPress = null;
       this.preserveSelectionFocusOnRelease = false;
       this.selectionFocus = location.point;
-      this.requestRender();
+      this.repaintSelection(width);
       return;
     }
   }
@@ -904,7 +958,7 @@ export class TerminalSplitCompositor {
     } else {
       this.clearSelection();
     }
-    this.requestRender();
+    this.repaintSelection(Math.max(1, this.terminal.columns || 80));
   }
 
   private startSelection(location: SelectionLocation): void {
@@ -922,7 +976,7 @@ export class TerminalSplitCompositor {
       this.selectionDragging = true;
       this.preserveSelectionFocusOnRelease = true;
       this.lastLeftPress = null;
-      this.requestRender();
+      this.repaintSelection(Math.max(1, this.terminal.columns || 80));
       return;
     }
 
@@ -932,7 +986,7 @@ export class TerminalSplitCompositor {
     this.selectionDragging = true;
     this.preserveSelectionFocusOnRelease = false;
     this.lastLeftPress = { area: location.area, line, at: now };
-    this.requestRender();
+    this.repaintSelection(Math.max(1, this.terminal.columns || 80));
   }
 
   private selectionLocationForPacket(packet: SgrMousePacket): SelectionLocation | null {
@@ -974,7 +1028,7 @@ export class TerminalSplitCompositor {
       line: edgeLine,
       col: Math.max(0, packet.col - 1),
     };
-    this.requestRender();
+    this.repaintSelection(Math.max(1, this.terminal.columns || 80));
     return true;
   }
 
@@ -1065,7 +1119,7 @@ export class TerminalSplitCompositor {
 
   private scrollBy(delta: number): void {
     const width = Math.max(1, this.terminal.columns || 80);
-    this.refreshRootWindow(width);
+    this.ensureRootWindow(width);
 
     const wasScrolled = this.scrollOffset > 0;
     const nextOffset = Math.max(0, Math.min(this.scrollOffset + delta, this.maxScrollOffset));
@@ -1088,12 +1142,24 @@ export class TerminalSplitCompositor {
     }
   }
 
-  private repaintScrollableViewport(width: number): void {
-    if (this.disposed || this.writing || this.hasVisibleOverlay()) return;
+  private repaintSelection(width: number): void {
+    if (this.batchingMouseInput) {
+      this.selectionRepaintPending = true;
+      return;
+    }
+    if (!this.repaintScrollableViewport(width)) {
+      this.requestRender();
+    }
+  }
+
+  private repaintScrollableViewport(width: number): boolean {
+    if (this.disposed || this.writing || this.hasVisibleOverlay()) return false;
 
     const rawRows = this.getRawRows();
     const cluster = this.getCluster(width, rawRows);
     const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+    this.maxScrollOffset = Math.max(0, this.rootLines.length - scrollableRows);
+    this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.maxScrollOffset));
     const start = this.updateVisibleRootWindow(scrollableRows);
     let buffer = beginSynchronizedOutput()
       + this.consumePendingImageCleanup()
@@ -1113,6 +1179,7 @@ export class TerminalSplitCompositor {
     buffer += this.mouseReportingStateGuard();
     buffer += endSynchronizedOutput();
     this.originalWrite(buffer);
+    return true;
   }
 
   private pauseMouseReportingForContextMenu(textToRestoreToClipboard: string | null = null): void {

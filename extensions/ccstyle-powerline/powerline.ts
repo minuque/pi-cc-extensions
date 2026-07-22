@@ -984,6 +984,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
   let fixedEditorContainer: any = null;
   let fixedWidgetContainerAbove: any = null;
   let fixedWidgetContainerBelow: any = null;
+  let statusRenderNeedsFullRender = false;
   let stashShortcutInputUnsubscribe: (() => void) | null = null;
   let dismissWelcomeOverlay: (() => void) | null = null;
   let welcomeHeaderActive = false;
@@ -1024,7 +1025,12 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
       return;
     }
 
-    tuiRef?.requestRender();
+    if (fixedEditorCompositor && !statusRenderNeedsFullRender) {
+      fixedEditorCompositor.requestRepaint();
+    } else {
+      tuiRef?.requestRender();
+    }
+    statusRenderNeedsFullRender = false;
   }, STATUS_RENDER_DEBOUNCE_MS);
 
   const resetLayoutCache = () => {
@@ -1039,6 +1045,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
 
   const requestImmediateStatusRender = (options: { deferDuringTyping?: boolean } = {}) => {
     layoutDirty = true;
+    statusRenderNeedsFullRender = true;
     if (options.deferDuringTyping !== false && Date.now() - lastEditorInputAt < EDITOR_STATUS_DEFER_MS) {
       statusRenderScheduler.schedule();
       return;
@@ -1296,6 +1303,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
     welcomeOverlayShouldDismiss = false;
     welcomeDismissScheduler.cancel();
     statusRenderScheduler.cancel();
+    statusRenderNeedsFullRender = false;
     restoreFooterStatusRepaintHook?.();
     restoreFooterStatusRepaintHook = null;
     teardownFixedEditorCompositor(isTerminalExit ? { resetExtendedKeyboardModes: true } : undefined);
@@ -1852,6 +1860,7 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
           tuiRef = null;
           currentEditor = null;
           statusRenderScheduler.cancel();
+          statusRenderNeedsFullRender = false;
           resetLayoutCache();
           ctx.ui.notify("Powerline disabled", "info");
         }
@@ -2564,56 +2573,73 @@ export default function powerlineFooter(pi: ExtensionAPI): PowerlineController {
       (line.match(/\x1b\[[0-9;]*m/g) ?? []).some((sequence) =>
         sequence.slice(2, -1).split(";").includes("3"),
       );
-    // Cache for decorateThinkingLines to avoid per-frame regex processing.
-    let lastDecoratedLines: string[] | null = null;
-    let lastDecoratedInput: string[] | null = null;
-    let lastDecoratedTheme: Theme | null = null;
+    // Cache expensive per-line ANSI work by rendered line content. The TUI
+    // creates a new array on every render, so caching the array reference does
+    // not help once the transcript grows.
+    const MAX_DECORATION_CACHE_ENTRIES = 4096;
+    let decorationTheme: Theme | null = null;
+    let thinkingColor = "";
+    const thinkingLineCache = new Map<string, boolean>();
+    const nonEmptyLineCache = new Map<string, boolean>();
+    const unboldLineCache = new Map<string, string>();
+
+    const trimDecorationCache = <T>(cache: Map<string, T>): void => {
+      if (cache.size > MAX_DECORATION_CACHE_ENTRIES) cache.clear();
+    };
 
     const decorateThinkingLines = (lines: string[]): string[] => {
-      // Fast path: return cached result if input and theme haven't changed.
-      if (lastDecoratedInput === lines && lastDecoratedTheme === readRenderTheme() && lastDecoratedLines) {
-        return lastDecoratedLines;
-      }
-
       const theme = readRenderTheme();
-      const marker = "__ccstyle_thinking__";
-      const themedMarker = theme.fg("thinkingText", marker);
-      const markerIndex = themedMarker.indexOf(marker);
-      const thinkingColor = markerIndex > 0 ? themedMarker.slice(0, markerIndex) : "";
-      
-      // Fast path: if no thinking color, skip expensive regex processing.
-      if (!thinkingColor) {
-        lastDecoratedInput = lines;
-        lastDecoratedTheme = theme;
-        lastDecoratedLines = lines;
-        return lines;
+      if (theme !== decorationTheme) {
+        decorationTheme = theme;
+        const marker = "__ccstyle_thinking__";
+        const themedMarker = theme.fg("thinkingText", marker);
+        const markerIndex = themedMarker.indexOf(marker);
+        thinkingColor = markerIndex > 0 ? themedMarker.slice(0, markerIndex) : "";
+        thinkingLineCache.clear();
       }
 
-      const isThinking = lines.map((line) =>
-        Boolean(thinkingColor && line.includes(thinkingColor) && hasItalicStyle(line)),
-      );
+      // Fast path: themes without a thinking color need no processing.
+      if (!thinkingColor) return lines;
+
+      const isThinking = lines.map((line) => {
+        const cached = thinkingLineCache.get(line);
+        if (cached !== undefined) return cached;
+        const value = line.includes(thinkingColor) && hasItalicStyle(line);
+        thinkingLineCache.set(line, value);
+        trimDecorationCache(thinkingLineCache);
+        return value;
+      });
       const decorated = [...isThinking];
+      const hasText = (line: string): boolean => {
+        const cached = nonEmptyLineCache.get(line);
+        if (cached !== undefined) return cached;
+        const value = Boolean(stripAnsiForToolClick(line));
+        nonEmptyLineCache.set(line, value);
+        trimDecorationCache(nonEmptyLineCache);
+        return value;
+      };
 
       // Continue the guide through paragraph spacing inside one thinking block.
       for (let index = 0; index < lines.length; index++) {
-        if (stripAnsiForToolClick(lines[index] ?? "")) continue;
+        if (hasText(lines[index] ?? "")) continue;
         let before = index - 1;
-        while (before >= 0 && !stripAnsiForToolClick(lines[before] ?? "")) before--;
+        while (before >= 0 && !hasText(lines[before] ?? "")) before--;
         let after = index + 1;
-        while (after < lines.length && !stripAnsiForToolClick(lines[after] ?? "")) after++;
+        while (after < lines.length && !hasText(lines[after] ?? "")) after++;
         decorated[index] = before >= 0 && after < lines.length && isThinking[before] && isThinking[after];
       }
 
       // Keep the native thinking text styling, but do not add a guide line.
       // The guide conflicted visually with the tool status markers.
-      const result = lines.map((line, index) =>
-        decorated[index] ? removeThinkingBold(line) : line,
-      );
-
-      lastDecoratedInput = lines;
-      lastDecoratedTheme = theme;
-      lastDecoratedLines = result;
-      return result;
+      return lines.map((line, index) => {
+        if (!decorated[index]) return line;
+        const cached = unboldLineCache.get(line);
+        if (cached !== undefined) return cached;
+        const result = removeThinkingBold(line);
+        unboldLineCache.set(line, result);
+        trimDecorationCache(unboldLineCache);
+        return result;
+      });
     };
 
     let compositor: TerminalSplitCompositor;
