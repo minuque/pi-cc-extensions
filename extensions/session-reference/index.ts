@@ -22,8 +22,8 @@ import {
 	type ReferenceSource,
 } from "./core.ts";
 
-const MAX_SESSION_SUGGESTIONS = 5;
-const MAX_FILE_SUGGESTIONS = 10;
+const MAX_SESSION_SUGGESTIONS = 3;
+const MAX_FILE_SUGGESTIONS = 7;
 const MAX_REFERENCED_SESSIONS = 5;
 const MENTION_PATTERN = /(?:^|[\t ])@([^\s@]*)$/;
 const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -166,6 +166,31 @@ function filterSessions(references: SessionReference[], query: string, currentCw
 	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => sessionItem(reference, currentCwd));
 }
 
+function isPathLikeQuery(query: string): boolean {
+	return /[\\/*?]/.test(query) || /\.[A-Za-z0-9_-]{1,12}$/.test(query);
+}
+
+function mergeSessionAndFileItems(
+	sessionItems: AutocompleteItem[],
+	fileItems: AutocompleteItem[],
+	query: string,
+): AutocompleteItem[] {
+	const sessions = sessionItems.slice(0, MAX_SESSION_SUGGESTIONS);
+	const files = fileItems.slice(0, MAX_FILE_SUGGESTIONS);
+	if (isPathLikeQuery(query)) return [...files, ...sessions];
+
+	const merged: AutocompleteItem[] = [];
+	let sessionIndex = 0;
+	let fileIndex = 0;
+	while (sessionIndex < sessions.length || fileIndex < files.length) {
+		for (let count = 0; count < 2 && fileIndex < files.length; count++) {
+			merged.push(files[fileIndex++]!);
+		}
+		if (sessionIndex < sessions.length) merged.push(sessions[sessionIndex++]!);
+	}
+	return merged;
+}
+
 function liveSubagentReferences(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
 	const manager = getSubagentManager();
 	if (!manager) return [];
@@ -236,9 +261,11 @@ export function createAutocompleteProvider(
 			if (options.signal.aborted) return null;
 
 			const sessionItems = filterSessions(references, query, currentCwd);
-			const fileItems = (baseSuggestions?.items ?? []).slice(0, MAX_FILE_SUGGESTIONS);
-			const items = [...sessionItems, ...fileItems];
-			if (items.length === 0) return null;
+			const fileItems = baseSuggestions?.prefix === `@${query}`
+				? baseSuggestions.items
+				: [];
+			const items = mergeSessionAndFileItems(sessionItems, fileItems, query);
+			if (items.length === 0) return baseSuggestions;
 			return { prefix: `@${query}`, items };
 		},
 

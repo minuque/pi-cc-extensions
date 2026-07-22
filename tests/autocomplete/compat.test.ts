@@ -52,9 +52,96 @@ test("agent and session autocomplete compose with an FFF provider that claims @ 
 	assert.equal(result?.prefix, "@");
 	assert.deepEqual(result?.items.map((item) => item.label), [
 		"[SubAgent] Coder",
-		"[Session] Previous work",
 		"index.ts",
+		"[Session] Previous work",
 	]);
+});
+
+test("session autocomplete caps sessions at three and interleaves files two-to-one", async () => {
+	const manyReferences = Array.from({ length: 5 }, (_, index) => ({
+		kind: "session",
+		referenceIds: [`session-${index}`],
+		info: {
+			id: `session-${index}`,
+			name: `Session ${index}`,
+			cwd: "/repo",
+			firstMessage: "",
+			messageCount: index,
+			modified: new Date(2025, 0, index + 1),
+		},
+	}));
+	const files: AutocompleteProvider = {
+		...fffProvider,
+		async getSuggestions() {
+			return {
+				prefix: "@",
+				items: Array.from({ length: 9 }, (_, index) => ({
+					value: `@src/file-${index}.ts`,
+					label: `file-${index}.ts`,
+				})),
+			};
+		},
+	};
+	const provider = createSessionAutocompleteProvider(files, async () => manyReferences as any, "/repo");
+	const result = await provider.getSuggestions(["@"], 0, 1, { signal: new AbortController().signal });
+	const labels = result?.items.map((item) => item.label) ?? [];
+
+	assert.equal(labels.length, 10);
+	assert.equal(labels.filter((label) => label.startsWith("[Session]")).length, 3);
+	assert.deepEqual(labels.slice(0, 6), [
+		"file-0.ts",
+		"file-1.ts",
+		"[Session] Session 4",
+		"file-2.ts",
+		"file-3.ts",
+		"[Session] Session 3",
+	]);
+});
+
+test("path-like queries put file candidates before sessions", async () => {
+	const pathReference = [{
+		...references[0],
+		info: { ...references[0]!.info, name: "foo.ts migration" },
+	}];
+	const files: AutocompleteProvider = {
+		...fffProvider,
+		async getSuggestions() {
+			return {
+				prefix: "@foo.ts",
+				items: Array.from({ length: 2 }, (_, index) => ({
+					value: `@foo.ts-${index}`,
+					label: `foo.ts-${index}`,
+				})),
+			};
+		},
+	};
+	const provider = createSessionAutocompleteProvider(files, async () => pathReference as any, "/repo");
+	const result = await provider.getSuggestions(
+		["@foo.ts"],
+		0,
+		7,
+		{ signal: new AbortController().signal },
+	);
+
+	assert.deepEqual(result?.items.map((item) => item.label), [
+		"foo.ts-0",
+		"foo.ts-1",
+		"[Session] foo.ts migration",
+	]);
+});
+
+test("agent autocomplete shows at most two agent candidates", async () => {
+	const provider = createAgentAutocompleteProvider(fffProvider, () =>
+		Array.from({ length: 4 }, (_, index) => ({
+			name: `agent-${index}`,
+			displayName: `Agent ${index}`,
+			description: "",
+			filePath: `/agents/agent-${index}.md`,
+		})),
+	);
+	const result = await provider.getSuggestions(["@"], 0, 1, { signal: new AbortController().signal });
+
+	assert.equal(result?.items.filter((item) => item.label.startsWith("[SubAgent]")).length, 2);
 });
 
 test("agent autocomplete does not duplicate delegated agent entries", async () => {

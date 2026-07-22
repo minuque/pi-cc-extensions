@@ -11,8 +11,8 @@
 ## 行为
 
 - 搜索全部 pi 历史 Session；当前 Workspace 的 Session 优先。
-- Session 模糊查询默认最多显示 5 个候选。
-- 与 pi 原有 `@` 文件补全并存。
+- Session 模糊查询默认最多显示 3 个候选。
+- 与 pi 原有 `@` 文件补全并存：普通查询按 1:2 交错排列 Session 与文件，路径型查询优先显示文件。
 - 若已加载 `pi-subagents`，`@` 补全会同时显示现有 SubAgent，并引用其当前有效上下文。
 - 支持一个 prompt 引用多个 Session，并自动去重；单次最多注入前 5 个。
 - 跳过历史 Session 中嵌套的 Session 引用，避免递归膨胀。

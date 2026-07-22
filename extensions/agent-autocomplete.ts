@@ -17,7 +17,7 @@ type AgentInfo = {
 	filePath: string;
 };
 
-const MAX_SUGGESTIONS = 10;
+const MAX_SUGGESTIONS = 2;
 // Match `@name` but NOT `@session:` (reserved by session-reference extension).
 const AGENT_NAME_PATTERN = /(?:^|[\t ])@((?:[^\s:@][^\s:]*)?)$/;
 
