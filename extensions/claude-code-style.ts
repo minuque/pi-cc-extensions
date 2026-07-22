@@ -13,7 +13,6 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import powerlineFooter from "./ccstyle-powerline/powerline.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -22,13 +21,9 @@ import { join, resolve } from "node:path";
 /**
  * Claude Code Style for pi
  *
- * Includes the bundled powerline footer (pipe separators, no Nerd Font arrows).
- * When fixed-editor chat scrolling is active, a Claude Code-like jump-to-bottom
- * button appears above the editor while the viewport is scrolled away from the
- * latest output, including when new messages arrive. Click it, or use the
- * displayed shortcut, to resume following the chat. Edit/write tool calls also
- * show a bounded, colorized diff preview with +/- lines after execution. A
- * collapsed tool result can be clicked on its Ctrl+O hint to expand only that tool.
+ * Edit/write tool calls show a bounded, colorized diff preview with +/- lines
+ * after execution. A collapsed tool result can be clicked on its Ctrl+O hint to
+ * expand only that tool.
  *
  * Dynamic commands:
  *   /ccstyle              toggle on/off
@@ -37,7 +32,6 @@ import { join, resolve } from "node:path";
  *   /ccstyle status       show current state
  *   /ccstyle minimal      hide most tool output in collapsed view
  *   /ccstyle compact      show short summaries in collapsed view
- *   /ccstyle powerline compact|full|default|minimal|nerd|ascii|custom
  *
  * Shortcut:
  *   ctrl+shift+o          toggle on/off
@@ -850,11 +844,8 @@ export default function (pi: ExtensionAPI) {
 	installGlobalToolRendering();
 	deactivateLegacyCompactionRendering();
 
-	// Bundle the full powerline footer into ccstyle so it is loaded as one plugin.
-	const powerline = powerlineFooter(pi);
-
 	pi.registerCommand("ccstyle", {
-		description: "Configure Claude Code style and Powerline preset",
+		description: "Configure Claude Code style",
 		getArgumentCompletions: (prefix) => {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
@@ -862,38 +853,11 @@ export default function (pi: ExtensionAPI) {
 				{ value: "status", label: "status", description: "Show current toggle and mode" },
 				{ value: "minimal", label: "minimal", description: "Hide most tool output in collapsed view" },
 				{ value: "compact", label: "compact", description: "Show short summaries in collapsed view" },
-				{ value: "powerline", label: "powerline", description: "Set Powerline preset (e.g. powerline compact)" },
 			];
-			// If the user typed "powerline " — suggest available presets
-			const match = prefix.match(/^powerline\s+/i);
-			if (match) {
-				const after = prefix.slice(match[0].length);
-				return powerline.getPresets()
-					.filter((p) => p.startsWith(after))
-					.map((p) => ({ value: `powerline ${p}`, label: p, description: `Powerline preset: ${p}` }));
-			}
 			return topLevel.filter((item) => item.value.startsWith(prefix));
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			const parts = arg.split(/\s+/).filter(Boolean);
-			if (parts[0] === "powerline") {
-				const requested = parts[1] === "mode" ? parts[2] : parts[1];
-				if (!requested) {
-					ctx.ui.notify(`Powerline preset: ${powerline.getPreset()}. Available: ${powerline.getPresets().join(", ")}`, "info");
-					return;
-				}
-				const result = powerline.setPreset(requested, ctx);
-				if (!result.valid) {
-					ctx.ui.notify(`Unknown Powerline preset: ${requested}. Available: ${powerline.getPresets().join(", ")}`, "warning");
-					return;
-				}
-				ctx.ui.notify(
-					`Powerline preset set to: ${requested}${result.persisted ? "" : " (not persisted; check settings.json)"}`,
-					result.persisted ? "info" : "warning",
-				);
-				return;
-			}
 			if (arg === "on" || arg === "enable") config.enabled = true;
 			else if (arg === "off" || arg === "disable") config.enabled = false;
 			else if (arg === "minimal") {
@@ -905,7 +869,7 @@ export default function (pi: ExtensionAPI) {
 			} else if (arg === "status") {
 				updateStatus(ctx);
 				ctx.ui.notify(
-					`Claude Code style: ${config.enabled ? "on" : "off"}, mode=${config.mode}, powerline=${powerline.getPreset()}`,
+					`Claude Code style: ${config.enabled ? "on" : "off"}, mode=${config.mode}`,
 					"info",
 				);
 				return;

@@ -19,18 +19,6 @@
 
 <table>
   <tr>
-    <td colspan="2" align="center">
-      <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 的 Welcome 界面，展示 Tips、已加载上下文、扩展和最近会话">
-      <br>
-      <sub><b>Welcome 界面</b><br>启动时查看已加载上下文、扩展与最近会话</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="./assets/readme/showcase.webp" width="100%" alt="Pi 终端中的 Claude Code 风格扩展界面，包含工具调用摘要、Diff 预览和 Powerline 状态栏">
-      <br>
-      <sub><b>Claude Code 风格界面</b><br>工具调用摘要、Diff 预览与 Powerline 状态栏</sub>
-    </td>
     <td width="50%" align="center">
       <img src="./assets/readme/session-reference.webp" width="100%" alt="在 Pi 中通过 @ 补全选择历史 Session">
       <br>
@@ -58,7 +46,7 @@
 `extensions/claude-code-style.ts` 提供：
 
 - Claude Code 风格的工具调用行与结果摘要
-- Powerline 状态栏和工作状态提示
+- Pi 默认输入栏
 - Edit / Write 的 Diff 预览
 - 工具结果的折叠与展开
 - `/ccstyle` 配置命令和 `Ctrl+Shift+O` 快捷键
@@ -70,7 +58,6 @@
 /ccstyle status      # 查看状态
 /ccstyle compact     # 紧凑摘要
 /ccstyle minimal     # 最小化输出
-/ccstyle powerline   # 查看 Powerline 预设
 ```
 
 ### 上下文窗口查看
@@ -156,7 +143,3 @@ npm run release
 npm run release -- --tag next
 npm run release -- --tag beta
 ```
-
-## 致谢
-
-本项目中的 Powerline 状态栏、Welcome 界面、Working Vibes 等功能基于 [nicobailon/pi-powerline-footer](https://github.com/nicobailon/pi-powerline-footer) 二次开发，感谢原作者的开源贡献。
