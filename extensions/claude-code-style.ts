@@ -446,14 +446,16 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	const packets = parseSgrMousePackets(data);
 	if (!packets) return undefined;
 
+	let consumed = false;
 	for (const packet of packets) {
-		if (isSgrLeftPress(packet)) {
-			toggleToolAtMouseClick(toolMouseTui, packet);
+		if (isSgrLeftPress(packet) && toggleToolAtMouseClick(toolMouseTui, packet)) {
+			consumed = true;
 		}
 	}
-	// The default editor cannot interpret mouse escape sequences. Consume them
-	// even when the click was outside a tool result.
-	return { consume: true };
+
+	// Let scrolling, motion, release, and clicks outside tool results reach the
+	// normal TUI input chain (including other extensions such as pi-zentui).
+	return consumed ? { consume: true } : undefined;
 }
 
 function teardownToolMouseInteraction(): void {
