@@ -215,7 +215,7 @@ function mergeReferences(sessions: SessionInfo[], subagents: SessionReference[])
 	return [...bySessionId.values()];
 }
 
-function createAutocompleteProvider(
+export function createAutocompleteProvider(
 	current: AutocompleteProvider,
 	getReferences: () => Promise<SessionReference[]>,
 	currentCwd: string,
@@ -263,6 +263,7 @@ function samePath(left: string | undefined, right: string): boolean {
 
 export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	let getAvailableReferences: (() => Promise<SessionReference[]>) | undefined;
+	let sessionGeneration = 0;
 	const subagentIds = new Set<string>();
 	// pi-subagents emits "subagent:async-started" and "subagent:async-complete" events.
 	// We track records locally so @[SubAgent] suggestions work even without a global manager.
@@ -290,6 +291,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		const generation = ++sessionGeneration;
 		subagentIds.clear();
 		let loadErrorShown = false;
 		const currentSessionId = ctx.sessionManager.getSessionId();
@@ -320,7 +322,14 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		getAvailableReferences = getReferences;
 		if (ctx.mode === "tui") {
 			void getReferences();
-			ctx.ui.addAutocompleteProvider((current) => createAutocompleteProvider(current, getReferences, ctx.cwd));
+			// Register after other session_start handlers. pi-fff claims every @
+			// prefix, so a provider installed before it would never see session mentions.
+			setTimeout(() => {
+				if (generation !== sessionGeneration) return;
+				ctx.ui.addAutocompleteProvider((current) =>
+					createAutocompleteProvider(current, getReferences, ctx.cwd),
+				);
+			}, 0);
 		}
 	});
 
@@ -404,6 +413,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", () => {
+		sessionGeneration++;
 		for (const unsubscribe of unsubscribeSubagentEvents) unsubscribe();
 		subagentIds.clear();
 		getAvailableReferences = undefined;

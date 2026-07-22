@@ -95,7 +95,7 @@ Session 模糊查询默认显示 5 个候选；若已加载 `pi-subagents`，也
 2. 从补全列表中选择 SubAgent。
 3. 提交后自动注入委托指令；提示词中提到的每个 SubAgent 都会分别交由 Agent 工具处理。
 
-该补全不会占用 `@session:` 的历史 Session 引用语法；修改 SubAgent 定义后执行 `/reload` 即可重新加载。
+该补全不会占用 `@session:` 的历史 Session 引用语法；与 `@bacnh85/pi-fff` 同时启用时，SubAgent、Session 和 FFF 文件候选会合并显示。修改 SubAgent 定义后执行 `/reload` 即可重新加载。
 
 ## 安装
 

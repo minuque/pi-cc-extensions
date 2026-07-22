@@ -19,7 +19,7 @@ type AgentInfo = {
 
 const MAX_SUGGESTIONS = 10;
 // Match `@name` but NOT `@session:` (reserved by session-reference extension).
-const AGENT_NAME_PATTERN = /(?:^|[\t ])@([^\s:@][^\s:]*)$/;
+const AGENT_NAME_PATTERN = /(?:^|[\t ])@((?:[^\s:@][^\s:]*)?)$/;
 
 function getAgentDir(): string {
 	const override = process.env.PI_CODING_AGENT_DIR;
@@ -58,11 +58,12 @@ function loadAgents(): AgentInfo[] {
 		});
 }
 
-function createAgentAutocompleteProvider(
+export function createAgentAutocompleteProvider(
 	current: AutocompleteProvider,
 	getAgents: () => AgentInfo[],
 ): AutocompleteProvider {
 	return {
+		triggerCharacters: ["@"],
 		async getSuggestions(
 			lines: string[],
 			cursorLine: number,
@@ -84,11 +85,15 @@ function createAgentAutocompleteProvider(
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
-			const matches = query.trim()
-				? fuzzyFilter(agents, query, (a) => `${a.name} ${a.displayName} ${a.description}`)
-				: agents;
+			const [baseSuggestions, matches] = await Promise.all([
+				current.getSuggestions(lines, cursorLine, cursorCol, options),
+				Promise.resolve(query.trim()
+					? fuzzyFilter(agents, query, (a) => `${a.name} ${a.displayName} ${a.description}`)
+					: agents),
+			]);
+			if (options.signal.aborted) return null;
 
-			const items: AutocompleteItem[] = matches
+			const agentItems: AutocompleteItem[] = matches
 				.slice(0, MAX_SUGGESTIONS)
 				.map((agent) => ({
 					value: `@${agent.name}`,
@@ -96,11 +101,18 @@ function createAgentAutocompleteProvider(
 					description: agent.description
 						+ (agent.model ? ` · ${agent.model}` : ""),
 				}));
+			const baseItems = baseSuggestions?.prefix === `@${query}`
+				? baseSuggestions.items
+				: [];
+			const seen = new Set<string>();
+			const items = [...agentItems, ...baseItems].filter((item) => {
+				const key = `${item.value}\0${item.label}`;
+				if (seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			});
 
-			if (items.length === 0) {
-				return current.getSuggestions(lines, cursorLine, cursorCol, options);
-			}
-
+			if (items.length === 0) return baseSuggestions;
 			return { items, prefix: `@${query}` };
 		},
 
@@ -122,6 +134,7 @@ function createAgentAutocompleteProvider(
 
 export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 	let cachedAgents: AgentInfo[] | undefined;
+	let sessionGeneration = 0;
 
 	const getAgents = (): AgentInfo[] => {
 		if (!cachedAgents) {
@@ -136,11 +149,22 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		const generation = ++sessionGeneration;
 		const agents = getAgents();
 		if (agents.length === 0 || ctx.mode !== "tui") return;
-		ctx.ui.addAutocompleteProvider((current) =>
-			createAgentAutocompleteProvider(current, getAgents),
-		);
+
+		// Register after other session_start handlers have installed their wrappers.
+		// pi-fff handles every @ prefix and otherwise shadows providers loaded before it.
+		setTimeout(() => {
+			if (generation !== sessionGeneration) return;
+			ctx.ui.addAutocompleteProvider((current) =>
+				createAgentAutocompleteProvider(current, getAgents),
+			);
+		}, 0);
+	});
+
+	pi.on("session_shutdown", () => {
+		sessionGeneration++;
 	});
 
 	// Inject instruction when user types @agent-name (not @session:) in prompt.
