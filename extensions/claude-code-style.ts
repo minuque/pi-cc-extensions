@@ -301,6 +301,193 @@ function expandHint(theme: any): string {
 	return `${theme.fg("muted", " (")}${keyHint("app.tools.expand", "expand")}${theme.fg("muted", " / click)")}`;
 }
 
+type SgrMousePacket = {
+	code: number;
+	col: number;
+	row: number;
+	final: "M" | "m";
+};
+
+type ToolRenderHit = {
+	component: any;
+	start: number;
+	end: number;
+};
+
+const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
+const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
+const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
+let toolMouseTui: any = null;
+let toolMouseUi: any = null;
+let toolMouseInputUnsubscribe: (() => void) | null = null;
+
+function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
+	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+	const packets: SgrMousePacket[] = [];
+	let offset = 0;
+
+	for (const match of data.matchAll(pattern)) {
+		if (match.index !== offset) return null;
+		offset = match.index + match[0].length;
+		packets.push({
+			code: Number(match[1]),
+			col: Number(match[2]),
+			row: Number(match[3]),
+			final: match[4] as "M" | "m",
+		});
+	}
+
+	return packets.length > 0 && offset === data.length ? packets : null;
+}
+
+function isSgrLeftPress(packet: SgrMousePacket): boolean {
+	const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+	return packet.final === "M" && baseButton === 0 && (packet.code & 32) === 0;
+}
+
+function stripTerminalSequences(value: string): string {
+	return value
+		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function isToolExecutionComponent(value: any): boolean {
+	return Boolean(
+		value
+		&& typeof value === "object"
+		&& typeof value.toolCallId === "string"
+		&& typeof value.setExpanded === "function"
+		&& typeof value.render === "function",
+	);
+}
+
+function renderedLineCount(component: any, width: number, cache: WeakMap<object, number>): number {
+	if (!component || typeof component !== "object") return 0;
+	const cached = cache.get(component);
+	if (cached !== undefined) return cached;
+
+	let count = 0;
+	try {
+		const lines = component.render(width);
+		count = Array.isArray(lines) ? lines.length : 0;
+	} catch {
+		count = 0;
+	}
+	cache.set(component, count);
+	return count;
+}
+
+function collectToolRenderHits(
+	component: any,
+	start: number,
+	width: number,
+	hits: ToolRenderHit[],
+	cache: WeakMap<object, number>,
+	seen: Set<object>,
+): number {
+	if (!component || typeof component !== "object" || seen.has(component)) return start;
+	seen.add(component);
+
+	const count = renderedLineCount(component, width, cache);
+	if (isToolExecutionComponent(component)) {
+		if (count > 0) hits.push({ component, start, end: start + count });
+		return start + count;
+	}
+
+	let childStart = start;
+	if (Array.isArray(component.children)) {
+		for (const child of component.children) {
+			collectToolRenderHits(child, childStart, width, hits, cache, seen);
+			childStart += renderedLineCount(child, width, cache);
+		}
+	}
+	return start + count;
+}
+
+function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null {
+	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
+	const viewportTop = Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0;
+	const bufferRow = viewportTop + screenRow - 1;
+	if (bufferRow < 0 || bufferRow >= previousLines.length) return null;
+
+	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	const hits: ToolRenderHit[] = [];
+	const cache = new WeakMap<object, number>();
+	collectToolRenderHits(tui, 0, width, hits, cache, new Set<object>());
+
+	const clickedLine = stripTerminalSequences(String(previousLines[bufferRow] ?? ""));
+	for (const hit of hits) {
+		if (bufferRow < hit.start || bufferRow >= hit.end) continue;
+		const component = hit.component;
+		const expanded = Boolean(component.expanded);
+		// Match Pi's old click contract: collapsed results expose a click hint;
+		// expanded results can be collapsed by clicking any rendered line.
+		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
+		return hit;
+	}
+	return null;
+}
+
+function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
+	const hit = findToolAtScreenRow(tui, packet.row);
+	if (!hit) return false;
+
+	const nextExpanded = !Boolean(hit.component.expanded);
+	hit.component.setExpanded(nextExpanded);
+	hit.component.invalidate?.();
+	tui.requestRender?.();
+	return true;
+}
+
+function handleToolMouseInput(data: string): { consume: true } | undefined {
+	if (!toolMouseTui) return undefined;
+	const packets = parseSgrMousePackets(data);
+	if (!packets) return undefined;
+
+	for (const packet of packets) {
+		if (isSgrLeftPress(packet)) {
+			toggleToolAtMouseClick(toolMouseTui, packet);
+		}
+	}
+	// The default editor cannot interpret mouse escape sequences. Consume them
+	// even when the click was outside a tool result.
+	return { consume: true };
+}
+
+function teardownToolMouseInteraction(): void {
+	toolMouseInputUnsubscribe?.();
+	toolMouseInputUnsubscribe = null;
+	try {
+		toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
+	} catch {
+		// The terminal may already be closed during shutdown.
+	}
+	try {
+		toolMouseUi?.setWidget?.(TOOL_MOUSE_WIDGET_KEY, undefined);
+	} catch {
+		// The UI context may already have been reset during /reload.
+	}
+	toolMouseTui = null;
+	toolMouseUi = null;
+}
+
+function installToolMouseInteraction(ctx: any): void {
+	teardownToolMouseInteraction();
+	if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function") return;
+
+	toolMouseUi = ctx.ui;
+	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any) => {
+		toolMouseTui = tui;
+		tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
+		// Keep the widget visually empty so Pi's default input bar/layout remains.
+		return { render: () => [], invalidate() {} };
+	});
+	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
+}
+
 // Bright green for success icon (truecolor ANSI escape)
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_RESET = "\x1b[0m";
@@ -895,9 +1082,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		diffPreviewByCall.clear();
 		updateStatus(ctx);
+		installToolMouseInteraction(ctx);
 	});
 
 	pi.on("session_shutdown", async () => {
+		teardownToolMouseInteraction();
 		deactivateGlobalToolRendering();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
