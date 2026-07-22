@@ -30,18 +30,13 @@ import { join, resolve } from "node:path";
  *   /ccstyle on           enable
  *   /ccstyle off          disable
  *   /ccstyle status       show current state
- *   /ccstyle minimal      hide most tool output in collapsed view
- *   /ccstyle compact      show short summaries in collapsed view
  *
  * Shortcut:
  *   ctrl+shift+o          toggle on/off
  */
 
-type StyleMode = "compact" | "minimal";
-
 type Config = {
 	enabled: boolean;
-	mode: StyleMode;
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "claude-code-style.json");
@@ -54,13 +49,12 @@ function loadConfig(): Config {
 			const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
 			return {
 				enabled: parsed.enabled ?? true,
-				mode: parsed.mode === "minimal" ? "minimal" : "compact",
 			};
 		}
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}
-	return { enabled: true, mode: "compact" };
+	return { enabled: true };
 }
 
 function saveConfig() {
@@ -1097,7 +1091,7 @@ function renderFileDiffPreview(_toolName: string, _args: any, theme: any, contex
 }
 
 function statusText() {
-	return config.enabled ? `CC ${config.mode}` : "CC off";
+	return config.enabled ? "CC on" : "CC off";
 }
 
 function updateStatus(ctx: any) {
@@ -1207,14 +1201,7 @@ function createCcstyleTool(originalTool: any): any {
 			const expanded = isToolExpanded(options, context);
 
 			const text = textFromResult(result);
-			let rendered = "";
-			if (config.mode === "minimal" && !expanded) {
-				rendered = "";
-			} else if (!expanded) {
-				rendered = text ? oneLine(text, 96) : "Done";
-			} else {
-				rendered = text;
-			}
+			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
 
 			const hint = !expanded && hasExpandableResult(text) ? expandHint(theme) : "";
 			if (expanded) return renderExpandedToolResult(rendered, theme, isError);
@@ -1509,35 +1496,27 @@ export default function (pi: ExtensionAPI) {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
 				{ value: "off", label: "off", description: "Disable Claude Code style" },
-				{ value: "status", label: "status", description: "Show current toggle and mode" },
-				{ value: "minimal", label: "minimal", description: "Hide most tool output in collapsed view" },
-				{ value: "compact", label: "compact", description: "Show short summaries in collapsed view" },
+				{ value: "status", label: "status", description: "Show current state" },
 			];
 			return topLevel.filter((item) => item.value.startsWith(prefix));
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (arg === "on" || arg === "enable") config.enabled = true;
-			else if (arg === "off" || arg === "disable") config.enabled = false;
-			else if (arg === "minimal") {
-				config.enabled = true;
-				config.mode = "minimal";
-			} else if (arg === "compact") {
-				config.enabled = true;
-				config.mode = "compact";
-			} else if (arg === "status") {
+			if (arg === "on") config.enabled = true;
+			else if (arg === "off") config.enabled = false;
+			else if (arg === "status") {
 				updateStatus(ctx);
-				ctx.ui.notify(
-					`Claude Code style: ${config.enabled ? "on" : "off"}, mode=${config.mode}`,
-					"info",
-				);
+				ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
 				return;
-			} else {
+			} else if (!arg) {
 				config.enabled = !config.enabled;
+			} else {
+				ctx.ui.notify("Usage: /ccstyle [on|off|status]", "warning");
+				return;
 			}
 			saveConfig();
 			updateStatus(ctx);
-			ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}, mode=${config.mode}`, "info");
+			ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
 		},
 	});
 
@@ -1584,7 +1563,6 @@ export default function (pi: ExtensionAPI) {
 		call: (args) => fileAction(args, "Read"),
 		result: (result, { expanded }) => {
 			const text = textFromResult(result);
-			if (config.mode === "minimal" && !expanded) return "";
 			if (!expanded) return `${countLines(text)} lines read`;
 			return text;
 		},
@@ -1594,7 +1572,6 @@ export default function (pi: ExtensionAPI) {
 		call: (args) => `Bash(${oneLine(args?.command, 86) || "..."})`,
 		result: (result, { expanded }) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			if (!expanded) return summarizeBash(text);
 			return text;
 		},
@@ -1606,7 +1583,6 @@ export default function (pi: ExtensionAPI) {
 		diffAfterResult: true,
 		result: (result, { expanded }, _theme, context) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			return summarizeDiffStats(context?.state?.ccstyleDiffPreview) ?? summarizeEdit(text);
 		},
 	});
@@ -1621,7 +1597,6 @@ export default function (pi: ExtensionAPI) {
 		diffAfterResult: true,
 		result: (result, { expanded }, _theme, context) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			return summarizeDiffStats(context?.state?.ccstyleDiffPreview) ?? (text ? oneLine(text, 96) : "Written");
 		},
 	});
@@ -1630,7 +1605,6 @@ export default function (pi: ExtensionAPI) {
 		call: (args) => `Find(${args?.pattern || "..."}${args?.path ? ` in ${shortenPath(args.path)}` : ""})`,
 		result: (result, { expanded }) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			if (!expanded) return `${countLines(text)} files`;
 			return text;
 		},
@@ -1640,7 +1614,6 @@ export default function (pi: ExtensionAPI) {
 		call: (args) => `Grep(${args?.pattern ? `/${oneLine(args.pattern, 48)}/` : "..."})`,
 		result: (result, { expanded }) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			if (!expanded) {
 				const matches = countLines(text);
 				const files = parsePathCount(text);
@@ -1654,7 +1627,6 @@ export default function (pi: ExtensionAPI) {
 		call: (args) => `List(${shortenPath(args?.path || ".")})`,
 		result: (result, { expanded }) => {
 			const text = textFromResult(result).trim();
-			if (config.mode === "minimal" && !expanded) return "";
 			if (!expanded) return `${countLines(text)} entries`;
 			return text;
 		},

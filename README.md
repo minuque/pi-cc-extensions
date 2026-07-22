@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="#安装"><img alt="Pi package" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="./package.json"><img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-66E3C4?style=flat-square"></a>
+  <a href="./package.json"><img alt="Version 0.5.6" src="https://img.shields.io/badge/version-0.5.6-66E3C4?style=flat-square"></a>
   <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
   <a href="./extensions"><img alt="TypeScript extensions" src="https://img.shields.io/badge/TypeScript-extensions-3178C6?style=flat-square"></a>
 </p>
@@ -15,10 +15,15 @@
 
 ---
 
-## 截图
+## 界面预览
 
 <table>
   <tr>
+    <td width="50%" align="center">
+      <img src="./assets/readme/fixed-editor-navigation.webp" width="100%" alt="Pi fixed-editor 中的工具结果、回到底部按钮与 Ctrl+End 快捷键">
+      <br>
+      <sub><b>固定编辑器工作流</b><br>工具结果摘要、折叠展开与键盘导航</sub>
+    </td>
     <td width="50%" align="center">
       <img src="./assets/readme/session-reference.webp" width="100%" alt="在 Pi 中通过 @ 补全选择历史 Session">
       <br>
@@ -55,9 +60,9 @@
 
 ```text
 /ccstyle             # 切换开关
+/ccstyle on          # 开启
+/ccstyle off         # 关闭
 /ccstyle status      # 查看状态
-/ccstyle compact     # 紧凑摘要
-/ccstyle minimal     # 最小化输出
 ```
 
 ### 上下文窗口查看
@@ -82,6 +87,16 @@
 
 Session 模糊查询默认显示 5 个候选；若已加载 `pi-subagents`，也可直接引用现有 SubAgent。一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。更多细节见 [`extensions/session-reference/README.md`](./extensions/session-reference/README.md)。
 
+### SubAgent `@` 补全
+
+`extensions/agent-autocomplete.ts` 将 `~/.pi/agent/agents/*.md` 中定义的 SubAgent 接入 `@` 补全：
+
+1. 在提示词中输入 `@agent-name`。
+2. 从补全列表中选择 SubAgent。
+3. 提交后自动注入委托指令；提示词中提到的每个 SubAgent 都会分别交由 Agent 工具处理。
+
+该补全不会占用 `@session:` 的历史 Session 引用语法；修改 SubAgent 定义后执行 `/reload` 即可重新加载。
+
 ## 安装
 
 从 npm 安装（推荐）：
@@ -100,7 +115,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ```text
 /context
-/ccstyle status
+/ccstyle on
 ```
 
 ## 本地开发
@@ -126,20 +141,3 @@ pi install /absolute/path/to/pi-cc-extensions
 
 - Node.js `>=22.19.0`
 - 作为 Pi package 加载，入口由根目录 `package.json` 的 `pi.extensions` 显式声明
-
-## 发布
-
-发布前检查：
-
-```bash
-npm test
-npm pack --dry-run
-```
-
-使用 npm 发布。未指定 tag 时使用 `latest`：
-
-```bash
-npm run release
-npm run release -- --tag next
-npm run release -- --tag beta
-```
