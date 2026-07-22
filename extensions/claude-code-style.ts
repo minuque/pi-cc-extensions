@@ -321,7 +321,7 @@ let toolMouseTui: any = null;
 let toolMouseUi: any = null;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
 let toolMouseInputPatchTui: any = null;
-let toolMouseInputPatchOriginalAdd: ((...args: any[]) => any) | null = null;
+let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
 let toolMouseInputPatchWrapper: ((...args: any[]) => any) | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
@@ -445,56 +445,51 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 }
 
 /**
- * Pi TUI input listeners are ordered by registration. pi-zentui's fixed editor
- * consumes left-button presses for selection, so a later click listener never
- * sees tool rows. Keep this handler first while still returning undefined for
- * scroll/selection events so pi-zentui remains the owner of those interactions.
+ * pi-zentui consumes left-button presses for text selection. Intercept only a
+ * tool-row click at the TUI input boundary, before extension listeners run.
+ * Keyboard, wheel, drag, release, and non-tool clicks continue through Pi's
+ * original dispatcher, preserving pi-zentui's scroll-to-bottom behavior.
  */
-function prioritizeToolMouseInput(tui: any): void {
-	const listeners = tui?.inputListeners;
-	if (!(listeners instanceof Set) || !listeners.has(handleToolMouseInput)) return;
+function patchToolMouseInputCapture(tui: any): void {
+	if (toolMouseInputPatchTui === tui) return;
 
-	const ordered = Array.from(listeners);
-	if (ordered[0] === handleToolMouseInput) return;
-	listeners.clear();
-	listeners.add(handleToolMouseInput);
-	for (const listener of ordered) {
-		if (listener !== handleToolMouseInput) listeners.add(listener);
-	}
-}
-
-function patchToolMouseInputPriority(tui: any): void {
-	if (toolMouseInputPatchTui === tui) {
-		prioritizeToolMouseInput(tui);
-		return;
-	}
-
-	restoreToolMouseInputPriority();
-	const originalAdd = tui?.addInputListener;
-	if (typeof originalAdd !== "function") return;
+	restoreToolMouseInputCapture();
+	const originalHandle = tui?.handleInput;
+	if (typeof originalHandle !== "function") return;
 
 	const wrapper = function (this: any, ...args: any[]): any {
-		const result = Reflect.apply(originalAdd, this, args);
-		prioritizeToolMouseInput(this);
-		return result;
+		const data = args[0];
+		if (typeof data === "string") {
+			const packets = parseSgrMousePackets(data);
+			if (packets) {
+				for (const packet of packets) {
+					if (isSgrLeftPress(packet) && toggleToolAtMouseClick(this, packet)) return;
+				}
+			}
+		}
+		return Reflect.apply(originalHandle, this, args);
 	};
-	tui.addInputListener = wrapper;
+
+	try {
+		tui.handleInput = wrapper;
+	} catch {
+		return;
+	}
 	toolMouseInputPatchTui = tui;
-	toolMouseInputPatchOriginalAdd = originalAdd;
+	toolMouseInputPatchOriginalHandle = originalHandle;
 	toolMouseInputPatchWrapper = wrapper;
-	prioritizeToolMouseInput(tui);
 }
 
-function restoreToolMouseInputPriority(): void {
+function restoreToolMouseInputCapture(): void {
 	if (
 		toolMouseInputPatchTui
-		&& toolMouseInputPatchOriginalAdd
-		&& toolMouseInputPatchTui.addInputListener === toolMouseInputPatchWrapper
+		&& toolMouseInputPatchOriginalHandle
+		&& toolMouseInputPatchTui.handleInput === toolMouseInputPatchWrapper
 	) {
-		toolMouseInputPatchTui.addInputListener = toolMouseInputPatchOriginalAdd;
+		toolMouseInputPatchTui.handleInput = toolMouseInputPatchOriginalHandle;
 	}
 	toolMouseInputPatchTui = null;
-	toolMouseInputPatchOriginalAdd = null;
+	toolMouseInputPatchOriginalHandle = null;
 	toolMouseInputPatchWrapper = null;
 }
 
@@ -528,7 +523,7 @@ function teardownToolMouseInteraction(): void {
 	} catch {
 		// The UI context may already have been reset during /reload.
 	}
-	restoreToolMouseInputPriority();
+	restoreToolMouseInputCapture();
 	toolMouseTui = null;
 	toolMouseUi = null;
 }
@@ -541,7 +536,7 @@ function installToolMouseInteraction(ctx: any): void {
 	toolMouseUi = ctx.ui;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any) => {
 		toolMouseTui = tui;
-		patchToolMouseInputPriority(tui);
+		patchToolMouseInputCapture(tui);
 		tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
 		// Keep the widget visually empty so Pi's default input bar/layout remains.
 		return { render: () => [], invalidate() {} };
