@@ -412,49 +412,84 @@ function collectToolRenderHits(
 	return start + count;
 }
 
+function collectToolComponents(component: any, tools: any[], seen = new Set<any>()): void {
+	if (!component || typeof component !== "object" || seen.has(component)) return;
+	seen.add(component);
+	if (isToolExecutionComponent(component)) {
+		tools.push(component);
+		return;
+	}
+	if (!Array.isArray(component.children)) return;
+	for (const child of component.children) collectToolComponents(child, tools, seen);
+}
+
+function fixedEditorLineMatch(rendered: string, visible: string): boolean {
+	return rendered === visible
+		|| (visible.length >= 8 && (rendered.includes(visible) || visible.includes(rendered)));
+}
+
+function fixedEditorContextScore(
+	renderedLines: string[],
+	renderedRow: number,
+	visibleLines: string[],
+	visibleRow: number,
+): number {
+	let score = renderedLines[renderedRow] === visibleLines[visibleRow] ? 100 : 50;
+	for (const direction of [-1, 1]) {
+		for (let distance = 1; distance <= 4; distance++) {
+			const candidate = renderedLines[renderedRow + direction * distance];
+			const visible = visibleLines[visibleRow + direction * distance];
+			if (candidate === undefined || visible === undefined || candidate !== visible) break;
+			score += 5 - distance;
+		}
+	}
+	return score;
+}
+
 function findToolAtFixedEditorRow(
 	tui: any,
-	bufferRow: number,
+	visibleRow: number,
 	previousLines: string[],
 	width: number,
 ): ToolRenderHit | null {
-	if (bufferRow < 0 || bufferRow >= previousLines.length) return null;
-	const clickedLine = stripTerminalSequences(String(previousLines[bufferRow] ?? ""));
+	if (visibleRow < 0 || visibleRow >= previousLines.length) return null;
+	const visibleLines = previousLines.map((line) => stripTerminalSequences(String(line)));
+	const clickedLine = visibleLines[visibleRow] ?? "";
 	if (!clickedLine) return null;
 
-	const hits: ToolRenderHit[] = [];
-	collectToolRenderHits(tui, 0, width, hits, new WeakMap<object, number>(), new Set<object>());
-	const clickedOccurrence = previousLines
-		.slice(0, bufferRow + 1)
-		.filter((line) => stripTerminalSequences(String(line)) === clickedLine)
-		.length;
-	let matchingOccurrence = 0;
-
-	for (const hit of hits) {
-		const component = hit.component;
+	const tools: any[] = [];
+	collectToolComponents(tui, tools);
+	let best: { hit: ToolRenderHit; score: number } | null = null;
+	for (const component of tools) {
 		const expanded = Boolean(component.expanded);
 		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
-		const renderedLines = renderComponentTree(component, width);
-		const matchingLines = renderedLines.filter((line) => {
-			const rendered = stripTerminalSequences(String(line));
-			return rendered === clickedLine
-				|| (clickedLine.length >= 8 && (rendered.includes(clickedLine) || clickedLine.includes(rendered)));
-		}).length;
-		if (matchingLines === 0) continue;
-		matchingOccurrence += matchingLines;
-		if (clickedOccurrence <= matchingOccurrence) return hit;
+		const renderedLines = renderComponentTree(component, width)
+			.map((line) => stripTerminalSequences(String(line)));
+		for (let renderedRow = 0; renderedRow < renderedLines.length; renderedRow++) {
+			if (!fixedEditorLineMatch(renderedLines[renderedRow] ?? "", clickedLine)) continue;
+			const score = fixedEditorContextScore(renderedLines, renderedRow, visibleLines, visibleRow);
+			if (!best || score > best.score) {
+				best = {
+					hit: { component, start: visibleRow, end: visibleRow + renderedLines.length },
+					score,
+				};
+			}
+		}
 	}
-	return null;
+	return best?.hit ?? null;
 }
 
 function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null {
 	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
-	const viewportTop = Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0;
-	const bufferRow = viewportTop + screenRow - 1;
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
 	if (isFixedEditorTui(tui)) {
-		return findToolAtFixedEditorRow(tui, bufferRow, previousLines, width);
+		// Zentui replaces Pi's root render with the already-sliced visible
+		// transcript. previousViewportTop remains cursor bookkeeping and must not
+		// be added to a physical mouse row here.
+		return findToolAtFixedEditorRow(tui, screenRow - 1, previousLines, width);
 	}
+	const viewportTop = Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0;
+	const bufferRow = viewportTop + screenRow - 1;
 	if (bufferRow < 0 || bufferRow >= previousLines.length) return null;
 
 	const hits: ToolRenderHit[] = [];
