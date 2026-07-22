@@ -326,7 +326,7 @@ let scrollButtonWidget: any = null;
 let pendingScrollMessages = 0;
 let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
-let resumeRenderTimer: ReturnType<typeof setTimeout> | null = null;
+let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -888,9 +888,9 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 }
 
 function teardownToolMouseInteraction(): void {
-	if (resumeRenderTimer) {
-		clearTimeout(resumeRenderTimer);
-		resumeRenderTimer = null;
+	if (sessionRenderTimer) {
+		clearTimeout(sessionRenderTimer);
+		sessionRenderTimer = null;
 	}
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
@@ -934,15 +934,15 @@ function installToolMouseInteraction(ctx: any): void {
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
 }
 
-function scheduleResumeRender(): void {
+function scheduleSessionRender(): void {
 	const tui = toolMouseTui;
 	if (!tui || typeof tui.requestRender !== "function") return;
-	if (resumeRenderTimer) clearTimeout(resumeRenderTimer);
-	// /resume rebuilds the transcript while later session_start handlers may still
-	// replace UI components. Repaint after that turn so the restored messages are
-	// not left hidden until the next editor input event.
-	resumeRenderTimer = setTimeout(() => {
-		resumeRenderTimer = null;
+	if (sessionRenderTimer) clearTimeout(sessionRenderTimer);
+	// Restored transcripts are populated at different points for startup, reload,
+	// and session replacement. Repaint after session_start and the surrounding UI
+	// rebuild finish so messages are not left hidden until the next terminal input.
+	sessionRenderTimer = setTimeout(() => {
+		sessionRenderTimer = null;
 		if (toolMouseTui === tui) tui.requestRender(true);
 	}, 0);
 }
@@ -1569,13 +1569,13 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		diffPreviewByCall.clear();
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
 		installToolMouseInteraction(ctx);
-		if (event?.reason === "resume") scheduleResumeRender();
+		scheduleSessionRender();
 	});
 
 	pi.on("message_start", async (event) => {

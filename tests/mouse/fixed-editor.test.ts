@@ -129,17 +129,19 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	await new Promise<void>((resolve) => setTimeout(resolve, 80));
 	assert.deepEqual(scrollButton.render(80), []);
 
-	// Resume installs UI alongside other extensions. A deferred forced repaint
-	// must reveal restored transcript rows without waiting for editor input.
+	// Startup continuation, /reload, and /resume populate or rebuild transcripts
+	// at different lifecycle points. All need a deferred forced repaint instead
+	// of waiting for terminal input to reveal restored rows.
+	for (const reason of ["startup", "reload", "resume"]) {
+		renderRequests.length = 0;
+		await events.get("session_start")?.({ reason }, { mode: "tui", hasUI: true, ui });
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		assert.ok(renderRequests.includes(true), `${reason} forces a deferred repaint`);
+	}
+
 	renderRequests.length = 0;
-	await events.get("session_start")?.({ reason: "resume" }, { mode: "tui", hasUI: true, ui });
+	await events.get("session_start")?.({ reason: "reload" }, { mode: "tui", hasUI: true, ui });
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
-
-	await events.get("session_start")?.({ reason: "resume" }, { mode: "tui", hasUI: true, ui });
-	await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	assert.ok(renderRequests.includes(true));
-
-	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 });
