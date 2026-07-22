@@ -1,6 +1,6 @@
 {
   "name": "pi-cc-extensions",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Personal extensions for the Pi coding agent",
   "type": "module",
   "keywords": [
