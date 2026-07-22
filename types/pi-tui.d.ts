@@ -5,7 +5,9 @@
 declare module "@earendil-works/pi-tui" {
   export const Text: any;
   export const Component: any;
+  export const Container: any;
   export const SelectList: any;
+  export const SettingsList: any;
   export const Key: any;
   export const TUI_KEYBINDINGS: any;
   export function matchesKey(...args: any[]): any;

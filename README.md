@@ -59,7 +59,7 @@
 常用命令：
 
 ```text
-/ccstyle             # 切换开关
+/ccstyle             # 打开交互式配置面板
 /ccstyle on          # 开启
 /ccstyle off         # 关闭
 /ccstyle status      # 查看状态

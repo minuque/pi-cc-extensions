@@ -9,10 +9,11 @@ import {
 	createWriteToolDefinition,
 	generateDiffString,
 	keyHint,
+	getSettingsListTheme,
 	renderDiff,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Container, SettingsList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -26,7 +27,7 @@ import { join, resolve } from "node:path";
  * expand only that tool.
  *
  * Dynamic commands:
- *   /ccstyle              toggle on/off
+ *   /ccstyle              open interactive settings
  *   /ccstyle on           enable
  *   /ccstyle off          disable
  *   /ccstyle status       show current state
@@ -325,6 +326,7 @@ let scrollButtonWidget: any = null;
 let pendingScrollMessages = 0;
 let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
+let resumeRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -586,15 +588,14 @@ function hideScrollButton(tui: any): void {
 }
 
 function scheduleScrollButtonSync(tui: any, data: string): void {
-	if (!scrollButtonVisible || !isScrollNavigationInput(data) || scrollButtonSyncScheduled) return;
+	if (!isScrollNavigationInput(data) || scrollButtonSyncScheduled) return;
 	scrollButtonSyncScheduled = true;
 	const previousLines = tui.previousLines;
 	const check = (attempt: number) => {
 		scrollButtonSyncScheduled = false;
-		if (toolMouseTui !== tui || !scrollButtonVisible) return;
-		// Pi renders on its own frame timer. Do not inspect the old visible window
-		// before Zentui has applied the new scroll offset, or PageUp at bottom would
-		// immediately hide the button it just requested.
+		if (toolMouseTui !== tui) return;
+		// Pi renders on its own frame timer. Inspect the resulting viewport before
+		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
 		if (!rendered && attempt < 4) {
 			scrollButtonSyncScheduled = true;
@@ -604,35 +605,20 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 			}
 			return;
 		}
-		if (isFixedEditorAtBottom(tui)) hideScrollButton(tui);
+		const nextVisible = !isFixedEditorAtBottom(tui);
+		if (!nextVisible) pendingScrollMessages = 0;
+		if (nextVisible !== scrollButtonVisible) {
+			scrollButtonVisible = nextVisible;
+			tui.requestRender?.();
+		}
 	};
 	process.nextTick(() => check(0));
 }
 
 function updateScrollButtonFromInput(tui: any, data: string): void {
 	if (!isFixedEditorTui(tui)) return;
-
-	let movedUp = matchesKey(data, "pageUp") || ZENTUI_PAGE_UP_INPUT.test(data);
-	const packets = parseSgrMousePackets(data);
-	if (packets) {
-		movedUp = packets.some((packet) => {
-			const baseButton = packet.code & ~(4 | 8 | 16 | 32);
-			return packet.final === "M" && baseButton === 64;
-		});
-	}
-
-	const jumpedBottom =
-		matchesKey(data, "enter")
-		|| matchesKey(data, "return")
-		|| isScrollBottomInput(data);
-	if (jumpedBottom) {
+	if (matchesKey(data, "enter") || matchesKey(data, "return") || isScrollBottomInput(data)) {
 		hideScrollButton(tui);
-		return;
-	}
-	const nextVisible = movedUp ? true : scrollButtonVisible;
-	if (nextVisible !== scrollButtonVisible) {
-		scrollButtonVisible = nextVisible;
-		tui.requestRender?.();
 	}
 }
 
@@ -836,6 +822,8 @@ function patchToolMouseInputCapture(tui: any): void {
 		const data = args[0];
 		if (typeof data === "string") {
 			updateScrollButtonFromInput(this, data);
+			// Capture the current viewport before Pi/Zentui applies the scroll input.
+			scheduleScrollButtonSync(this, data);
 			if (isFixedEditorTui(this) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(this)) return;
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
@@ -900,6 +888,10 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 }
 
 function teardownToolMouseInteraction(): void {
+	if (resumeRenderTimer) {
+		clearTimeout(resumeRenderTimer);
+		resumeRenderTimer = null;
+	}
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
 	try {
@@ -940,6 +932,19 @@ function installToolMouseInteraction(ctx: any): void {
 		return widget;
 	});
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
+}
+
+function scheduleResumeRender(): void {
+	const tui = toolMouseTui;
+	if (!tui || typeof tui.requestRender !== "function") return;
+	if (resumeRenderTimer) clearTimeout(resumeRenderTimer);
+	// /resume rebuilds the transcript while later session_start handlers may still
+	// replace UI components. Repaint after that turn so the restored messages are
+	// not left hidden until the next editor input event.
+	resumeRenderTimer = setTimeout(() => {
+		resumeRenderTimer = null;
+		if (toolMouseTui === tui) tui.requestRender(true);
+	}, 0);
 }
 
 // Bright green for success icon (truecolor ANSI escape)
@@ -1090,12 +1095,49 @@ function renderFileDiffPreview(_toolName: string, _args: any, theme: any, contex
 	return renderDiffPreview(state.ccstyleDiffPreview, theme, isToolExpanded(undefined, context));
 }
 
-function statusText() {
-	return config.enabled ? "CC on" : "CC off";
+function applyEnabledState(enabled: boolean, ctx: any): void {
+	config.enabled = enabled;
+	saveConfig();
+	ctx.ui.notify(`Claude Code style: ${enabled ? "on" : "off"}`, "info");
 }
 
-function updateStatus(ctx: any) {
-	ctx.ui.setStatus("ccstyle", statusText());
+async function showCcstylePanel(ctx: any): Promise<void> {
+	if (ctx?.mode !== "tui" || !ctx?.hasUI || typeof ctx.ui?.custom !== "function") {
+		ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
+		return;
+	}
+
+	await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: (value?: void) => void) => {
+		const container = new Container();
+		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 1));
+		const settingsList = new SettingsList(
+			[{
+				id: "enabled",
+				label: "Output style",
+				description: "Use compact Claude Code-like tool rendering",
+				currentValue: config.enabled ? "on" : "off",
+				values: ["on", "off"],
+			}],
+			3,
+			getSettingsListTheme(),
+			(id: string, newValue: string) => {
+				if (id !== "enabled" || (newValue !== "on" && newValue !== "off")) return;
+				applyEnabledState(newValue === "on", ctx);
+				settingsList.updateValue(id, newValue);
+				tui.requestRender();
+			},
+			() => done(),
+		);
+		container.addChild(settingsList);
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput(data: string) {
+				settingsList.handleInput?.(data);
+				tui.requestRender();
+			},
+		};
+	});
 }
 
 function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any[], fallback = "") {
@@ -1502,21 +1544,19 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (arg === "on") config.enabled = true;
-			else if (arg === "off") config.enabled = false;
-			else if (arg === "status") {
-				updateStatus(ctx);
-				ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
-				return;
-			} else if (!arg) {
-				config.enabled = !config.enabled;
-			} else {
-				ctx.ui.notify("Usage: /ccstyle [on|off|status]", "warning");
+			if (!arg) {
+				await showCcstylePanel(ctx);
 				return;
 			}
-			saveConfig();
-			updateStatus(ctx);
-			ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
+			if (arg === "on" || arg === "off") {
+				applyEnabledState(arg === "on", ctx);
+				return;
+			}
+			if (arg === "status") {
+				ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
+				return;
+			}
+			ctx.ui.notify("Usage: /ccstyle [on|off|status]", "warning");
 		},
 	});
 
@@ -1525,17 +1565,17 @@ export default function (pi: ExtensionAPI) {
 		handler: async (ctx) => {
 			config.enabled = !config.enabled;
 			saveConfig();
-			updateStatus(ctx);
 			ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		diffPreviewByCall.clear();
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
-		updateStatus(ctx);
+		ctx.ui.setStatus("ccstyle", undefined);
 		installToolMouseInteraction(ctx);
+		if (event?.reason === "resume") scheduleResumeRender();
 	});
 
 	pi.on("message_start", async (event) => {

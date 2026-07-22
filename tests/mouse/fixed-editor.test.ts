@@ -7,6 +7,7 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
 	let expandedToolId: string | null = null;
 	let editorInputCount = 0;
+	const renderRequests: unknown[] = [];
 	const createTool = (toolCallId: string, title: string) => ({
 		toolCallId,
 		expanded: false,
@@ -57,11 +58,11 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		],
 		// previousViewportTop is unrelated cursor bookkeeping.
 		previousViewportTop: 17,
-		requestRender() {},
+		requestRender(force?: boolean) { renderRequests.push(force); },
 		handleInput(data: string) {
-			if (data === "\x1b[5;9~") {
+			if (data === "\x1b[5;9~" && transcript.children.length > 0) {
 				this.previousLines = ["", "✓ Bash(echo old)", "  └ 1 line output (ctrl+o expand / click)"];
-			} else if (data === "\x1b[6~") {
+			} else if (data === "\x1b[6~" && transcript.children.length > 0) {
 				this.previousLines = ["", "✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
 			}
 			for (const listener of inputListeners) {
@@ -100,8 +101,10 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	assert.equal(offscreenTool.expanded, false);
 	assert.equal(visibleTool.expanded, true);
 
-	// PageUp shows the affordance, and a new assistant message is counted.
+	// PageUp shows the affordance after the viewport actually moves, and a new
+	// assistant message is counted.
 	tui.handleInput("\x1b[5;9~");
+	await new Promise<void>((resolve) => process.nextTick(resolve));
 	events.get("message_start")?.({ message: { role: "assistant" } }, {});
 	assert.match(scrollButton.render(80)[0], /1 new message/);
 	assert.match(scrollButton.render(80)[0], /Ctrl\+End/);
@@ -117,6 +120,26 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	tui.handleInput("\x1b[8^");
 	assert.deepEqual(scrollButton.render(80), []);
 	assert.equal(editorInputCount, editorInputsBeforeShortcut);
+
+	// An empty transcript cannot move, so PageUp must never flash the affordance.
+	transcript.children = [];
+	tui.previousLines = [];
+	tui.handleInput("\x1b[5;9~");
+	assert.deepEqual(scrollButton.render(80), []);
+	await new Promise<void>((resolve) => setTimeout(resolve, 80));
+	assert.deepEqual(scrollButton.render(80), []);
+
+	// Resume installs UI alongside other extensions. A deferred forced repaint
+	// must reveal restored transcript rows without waiting for editor input.
+	renderRequests.length = 0;
+	await events.get("session_start")?.({ reason: "resume" }, { mode: "tui", hasUI: true, ui });
+	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
+	await new Promise<void>((resolve) => setTimeout(resolve, 0));
+	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
+
+	await events.get("session_start")?.({ reason: "resume" }, { mode: "tui", hasUI: true, ui });
+	await new Promise<void>((resolve) => setTimeout(resolve, 0));
+	assert.ok(renderRequests.includes(true));
 
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 });
