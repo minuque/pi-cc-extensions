@@ -318,6 +318,8 @@ const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
 const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
+const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
+const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
 let toolMouseTui: any = null;
 let toolMouseUi: any = null;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
@@ -326,6 +328,9 @@ let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
 let toolMouseInputPatchWrapper: ((...args: any[]) => any) | null = null;
 let scrollButtonVisible = false;
 let scrollButtonWidget: any = null;
+let pendingScrollMessages = 0;
+let assistantMessageActive = false;
+let scrollButtonSyncScheduled = false;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -520,6 +525,96 @@ function isFixedEditorTui(tui: any): boolean {
 	return typeof ownRows?.get === "function" && ownRows.get !== inheritedRows?.get;
 }
 
+function formatShortcut(shortcut: string): string {
+	return shortcut
+		.split("+")
+		.map((part) => part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+		.join("+");
+}
+
+function isScrollBottomInput(data: string): boolean {
+	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
+}
+
+function isScrollNavigationInput(data: string): boolean {
+	if (
+		matchesKey(data, "pageUp")
+		|| matchesKey(data, "pageDown")
+		|| ZENTUI_PAGE_UP_INPUT.test(data)
+		|| ZENTUI_PAGE_DOWN_INPUT.test(data)
+	) {
+		return true;
+	}
+	const packets = parseSgrMousePackets(data);
+	return Boolean(packets?.some((packet) => {
+		const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+		return packet.final === "M" && (baseButton === 64 || baseButton === 65);
+	}));
+}
+
+function directRenderLines(component: any, width: number): string[] {
+	try {
+		const lines = component?.render?.(width);
+		return Array.isArray(lines) ? lines : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Render only the transcript portion that fixed-editor leaves scrollable. */
+function renderFixedScrollableRoot(tui: any, width: number): string[] {
+	const children = Array.isArray(tui?.children) ? tui.children : [];
+	const editorIndex = children.findIndex((child: any) =>
+		containsEditorLike(child, tui.focusedComponent),
+	);
+	const end = editorIndex >= 2 ? editorIndex - 2 : children.length;
+	return children.slice(0, end).flatMap((child: any) => directRenderLines(child, width));
+}
+
+function isFixedEditorAtBottom(tui: any): boolean {
+	if (!isFixedEditorTui(tui)) return true;
+	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
+	if (visibleLines.length === 0) return true;
+	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	const rootLines = renderFixedScrollableRoot(tui, width);
+	if (rootLines.length <= visibleLines.length) return true;
+	const tail = rootLines.slice(-visibleLines.length);
+	return tail.every((line, index) =>
+		stripTerminalSequences(String(line)) === stripTerminalSequences(String(visibleLines[index] ?? "")),
+	);
+}
+
+function hideScrollButton(tui: any): void {
+	const changed = scrollButtonVisible || pendingScrollMessages > 0;
+	scrollButtonVisible = false;
+	pendingScrollMessages = 0;
+	if (changed) tui.requestRender?.();
+}
+
+function scheduleScrollButtonSync(tui: any, data: string): void {
+	if (!scrollButtonVisible || !isScrollNavigationInput(data) || scrollButtonSyncScheduled) return;
+	scrollButtonSyncScheduled = true;
+	const previousLines = tui.previousLines;
+	const check = (attempt: number) => {
+		scrollButtonSyncScheduled = false;
+		if (toolMouseTui !== tui || !scrollButtonVisible) return;
+		// Pi renders on its own frame timer. Do not inspect the old visible window
+		// before Zentui has applied the new scroll offset, or PageUp at bottom would
+		// immediately hide the button it just requested.
+		const rendered = tui.previousLines !== previousLines;
+		if (!rendered && attempt < 4) {
+			scrollButtonSyncScheduled = true;
+			const timer = setTimeout(() => check(attempt + 1), 16);
+			if (typeof timer === "object" && timer !== null && "unref" in timer) {
+				(timer as { unref: () => void }).unref();
+			}
+			return;
+		}
+		if (isFixedEditorAtBottom(tui)) hideScrollButton(tui);
+	};
+	process.nextTick(() => check(0));
+}
+
 function updateScrollButtonFromInput(tui: any, data: string): void {
 	if (!isFixedEditorTui(tui)) return;
 
@@ -532,8 +627,15 @@ function updateScrollButtonFromInput(tui: any, data: string): void {
 		});
 	}
 
-	const jumpedBottom = matchesKey(data, "enter") || matchesKey(data, "return");
-	const nextVisible = jumpedBottom ? false : movedUp ? true : scrollButtonVisible;
+	const jumpedBottom =
+		matchesKey(data, "enter")
+		|| matchesKey(data, "return")
+		|| isScrollBottomInput(data);
+	if (jumpedBottom) {
+		hideScrollButton(tui);
+		return;
+	}
+	const nextVisible = movedUp ? true : scrollButtonVisible;
 	if (nextVisible !== scrollButtonVisible) {
 		scrollButtonVisible = nextVisible;
 		tui.requestRender?.();
@@ -692,8 +794,7 @@ function jumpToBottomWithoutSubmit(tui: any): boolean {
 	} finally {
 		tui.focusedComponent = focused;
 	}
-	scrollButtonVisible = false;
-	tui.requestRender?.();
+	hideScrollButton(tui);
 	return true;
 }
 
@@ -715,7 +816,11 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 
 function renderScrollButton(width: number, theme: any): string[] {
 	if (!scrollButtonVisible || !isFixedEditorTui(toolMouseTui)) return [];
-	const label = theme.fg("accent", "[ ↓ Back to bottom · click ]");
+	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
+	const messageText = pendingScrollMessages > 0
+		? `${pendingScrollMessages} new message${pendingScrollMessages === 1 ? "" : "s"}`
+		: "Back to bottom";
+	const label = theme.fg("accent", `[ ↓ ${messageText} · ${shortcut} · click ]`);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
 }
@@ -737,6 +842,7 @@ function patchToolMouseInputCapture(tui: any): void {
 		const data = args[0];
 		if (typeof data === "string") {
 			updateScrollButtonFromInput(this, data);
+			if (isFixedEditorTui(this) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(this)) return;
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
 				for (const packet of packets) {
@@ -745,7 +851,9 @@ function patchToolMouseInputCapture(tui: any): void {
 				}
 			}
 		}
-		return Reflect.apply(originalHandle, this, args);
+		const result = Reflect.apply(originalHandle, this, args);
+		if (typeof data === "string") scheduleScrollButtonSync(this, data);
+		return result;
 	};
 
 	try {
@@ -774,8 +882,14 @@ function restoreToolMouseInputCapture(): void {
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
 	updateScrollButtonFromInput(toolMouseTui, data);
+	if (isFixedEditorTui(toolMouseTui) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(toolMouseTui)) {
+		return { consume: true };
+	}
 	const packets = parseSgrMousePackets(data);
-	if (!packets) return undefined;
+	if (!packets) {
+		scheduleScrollButtonSync(toolMouseTui, data);
+		return undefined;
+	}
 
 	let consumed = false;
 	for (const packet of packets) {
@@ -787,6 +901,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 
 	// Let scrolling, motion, release, and clicks outside tool results reach the
 	// normal TUI input chain (including other extensions such as pi-zentui).
+	scheduleScrollButtonSync(toolMouseTui, data);
 	return consumed ? { consume: true } : undefined;
 }
 
@@ -806,6 +921,9 @@ function teardownToolMouseInteraction(): void {
 	restoreToolMouseInputCapture();
 	scrollButtonVisible = false;
 	scrollButtonWidget = null;
+	pendingScrollMessages = 0;
+	assistantMessageActive = false;
+	scrollButtonSyncScheduled = false;
 	toolMouseTui = null;
 	toolMouseUi = null;
 }
@@ -1369,6 +1487,18 @@ function registerWrappedTool(pi: ExtensionAPI, name: keyof ReturnType<typeof cre
 	});
 }
 
+function notePendingScrollMessage(role: unknown): void {
+	if (!toolMouseTui || !isFixedEditorTui(toolMouseTui) || !scrollButtonVisible) return;
+	if (role === "assistant") {
+		if (assistantMessageActive) return;
+		assistantMessageActive = true;
+	} else if (role !== "toolResult") {
+		return;
+	}
+	pendingScrollMessages += 1;
+	toolMouseTui.requestRender?.();
+}
+
 export default function (pi: ExtensionAPI) {
 	installGlobalToolRendering();
 	deactivateLegacyCompactionRendering();
@@ -1423,8 +1553,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		diffPreviewByCall.clear();
+		pendingScrollMessages = 0;
+		assistantMessageActive = false;
 		updateStatus(ctx);
 		installToolMouseInteraction(ctx);
+	});
+
+	pi.on("message_start", async (event) => {
+		notePendingScrollMessage(event?.message?.role);
+	});
+
+	pi.on("message_update", async (event) => {
+		if (event?.message?.role === "assistant") notePendingScrollMessage("assistant");
+	});
+
+	pi.on("message_end", async (event) => {
+		if (event?.message?.role === "assistant") assistantMessageActive = false;
 	});
 
 	pi.on("session_shutdown", async () => {

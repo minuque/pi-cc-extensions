@@ -6,6 +6,7 @@ import claudeCodeStyleExtension from "../../extensions/claude-code-style.ts";
 test("tool click uses fixed-editor visible rows without previousViewportTop", async () => {
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
 	let expandedToolId: string | null = null;
+	let editorInputCount = 0;
 	const createTool = (toolCallId: string, title: string) => ({
 		toolCallId,
 		expanded: false,
@@ -29,7 +30,7 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	const editor = {
 		getText: () => "",
 		setText() {},
-		handleInput() {},
+		handleInput() { editorInputCount++; },
 		render: () => ["editor"],
 	};
 	const status = { render: () => ["status"] };
@@ -48,17 +49,21 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		terminal,
 		children: [transcript, status, above, editorContainer, below, footer],
 		focusedComponent: editor,
+		// Zentui exposes only the three-row visible transcript window here.
 		previousLines: [
 			"",
 			"✓ Bash(echo ok)",
 			"  └ 1 line output (ctrl+o expand / click)",
-			...Array(22).fill(""),
 		],
-		// Zentui retains Pi's cursor bookkeeping value, but previousLines already
-		// contains only the fixed editor's visible transcript window.
+		// previousViewportTop is unrelated cursor bookkeeping.
 		previousViewportTop: 17,
 		requestRender() {},
 		handleInput(data: string) {
+			if (data === "\x1b[5;9~") {
+				this.previousLines = ["", "✓ Bash(echo old)", "  └ 1 line output (ctrl+o expand / click)"];
+			} else if (data === "\x1b[6~") {
+				this.previousLines = ["", "✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+			}
 			for (const listener of inputListeners) {
 				if (listener(data)?.consume) return;
 			}
@@ -69,13 +74,15 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		setStatus() {},
 		setWidget(_key: string, factory: any) {
 			if (!factory) return;
-			above.children.push(factory(tui, { fg: (_color: string, text: string) => text }));
+			scrollButton = factory(tui, { fg: (_color: string, text: string) => text });
+			above.children.push(scrollButton);
 		},
 		onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
 			inputListeners.add(handler);
 			return () => inputListeners.delete(handler);
 		},
 	};
+	let scrollButton: any;
 	const events = new Map<string, (...args: any[]) => any>();
 	const pi = {
 		registerCommand() {},
@@ -89,9 +96,27 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	claudeCodeStyleExtension(pi as any);
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 	tui.handleInput("\x1b[<0;20;3M");
-	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
-
 	assert.equal(expandedToolId, "tool-visible");
 	assert.equal(offscreenTool.expanded, false);
 	assert.equal(visibleTool.expanded, true);
+
+	// PageUp shows the affordance, and a new assistant message is counted.
+	tui.handleInput("\x1b[5;9~");
+	events.get("message_start")?.({ message: { role: "assistant" } }, {});
+	assert.match(scrollButton.render(80)[0], /1 new message/);
+	assert.match(scrollButton.render(80)[0], /Ctrl\+End/);
+
+	// PageDown reaching the root tail hides the button and clears the count.
+	tui.handleInput("\x1b[6~");
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	assert.deepEqual(scrollButton.render(80), []);
+
+	// Ctrl+End jumps through Zentui's normal Enter path without submitting.
+	tui.handleInput("\x1b[5;9~");
+	const editorInputsBeforeShortcut = editorInputCount;
+	tui.handleInput("\x1b[8^");
+	assert.deepEqual(scrollButton.render(80), []);
+	assert.equal(editorInputCount, editorInputsBeforeShortcut);
+
+	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 });
