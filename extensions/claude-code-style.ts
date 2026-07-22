@@ -12,7 +12,7 @@ import {
 	renderDiff,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -317,12 +317,15 @@ type ToolRenderHit = {
 const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
 const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
+const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 let toolMouseTui: any = null;
 let toolMouseUi: any = null;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
 let toolMouseInputPatchTui: any = null;
 let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
 let toolMouseInputPatchWrapper: ((...args: any[]) => any) | null = null;
+let scrollButtonVisible = false;
+let scrollButtonWidget: any = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -409,13 +412,51 @@ function collectToolRenderHits(
 	return start + count;
 }
 
+function findToolAtFixedEditorRow(
+	tui: any,
+	bufferRow: number,
+	previousLines: string[],
+	width: number,
+): ToolRenderHit | null {
+	if (bufferRow < 0 || bufferRow >= previousLines.length) return null;
+	const clickedLine = stripTerminalSequences(String(previousLines[bufferRow] ?? ""));
+	if (!clickedLine) return null;
+
+	const hits: ToolRenderHit[] = [];
+	collectToolRenderHits(tui, 0, width, hits, new WeakMap<object, number>(), new Set<object>());
+	const clickedOccurrence = previousLines
+		.slice(0, bufferRow + 1)
+		.filter((line) => stripTerminalSequences(String(line)) === clickedLine)
+		.length;
+	let matchingOccurrence = 0;
+
+	for (const hit of hits) {
+		const component = hit.component;
+		const expanded = Boolean(component.expanded);
+		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
+		const renderedLines = renderComponentTree(component, width);
+		const matchingLines = renderedLines.filter((line) => {
+			const rendered = stripTerminalSequences(String(line));
+			return rendered === clickedLine
+				|| (clickedLine.length >= 8 && (rendered.includes(clickedLine) || clickedLine.includes(rendered)));
+		}).length;
+		if (matchingLines === 0) continue;
+		matchingOccurrence += matchingLines;
+		if (clickedOccurrence <= matchingOccurrence) return hit;
+	}
+	return null;
+}
+
 function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null {
 	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	const viewportTop = Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0;
 	const bufferRow = viewportTop + screenRow - 1;
+	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	if (isFixedEditorTui(tui)) {
+		return findToolAtFixedEditorRow(tui, bufferRow, previousLines, width);
+	}
 	if (bufferRow < 0 || bufferRow >= previousLines.length) return null;
 
-	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
 	const hits: ToolRenderHit[] = [];
 	const cache = new WeakMap<object, number>();
 	collectToolRenderHits(tui, 0, width, hits, cache, new Set<object>());
@@ -433,6 +474,199 @@ function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null 
 	return null;
 }
 
+function isFixedEditorTui(tui: any): boolean {
+	const terminal = tui?.terminal;
+	if (!terminal) return false;
+	const ownRows = Object.getOwnPropertyDescriptor(terminal, "rows");
+	const prototype = Object.getPrototypeOf(terminal);
+	const inheritedRows = prototype
+		? Object.getOwnPropertyDescriptor(prototype, "rows")
+		: undefined;
+	return typeof ownRows?.get === "function" && ownRows.get !== inheritedRows?.get;
+}
+
+function updateScrollButtonFromInput(tui: any, data: string): void {
+	if (!isFixedEditorTui(tui)) return;
+
+	let movedUp = matchesKey(data, "pageUp") || ZENTUI_PAGE_UP_INPUT.test(data);
+	const packets = parseSgrMousePackets(data);
+	if (packets) {
+		movedUp = packets.some((packet) => {
+			const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+			return packet.final === "M" && baseButton === 64;
+		});
+	}
+
+	const jumpedBottom = matchesKey(data, "enter") || matchesKey(data, "return");
+	const nextVisible = jumpedBottom ? false : movedUp ? true : scrollButtonVisible;
+	if (nextVisible !== scrollButtonVisible) {
+		scrollButtonVisible = nextVisible;
+		tui.requestRender?.();
+	}
+}
+
+function renderComponentTree(component: any, width: number): string[] {
+	if (!component || typeof component !== "object") return [];
+	try {
+		const lines = component.render?.(width);
+		if (Array.isArray(lines) && lines.length > 0) return lines;
+	} catch {
+		// Fall through to children for hidden container renderers.
+	}
+	if (!Array.isArray(component.children)) return [];
+	return component.children.flatMap((child: any) => renderComponentTree(child, width));
+}
+
+function renderTreeWithTarget(
+	component: any,
+	target: any,
+	width: number,
+	seen = new Set<any>(),
+): { lines: string[]; targetStart: number | null } {
+	if (!component || typeof component !== "object" || seen.has(component)) {
+		return { lines: [], targetStart: null };
+	}
+	seen.add(component);
+	if (component === target) {
+		return { lines: renderComponentTree(component, width), targetStart: 0 };
+	}
+
+	if (Array.isArray(component.children)) {
+		const lines: string[] = [];
+		let targetStart: number | null = null;
+		for (const child of component.children) {
+			const result = renderTreeWithTarget(child, target, width, seen);
+			if (result.targetStart !== null) targetStart = lines.length + result.targetStart;
+			lines.push(...result.lines);
+		}
+		if (targetStart !== null) return { lines, targetStart };
+	}
+
+	return { lines: renderComponentTree(component, width), targetStart: null };
+}
+
+function normalizedClusterLines(component: any, width: number): string[] {
+	if (!component) return [];
+	const lines = renderComponentTree(component, width);
+	let end = lines.length;
+	while (end > 0 && visibleWidth(lines[end - 1] ?? "") === 0) end--;
+	return lines.slice(0, Math.max(end, 1));
+}
+
+function rawTerminalRows(tui: any): number {
+	const terminal = tui?.terminal;
+	if (!terminal) return 0;
+	const prototype = Object.getPrototypeOf(terminal);
+	const rows = prototype ? Object.getOwnPropertyDescriptor(prototype, "rows") : undefined;
+	if (typeof rows?.get === "function") {
+		try {
+			const value = rows.get.call(terminal);
+			if (typeof value === "number" && Number.isFinite(value)) return value;
+		} catch {
+			// Fall through to the current terminal value.
+		}
+	}
+	return typeof terminal.rows === "number" && Number.isFinite(terminal.rows) ? terminal.rows : 0;
+}
+
+function containsEditorLike(component: any, focused: any, seen = new Set<any>()): boolean {
+	if (!component || typeof component !== "object" || seen.has(component)) return false;
+	seen.add(component);
+	if (component === focused) return true;
+	if (
+		typeof component.getText === "function"
+		&& typeof component.setText === "function"
+		&& typeof component.handleInput === "function"
+	) return true;
+	return Array.isArray(component.children)
+		&& component.children.some((child: any) => containsEditorLike(child, focused, seen));
+}
+
+function scrollButtonScreenRow(tui: any, width: number): number | null {
+	if (!scrollButtonVisible || !isFixedEditorTui(tui) || !scrollButtonWidget) return null;
+	const children = Array.isArray(tui?.children) ? tui.children : [];
+	const editorIndex = children.findIndex((child: any) =>
+		containsEditorLike(child, tui.focusedComponent),
+	);
+	if (editorIndex < 2 || editorIndex + 2 >= children.length) return null;
+
+	const above = children[editorIndex - 1];
+	const widthValue = Math.max(1, width || Number(tui?.terminal?.columns) || 80);
+	const target = renderTreeWithTarget(above, scrollButtonWidget, widthValue);
+	if (target.targetStart === null) return null;
+
+	const rawRows = rawTerminalRows(tui);
+	if (rawRows <= 0) return null;
+	const maxRows = Math.max(1, rawRows - 1);
+	const status = normalizedClusterLines(children[editorIndex - 2], widthValue);
+	const editor = normalizedClusterLines(children[editorIndex], widthValue);
+	const below = normalizedClusterLines(children[editorIndex + 1], widthValue);
+	const footer = normalizedClusterLines(children[editorIndex + 2], widthValue);
+	const aboveLines = target.lines.length > 0 ? target.lines : normalizedClusterLines(above, widthValue);
+
+	const takeLast = (lines: string[], count: number): string[] =>
+		count > 0 ? lines.slice(-count) : [];
+	const editorVisible = takeLast(editor, Math.min(editor.length, maxRows));
+	let remaining = Math.max(0, maxRows - editorVisible.length);
+	const footerVisible = takeLast(footer, remaining);
+	remaining -= footerVisible.length;
+	const belowVisible = takeLast(below, remaining);
+	remaining -= belowVisible.length;
+	const aboveVisible = takeLast(aboveLines, remaining);
+	const statusVisible = takeLast(status, Math.max(0, remaining - aboveVisible.length));
+	const aboveStart = aboveLines.length - aboveVisible.length;
+	const targetRow = target.targetStart - aboveStart;
+	if (targetRow < 0 || targetRow >= aboveVisible.length) return null;
+
+	const allLines = [...statusVisible, ...aboveVisible, ...editorVisible, ...belowVisible, ...footerVisible];
+	let leadingBlank = 0;
+	while (leadingBlank < allLines.length - 1 && visibleWidth(allLines[leadingBlank] ?? "") === 0) {
+		leadingBlank++;
+	}
+	const clusterRow = statusVisible.length + targetRow - leadingBlank;
+	if (clusterRow < 0 || clusterRow >= allLines.length - leadingBlank) return null;
+	return rawRows - allLines.length + clusterRow + 1;
+}
+
+function isScrollButtonAtScreenRow(tui: any, packet: SgrMousePacket): boolean {
+	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	if (scrollButtonScreenRow(tui, width) !== packet.row || !scrollButtonWidget) return false;
+	const rendered = scrollButtonWidget.render?.(width)?.[0];
+	if (typeof rendered !== "string") return false;
+	const plain = rendered
+		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	const leading = plain.length - plain.trimStart().length;
+	const end = visibleWidth(plain.trimEnd());
+	return packet.col >= leading + 1 && packet.col <= end;
+}
+
+function jumpToBottomWithoutSubmit(tui: any): boolean {
+	const originalHandle = toolMouseInputPatchTui === tui
+		? toolMouseInputPatchOriginalHandle
+		: null;
+	if (!originalHandle) return false;
+
+	// Route Enter through Pi's normal listener chain so pi-zentui can update its
+	// private scroll offset, but suppress the focused editor for this synthetic
+	// dispatch so clicking the button never submits the current input.
+	const focused = tui.focusedComponent;
+	try {
+		tui.focusedComponent = null;
+		Reflect.apply(originalHandle, tui, ["\r"]);
+	} finally {
+		tui.focusedComponent = focused;
+	}
+	scrollButtonVisible = false;
+	tui.requestRender?.();
+	return true;
+}
+
+function handleScrollButtonClick(tui: any, packet: SgrMousePacket): boolean {
+	if (!isScrollButtonAtScreenRow(tui, packet)) return false;
+	return jumpToBottomWithoutSubmit(tui);
+}
+
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
@@ -442,6 +676,13 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	hit.component.invalidate?.();
 	tui.requestRender?.();
 	return true;
+}
+
+function renderScrollButton(width: number, theme: any): string[] {
+	if (!scrollButtonVisible || !isFixedEditorTui(toolMouseTui)) return [];
+	const label = theme.fg("accent", "[ ↓ Back to bottom · click ]");
+	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
+	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
 }
 
 /**
@@ -460,10 +701,12 @@ function patchToolMouseInputCapture(tui: any): void {
 	const wrapper = function (this: any, ...args: any[]): any {
 		const data = args[0];
 		if (typeof data === "string") {
+			updateScrollButtonFromInput(this, data);
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
 				for (const packet of packets) {
-					if (isSgrLeftPress(packet) && toggleToolAtMouseClick(this, packet)) return;
+					if (!isSgrLeftPress(packet)) continue;
+					if (handleScrollButtonClick(this, packet) || toggleToolAtMouseClick(this, packet)) return;
 				}
 			}
 		}
@@ -495,12 +738,14 @@ function restoreToolMouseInputCapture(): void {
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
+	updateScrollButtonFromInput(toolMouseTui, data);
 	const packets = parseSgrMousePackets(data);
 	if (!packets) return undefined;
 
 	let consumed = false;
 	for (const packet of packets) {
-		if (isSgrLeftPress(packet) && toggleToolAtMouseClick(toolMouseTui, packet)) {
+		if (!isSgrLeftPress(packet)) continue;
+		if (handleScrollButtonClick(toolMouseTui, packet) || toggleToolAtMouseClick(toolMouseTui, packet)) {
 			consumed = true;
 		}
 	}
@@ -524,6 +769,8 @@ function teardownToolMouseInteraction(): void {
 		// The UI context may already have been reset during /reload.
 	}
 	restoreToolMouseInputCapture();
+	scrollButtonVisible = false;
+	scrollButtonWidget = null;
 	toolMouseTui = null;
 	toolMouseUi = null;
 }
@@ -534,12 +781,16 @@ function installToolMouseInteraction(ctx: any): void {
 	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function") return;
 
 	toolMouseUi = ctx.ui;
-	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any) => {
+	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
 		patchToolMouseInputCapture(tui);
 		tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
-		// Keep the widget visually empty so Pi's default input bar/layout remains.
-		return { render: () => [], invalidate() {} };
+		const widget = {
+			render: (width: number) => renderScrollButton(width, theme),
+			invalidate() {},
+		};
+		scrollButtonWidget = widget;
+		return widget;
 	});
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
 }
