@@ -46,7 +46,7 @@ export function createWrappedTextCache(content: string): {
 
 export async function showTextPreview(ctx: Pick<ExtensionCommandContext, "ui">, title: string, rawContent: string): Promise<void> {
   const content = normalizePreviewText(rawContent);
-  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
+  await ctx.ui.custom((tui, theme, _keybindings, done) => {
     let scrollOffset = 0;
     let pageSize = 1;
     let totalLines = 1;
@@ -63,7 +63,7 @@ export async function showTextPreview(ctx: Pick<ExtensionCommandContext, "ui">, 
       },
       handleInput(data: string) {
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-          done();
+          done(undefined);
           return;
         }
         if (matchesKey(data, Key.up)) scrollTo(scrollOffset - 1);
@@ -161,6 +161,12 @@ const tokenEstimate = (value: unknown): number => {
   return Math.max(0, Math.ceil(text.length / 4));
 };
 
+type ToolPreviewInfo = {
+  name: string;
+  description?: string;
+  promptGuidelines?: string[];
+};
+
 export function scaleParts(parts: ContextPart[], target: number): ContextPart[] {
   const estimated = parts.reduce((sum, part) => sum + part.tokens, 0);
   if (estimated === 0 || target <= 0) return parts;
@@ -233,7 +239,9 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
       }
 
       const options = ctx.getSystemPromptOptions();
-      const toolByName = new Map(pi.getAllTools().map((tool) => [tool.name, tool]));
+      const toolByName = new Map<string, ToolPreviewInfo>(
+        (pi.getAllTools() as ToolPreviewInfo[]).map((tool) => [tool.name, tool] as const),
+      );
       const toolContent = (options.selectedTools ?? []).map((name) => {
         const tool = toolByName.get(name);
         const lines = [`## ${name}`];
@@ -273,7 +281,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
       let selectedPreviewIndex = 0;
 
       while (true) {
-        const action = await ctx.ui.custom<PreviewKey | undefined>((tui, theme, _keybindings, done) => {
+        const action = await ctx.ui.custom((tui, theme, _keybindings, done) => {
           let previewHitboxes: Array<{ key: PreviewKey; row: number; startCol: number; endCol: number }> = [];
 
           const padLine = (text: string, width: number): string => {

@@ -7,7 +7,7 @@ import {
 	extractSessionReferenceIds,
 	sessionTitle,
 	truncateUtf8,
-} from "../../extensions/session-reference/core.ts";
+} from "../extensions/session-reference-core.ts";
 
 const info = {
 	id: "019f78f7-526e-78ac-afa5-ff6d5e06beb8",

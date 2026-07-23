@@ -54,7 +54,7 @@
 - Pi 默认输入栏
 - Edit / Write 的 Diff 预览
 - 工具结果的折叠与展开
-- `/ccstyle` 配置命令和 `Ctrl+Shift+O` 快捷键
+- 类 claude code 滚动到底部 button
 
 常用命令：
 
@@ -79,13 +79,13 @@
 
 ### 历史 Session 引用
 
-`extensions/session-reference/index.ts` 将历史 Session 接入 `@` 补全：
+`extensions/session-reference.ts` 将历史 Session 接入 `@` 补全：
 
 1. 在提示词中输入 `@`。
 2. 从 `[Session] ...` 或 `[SubAgent] ...` 补全项中选择要引用的上下文。
 3. 提交时以 `@session:<session-id>` 引用其当前有效上下文。
 
-Session 模糊查询默认显示 3 个候选，并与文件候选按 1:2 交错排列；路径型查询优先显示文件。若已加载 `pi-subagents`，也可直接引用现有 SubAgent。一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。更多细节见 [`extensions/session-reference/README.md`](./extensions/session-reference/README.md)。
+Session 模糊查询默认显示 3 个候选，并与文件候选按 1:2 交错排列；路径型查询优先显示文件。若已加载 `pi-subagents`，也可直接引用现有 SubAgent。一次提示词可以引用多个 Session；扩展会自动去重，并限制注入规模以避免上下文无限膨胀。
 
 ### SubAgent `@` 补全
 

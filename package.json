@@ -16,7 +16,7 @@
     "extensions": [
       "./extensions/claude-code-style.ts",
       "./extensions/context.ts",
-      "./extensions/session-reference/index.ts",
+      "./extensions/session-reference.ts",
       "./extensions/agent-autocomplete.ts"
     ]
   },

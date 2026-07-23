@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
-import { createAgentAutocompleteProvider } from "../../extensions/agent-autocomplete.ts";
-import { createAutocompleteProvider as createSessionAutocompleteProvider } from "../../extensions/session-reference/index.ts";
+import { createAgentAutocompleteProvider } from "../extensions/agent-autocomplete.ts";
+import { createAutocompleteProvider as createSessionAutocompleteProvider } from "../extensions/session-reference.ts";
 
 const fffProvider: AutocompleteProvider = {
 	async getSuggestions(lines, cursorLine, cursorCol) {

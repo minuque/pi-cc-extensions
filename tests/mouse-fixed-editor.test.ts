@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import claudeCodeStyleExtension from "../../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
 
 test("tool click uses fixed-editor visible rows without previousViewportTop", async () => {
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();

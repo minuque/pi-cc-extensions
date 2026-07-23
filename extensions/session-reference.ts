@@ -20,7 +20,7 @@ import {
 	sessionTitle,
 	type ReferenceSessionInfo,
 	type ReferenceSource,
-} from "./core.ts";
+} from "./session-reference-core.ts";
 
 const MAX_SESSION_SUGGESTIONS = 3;
 const MAX_FILE_SUGGESTIONS = 7;
