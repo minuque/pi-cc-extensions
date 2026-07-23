@@ -52,7 +52,7 @@
 
 - Claude Code 风格的工具调用行与结果摘要
 - Pi 默认输入栏
-- Edit / Write 的 Diff 预览
+- 未被专用 renderer 接管的工具兜底渲染
 - 工具结果的折叠与展开
 - 类 claude code 滚动到底部 button
 

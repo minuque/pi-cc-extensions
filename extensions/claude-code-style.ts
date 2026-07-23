@@ -1,30 +1,20 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-	createBashToolDefinition,
-	createEditToolDefinition,
-	createFindToolDefinition,
-	createGrepToolDefinition,
-	createLsToolDefinition,
-	createReadToolDefinition,
-	createWriteToolDefinition,
-	generateDiffString,
 	keyHint,
 	getSettingsListTheme,
-	renderDiff,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, SettingsList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 /**
  * Claude Code Style for pi
  *
- * Edit/write tool calls show a bounded, colorized diff preview with +/- lines
- * after execution. A collapsed tool result can be clicked on its Ctrl+O hint to
- * expand only that tool.
+ * Tool calls and results use a compact fallback renderer. Dedicated renderers
+ * supplied by other extensions remain untouched. A collapsed tool result can be
+ * clicked on its Ctrl+O hint to expand only that tool.
  *
  * Dynamic commands:
  *   /ccstyle              open interactive settings
@@ -60,12 +50,6 @@ function loadConfig(): Config {
 
 function saveConfig() {
 	writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-}
-
-function shortenPath(path: string): string {
-	const home = homedir();
-	if (path.startsWith(home)) return `~${path.slice(home.length)}`;
-	return path;
 }
 
 function oneLine(value: unknown, max = 72): string {
@@ -104,46 +88,6 @@ function countLines(text: string): number {
 
 function hasExpandableResult(text: string): boolean {
 	return countLines(text) > 1;
-}
-
-function parsePathCount(text: string): number {
-	const files = new Set<string>();
-	for (const line of text.split("\n")) {
-		const match = line.match(/^([^:\n]+):(\d+:)?/);
-		if (match?.[1]) files.add(match[1]);
-	}
-	return files.size;
-}
-
-function summarizeBash(text: string): string {
-	const clean = text.trim();
-	if (!clean) return "Done";
-	const lower = clean.toLowerCase();
-	const lines = clean.split("\n").filter(Boolean);
-	const errorLine = lines.find((line) => /\b(error|failed|exception|fatal)\b/i.test(line));
-	if (errorLine) return `Failed: ${oneLine(errorLine, 88)}`;
-	if (/\b(warning|warn)\b/i.test(lower)) {
-		const warnings = lines.filter((line) => /\b(warning|warn)\b/i.test(line)).length;
-		return `Completed with ${warnings} warning${warnings === 1 ? "" : "s"}`;
-	}
-	if (/\b(success|passed|compiled|built|done)\b/i.test(lower)) return oneLine(lines.at(-1) ?? "Done", 88);
-	return lines.length > 1 ? `${lines.length} lines output: ${oneLine(lines.at(-1), 72)}` : oneLine(clean, 88);
-}
-
-function summarizeEdit(text: string): string {
-	const clean = text.trim();
-	if (!clean) return "Edited";
-	const added = (clean.match(/^\+/gm) ?? []).length;
-	const removed = (clean.match(/^-/gm) ?? []).length;
-	if (added || removed) return `Updated ${added} added, ${removed} removed`;
-	return oneLine(clean, 88);
-}
-
-function summarizeDiffStats(preview: FileDiffPreview | undefined): string | undefined {
-	if (!preview?.diff) return undefined;
-	const { added, removed } = preview.stats ?? diffStats(preview.lines ?? preview.diff.split("\n"));
-	if (!added && !removed) return undefined;
-	return `Added ${added} line${added === 1 ? "" : "s"}, removed ${removed} line${removed === 1 ? "" : "s"}`;
 }
 
 function toolIcon(_name: string): string {
@@ -989,150 +933,6 @@ function scheduleSessionRender(): void {
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_RESET = "\x1b[0m";
 
-function fileAction(args: any, verb: string): string {
-	const path = shortenPath(args?.path || "...");
-	return `${verb}(${path})`;
-}
-
-type DiffStats = { added: number; removed: number };
-type FileDiffPreview = {
-	diff: string;
-	error?: string;
-	notice?: string;
-	stats?: DiffStats;
-	/** Pre-split outside the render hot path. */
-	lines?: string[];
-};
-
-// Diff generation is intentionally bounded: it runs before the mutation, but
-// should never add unbounded latency or memory pressure to a tool call.
-const MAX_DIFF_INPUT_BYTES = 2 * 1024 * 1024;
-const COLLAPSED_DIFF_LINES = 12;
-const EXPANDED_DIFF_LINES = 40;
-const diffPreviewByCall = new Map<string, FileDiffPreview | undefined>();
-
-function diffStats(lines: readonly string[]): DiffStats {
-	let added = 0;
-	let removed = 0;
-	for (const line of lines) {
-		if (/^\+\s*\d+\s/.test(line)) added++;
-		else if (/^-\s*\d+\s/.test(line)) removed++;
-	}
-	return { added, removed };
-}
-
-function diffPreview(diff: string): FileDiffPreview {
-	const lines = diff.split("\n");
-	return { diff, lines, stats: diffStats(lines) };
-}
-
-function normalizeDiffText(text: string): string {
-	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-function editEntries(args: any): Array<{ oldText: string; newText: string }> {
-	if (Array.isArray(args?.edits)) {
-		return args.edits.filter((edit: any) =>
-			typeof edit?.oldText === "string" && typeof edit?.newText === "string",
-		);
-	}
-	if (typeof args?.oldText === "string" && typeof args?.newText === "string") {
-		return [{ oldText: args.oldText, newText: args.newText }];
-	}
-	return [];
-}
-
-/** Build the preview before mutation, outside the renderer's hot path. */
-async function buildFileDiffPreview(toolName: string, args: any, cwd: string): Promise<FileDiffPreview | undefined> {
-	const rawPath = typeof args?.path === "string" ? args.path : typeof args?.file_path === "string" ? args.file_path : "";
-	if (!rawPath) return undefined;
-
-	if (toolName === "write" && typeof args?.content === "string" && Buffer.byteLength(args.content, "utf8") > MAX_DIFF_INPUT_BYTES) {
-		return { diff: "", notice: "Diff omitted: new content exceeds 2 MiB" };
-	}
-
-	const absolutePath = resolve(cwd || process.cwd(), rawPath);
-	let before = "";
-	try {
-		const info = await stat(absolutePath);
-		if (info.size > MAX_DIFF_INPUT_BYTES) {
-			return { diff: "", notice: "Diff omitted: existing file exceeds 2 MiB" };
-		}
-		before = await readFile(absolutePath, "utf8");
-	} catch (error: any) {
-		if (error?.code !== "ENOENT") {
-			return { diff: "", error: `Cannot read ${shortenPath(rawPath)}: ${oneLine(error, 72)}` };
-		}
-		if (toolName === "edit") return { diff: "", error: `File not found: ${shortenPath(rawPath)}` };
-	}
-
-	before = normalizeDiffText(before);
-	let after = before;
-	if (toolName === "write") {
-		if (typeof args?.content !== "string") return undefined;
-		after = normalizeDiffText(args.content);
-	} else {
-		const edits = editEntries(args);
-		if (edits.length === 0) return undefined;
-		const replacements: Array<{ start: number; end: number; text: string }> = [];
-		for (const edit of edits) {
-			const oldText = normalizeDiffText(edit.oldText);
-			const start = after.indexOf(oldText);
-			if (start < 0) return { diff: "", error: "Preview unavailable: old text was not found" };
-			if (after.indexOf(oldText, start + 1) >= 0) {
-				return { diff: "", error: "Preview unavailable: old text is not unique" };
-			}
-			replacements.push({ start, end: start + oldText.length, text: normalizeDiffText(edit.newText) });
-		}
-		for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
-			after = after.slice(0, replacement.start) + replacement.text + after.slice(replacement.end);
-		}
-	}
-
-	if (Buffer.byteLength(after, "utf8") > MAX_DIFF_INPUT_BYTES) {
-		return { diff: "", notice: "Diff omitted: resulting content exceeds 2 MiB" };
-	}
-	const diff = generateDiffString(before, after).diff;
-	return diff ? diffPreview(diff) : undefined;
-}
-
-function diffLineCount(preview: FileDiffPreview | undefined): number {
-	if (!preview?.diff) return 0;
-	return preview.lines?.length ?? preview.diff.split("\n").length;
-}
-
-function hasExpandableDiff(preview: FileDiffPreview | undefined): boolean {
-	return diffLineCount(preview) > COLLAPSED_DIFF_LINES;
-}
-
-function renderDiffPreview(preview: FileDiffPreview | undefined, theme: any, expanded: boolean): string {
-	if (!preview) return "";
-	if (preview.error) return theme.fg("error", `  ${preview.error}`);
-	if (preview.notice) return theme.fg("muted", `  ${preview.notice}`);
-	if (!preview.diff.trim()) return "";
-
-	// Bound work before calling pi's renderer. Rendering only the visible raw
-	// lines avoids repeatedly running intra-line diffing over a multi-megabyte diff.
-	const rawLines = preview.lines ?? preview.diff.split("\n");
-	const maxLines = expanded ? EXPANDED_DIFF_LINES : COLLAPSED_DIFF_LINES;
-	const shown = renderDiff(rawLines.slice(0, maxLines).join("\n"))
-		.split("\n")
-		.map((line) => `  ${line}`);
-	if (rawLines.length > maxLines) {
-		shown.push(theme.fg("muted", `  … ${rawLines.length - maxLines} more diff lines`));
-	}
-	return shown.join("\n");
-}
-
-function renderFileDiffPreview(_toolName: string, _args: any, theme: any, context: any): string {
-	const state = (context.state ??= {});
-	if (diffPreviewByCall.has(context.toolCallId)) {
-		state.ccstyleDiffPreview = diffPreviewByCall.get(context.toolCallId);
-		diffPreviewByCall.delete(context.toolCallId);
-	}
-	return renderDiffPreview(state.ccstyleDiffPreview, theme, isToolExpanded(undefined, context));
-}
-
 function applyEnabledState(enabled: boolean, ctx: any): void {
 	config.enabled = enabled;
 	saveConfig();
@@ -1186,33 +986,6 @@ function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any
 	}
 	return new Text(fallback, 0, 0);
 }
-
-function createBuiltInTools(cwd: string) {
-	return {
-		// Keep complete definitions so wrapped tools retain prompt metadata,
-		// argument preparation, execution mode, and native fallback renderers.
-		read: createReadToolDefinition(cwd),
-		bash: createBashToolDefinition(cwd),
-		edit: createEditToolDefinition(cwd),
-		write: createWriteToolDefinition(cwd),
-		find: createFindToolDefinition(cwd),
-		grep: createGrepToolDefinition(cwd),
-		ls: createLsToolDefinition(cwd),
-	};
-}
-
-const toolCache = new Map<string, ReturnType<typeof createBuiltInTools>>();
-function getBuiltInTools(cwd: string) {
-	let tools = toolCache.get(cwd);
-	if (!tools) {
-		tools = createBuiltInTools(cwd);
-		toolCache.set(cwd, tools);
-	}
-	return tools;
-}
-
-/** Tools explicitly wrapped with bespoke call/result renderers. Skip these in the generic interceptor. */
-const WRAPPED_BUILTINS = new Set<string>();
 
 /**
  * Generate a descriptive label for an unknown tool from its args.
@@ -1295,12 +1068,11 @@ function createCcstyleTool(originalTool: any): any {
 }
 
 /**
- * Extension APIs are isolated per plugin, so replacing this extension's
- * pi.registerTool cannot see SDK tools or tools registered by other plugins.
- * ToolExecutionComponent is shared by the TUI and exported by pi; patch its
- * renderer lookup once so every generic tool uses the same compact shell.
- * Only subagent tools keep their specialized renderers. Every other tool,
- * including MCP and extension tools, uses the same compact ccstyle shell.
+ * This extension does not register tools. ToolExecutionComponent is shared by
+ * the TUI and exported by pi; patch its renderer lookup once so generic tools
+ * use the same compact fallback shell.
+ * Native Pi tools and extension tools without a dedicated renderer can use the
+ * fallback; subagents and extension-owned renderers keep their own output.
  */
 const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
 const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
@@ -1326,20 +1098,34 @@ function isMcpToolDefinition(definition: any, toolName: string): boolean {
 	return toolName === "mcp" || label === "MCP" || label.startsWith("MCP: ");
 }
 
-function preservesOriginalRenderer(_definition: any, toolName: string): boolean {
-	return SUBAGENT_TOOL_NAMES.has(toolName);
+/**
+ * ToolExecutionComponent keeps extension-supplied and native definitions in
+ * separate fields. Native renderers are eligible for ccstyle's fallback, while
+ * an extension-owned dedicated renderer must remain untouched.
+ */
+export function preservesOriginalRenderer(
+	extensionDefinition: any,
+	toolName: string,
+	builtInToolDefinition?: any,
+): boolean {
+	if (SUBAGENT_TOOL_NAMES.has(toolName)) return true;
+	if (!extensionDefinition || extensionDefinition === builtInToolDefinition) return false;
+	return extensionDefinition.renderShell === "self"
+		|| typeof extensionDefinition.renderCall === "function"
+		|| typeof extensionDefinition.renderResult === "function";
 }
 
 function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): boolean {
 	const selectedMode = component[COMPONENT_TOOL_RENDER_MODE];
 	if (typeof selectedMode === "boolean") return selectedMode;
 
-	const definition = component.toolDefinition ?? component.builtInToolDefinition;
+	const extensionDefinition = component.toolDefinition;
+	const builtInDefinition = component.builtInToolDefinition;
+	const definition = extensionDefinition ?? builtInDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
 	const useCcstyle =
 		patch.enabled() &&
-		!preservesOriginalRenderer(definition, toolName) &&
-		definition?.renderShell !== "self";
+		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
 	// ToolExecutionComponent chooses its child shell in the constructor. Keep that
 	// choice stable for this row so toggling ccstyle cannot switch containers later.
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
@@ -1354,7 +1140,7 @@ function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boole
 	const toolName = String(component.toolName || definition?.name || "");
 	const useSelfShell =
 		patch.enabled() &&
-		preservesOriginalRenderer(definition, toolName) &&
+		SUBAGENT_TOOL_NAMES.has(toolName) &&
 		definition?.renderShell !== "self";
 	component[COMPONENT_TOOL_SELF_SHELL_MODE] = useSelfShell;
 	return useSelfShell;
@@ -1449,111 +1235,6 @@ function deactivateLegacyCompactionRendering() {
 	if (patch) patch.enabled = () => false;
 }
 
-function registerWrappedTool(pi: ExtensionAPI, name: keyof ReturnType<typeof createBuiltInTools>, renderer: {
-	call: (args: any, theme: any) => string;
-	result: (result: any, options: any, theme: any, context: any) => string;
-	diff?: (args: any, theme: any, context: any) => string;
-	/** Use pi's built-in call/result renderers, including native diff panels. */
-	defaultRenderer?: boolean;
-	defaultResult?: boolean;
-	diffAfterResult?: boolean;
-}) {
-	WRAPPED_BUILTINS.add(name);
-	const initial = getBuiltInTools(process.cwd())[name] as any;
-
-	pi.registerTool({
-		// Spread the full definition instead of copying a subset. In particular,
-		// edit requires prepareArguments and tools may declare executionMode.
-		...initial,
-		name,
-		label: initial.label ?? name,
-		renderShell: "self",
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const tool = (getBuiltInTools(ctx.cwd)[name] as any);
-			if (config.enabled && (name === "edit" || name === "write")) {
-				// Await the old-file snapshot before mutation to avoid races, while
-				// keeping all filesystem and diff work out of the TUI renderer.
-				diffPreviewByCall.set(toolCallId, await buildFileDiffPreview(name, params, ctx.cwd));
-			}
-			let result: any;
-			try {
-				result = await tool.execute(toolCallId, params, signal, onUpdate, ctx);
-			} catch (error) {
-				diffPreviewByCall.delete(toolCallId);
-				throw error;
-			}
-			if (name === "edit" && typeof result?.details?.diff === "string") {
-				const actualDiff = result.details.diff as string;
-				diffPreviewByCall.set(toolCallId,
-					Buffer.byteLength(actualDiff, "utf8") <= MAX_DIFF_INPUT_BYTES
-						? diffPreview(actualDiff)
-						: { diff: "", notice: "Diff omitted: result exceeds 2 MiB" },
-				);
-			}
-			return result;
-		},
-		renderCall(args, theme, context) {
-			const tool = (getBuiltInTools(context.cwd)[name] as any);
-			if (!config.enabled || renderer.defaultRenderer) {
-				return renderDefault(tool, "renderCall", [args, theme, context], String(name));
-			}
-
-			const toolName = String(name);
-			const visualState = resolveToolVisualState(context);
-			const isPending = visualState === "pending" || (!visualState && (context?.isPartial || context?.executionStarted));
-			if (isPending) scheduleAnimation(context);
-			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
-			const icon = visualState === "success"
-				? `${BRIGHT_GREEN}${rawIcon}${ANSI_RESET}`
-				: theme.fg(toolIconColor(context), rawIcon);
-			const title = `${icon} ${theme.fg("toolTitle", renderer.call(args, theme))}`;
-			// Prime the per-tool snapshot, but keep the call row stable while arguments
-			// stream in. The diff is rendered only after the result is finalized below.
-			if (renderer.diffAfterResult) renderer.diff?.(args, theme, context);
-			return new Text(title, 0, 0);
-		},
-		renderResult(result, options, theme, context) {
-			const tool = (getBuiltInTools(context.cwd)[name] as any);
-			if (!config.enabled || renderer.defaultResult) {
-				diffPreviewByCall.delete(context.toolCallId);
-				return renderDefault(tool, "renderResult", [result, options, theme, context], textFromResult(result));
-			}
-
-			if (options?.isPartial) {
-				return new Text(theme.fg("muted", "  ⎿ Pending…"), 0, 0);
-			}
-
-			const isError = options?.isError || context?.isError;
-			if (isError) {
-				diffPreviewByCall.delete(context.toolCallId);
-				if (context.state) context.state.ccstyleDiffPreview = undefined;
-			}
-			setToolVisualState(context, isError ? "error" : "success");
-			const expanded = isToolExpanded(options, context);
-			// Hydrate the cached preview before building the summary so edit uses
-			// the authoritative result.details.diff rather than its estimate.
-			const diff = !isError && renderer.diffAfterResult
-				? renderer.diff?.(context.args, theme, context)
-				: "";
-			const rendered = renderer.result(result, { ...options, expanded }, theme, context);
-			if (!rendered) return new Text("", 0, 0);
-			const fullText = textFromResult(result);
-			const preview = context?.state?.ccstyleDiffPreview as FileDiffPreview | undefined;
-			const hint = !expanded && (hasExpandableResult(fullText) || hasExpandableDiff(preview))
-				? expandHint(theme)
-				: "";
-			const body = `${rendered}${diff ? `\n${diff}` : ""}`;
-			if (expanded) return renderExpandedToolResult(body, theme, isError, context?.lastComponent);
-			const output = `  ⎿ ${rendered}${hint}${diff ? `\n${diff}` : ""}`;
-			return new Text(
-				theme.fg(isError ? "error" : "muted", output),
-				0,
-				0,
-			);
-		},
-	});
-}
-
 function notePendingScrollMessage(role: unknown): void {
 	if (!toolMouseTui || !isFixedEditorTui(toolMouseTui) || !scrollButtonVisible) return;
 	if (role === "assistant") {
@@ -1608,7 +1289,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		diffPreviewByCall.clear();
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
@@ -1633,81 +1313,6 @@ export default function (pi: ExtensionAPI) {
 		deactivateGlobalToolRendering();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
-		diffPreviewByCall.clear();
-		toolCache.clear();
-	});
-
-	registerWrappedTool(pi, "read", {
-		call: (args) => fileAction(args, "Read"),
-		result: (result, { expanded }) => {
-			const text = textFromResult(result);
-			if (!expanded) return `${countLines(text)} lines read`;
-			return text;
-		},
-	});
-
-	registerWrappedTool(pi, "bash", {
-		call: (args) => `Bash(${oneLine(args?.command, 86) || "..."})`,
-		result: (result, { expanded }) => {
-			const text = textFromResult(result).trim();
-			if (!expanded) return summarizeBash(text);
-			return text;
-		},
-	});
-
-	registerWrappedTool(pi, "edit", {
-		call: (args) => fileAction(args, "Edit"),
-		diff: (args, theme, context) => renderFileDiffPreview("edit", args, theme, context),
-		diffAfterResult: true,
-		result: (result, { expanded }, _theme, context) => {
-			const text = textFromResult(result).trim();
-			return summarizeDiffStats(context?.state?.ccstyleDiffPreview) ?? summarizeEdit(text);
-		},
-	});
-
-	registerWrappedTool(pi, "write", {
-		call: (args) => {
-			const path = shortenPath(args?.path || "...");
-			const lines = args?.content ? countLines(args.content) : 0;
-			return `Write(${path}${lines ? `, ${lines} lines` : ""})`;
-		},
-		diff: (args, theme, context) => renderFileDiffPreview("write", args, theme, context),
-		diffAfterResult: true,
-		result: (result, { expanded }, _theme, context) => {
-			const text = textFromResult(result).trim();
-			return summarizeDiffStats(context?.state?.ccstyleDiffPreview) ?? (text ? oneLine(text, 96) : "Written");
-		},
-	});
-
-	registerWrappedTool(pi, "find", {
-		call: (args) => `Find(${args?.pattern || "..."}${args?.path ? ` in ${shortenPath(args.path)}` : ""})`,
-		result: (result, { expanded }) => {
-			const text = textFromResult(result).trim();
-			if (!expanded) return `${countLines(text)} files`;
-			return text;
-		},
-	});
-
-	registerWrappedTool(pi, "grep", {
-		call: (args) => `Grep(${args?.pattern ? `/${oneLine(args.pattern, 48)}/` : "..."})`,
-		result: (result, { expanded }) => {
-			const text = textFromResult(result).trim();
-			if (!expanded) {
-				const matches = countLines(text);
-				const files = parsePathCount(text);
-				return files ? `Found ${matches} matches in ${files} files` : `${matches} matches`;
-			}
-			return text;
-		},
-	});
-
-	registerWrappedTool(pi, "ls", {
-		call: (args) => `List(${shortenPath(args?.path || ".")})`,
-		result: (result, { expanded }) => {
-			const text = textFromResult(result).trim();
-			if (!expanded) return `${countLines(text)} entries`;
-			return text;
-		},
 	});
 
 }
