@@ -22,7 +22,7 @@
     <td colspan="2" align="center">
       <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
       <br>
-      <sub><b>欢迎界面</b><br>结合 <code>npm:pi-startup-header</code> 与 <code>npm:pi-zentui</code> 的 Pi 工作区</sub>
+      <sub><b>欢迎界面</b><br> @ <code>npm:pi-startup-header</code> 与 <code>npm:pi-zentui</code></sub>
     </td>
   </tr>
   <tr>
