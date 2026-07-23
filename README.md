@@ -152,3 +152,23 @@ pi install /absolute/path/to/pi-cc-extensions
 
 - Node.js `>=22.19.0`
 - 作为 Pi package 加载，入口由根目录 `package.json` 的 `pi.extensions` 显式声明
+
+## 扩展推荐
+
+
+| 扩展                                     | 作用                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `npm:pi-theme-picker`                    | 通过`/theme` 交互式切换 Pi 主题，支持模糊搜索和实时预览                       |
+| `npm:@juicesharp/rpiv-ask-user-question` | 提供`ask_user_question` 结构化问卷工具，支持单选、多选、预览和备注            |
+| `npm:pi-mcp-adapter`                     | 将 MCP 服务接入 Pi，并通过代理工具按需发现，减少上下文占用                    |
+| `npm:@tintinweb/pi-subagents`            | Claude Code 风格的并行 SubAgent、后台任务、任务编排、工作树隔离和自定义 Agent |
+| `npm:@ayulab/pi-rewind`                  | 基于 checkpoint 的`/rewind` 回退，支持分别恢复代码、对话或两者                |
+| `npm:pi-compact-thinking`                | 将隐藏的思考块渲染为紧凑、带动画的推理预览                                    |
+| `npm:pi-startup-header`                  | 用跟随当前主题配色的渐变 ASCII 标题替换默认启动头                             |
+| `npm:pi-zentui`                          | Starship 风格状态栏与 Opencode 风格编辑器，支持固定编辑器和 Git 状态          |
+
+### 使用注意
+
+- `pi-cc-extensions` 与 `pi-zentui` 都会修改 Pi 的 TUI / renderer。若出现布局或渲染冲突，建议先确定一个作为主要界面扩展，另一个按需停用。
+- `pi-mcp-adapter` 默认延迟连接 MCP 服务，有助于节省上下文；包含凭据的 MCP 配置不要提交到仓库。
+- `pi-compact-thinking` 和 `pi-zentui` 都涉及 Pi 内部 UI 行为，升级 Pi 后若出现异常，优先执行 `/reload` 或暂时停用对应扩展。
