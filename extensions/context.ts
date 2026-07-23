@@ -23,12 +23,34 @@ function normalizePreviewText(text: string): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
+export function createWrappedTextCache(content: string): {
+  get(width: number): string[];
+  invalidate(): void;
+} {
+  let cachedWidth: number | undefined;
+  let cachedLines: string[] | undefined;
+
+  return {
+    get(width: number): string[] {
+      if (cachedLines !== undefined && cachedWidth === width) return cachedLines;
+      cachedLines = wrapTextWithAnsi(content, width);
+      cachedWidth = width;
+      return cachedLines;
+    },
+    invalidate(): void {
+      cachedWidth = undefined;
+      cachedLines = undefined;
+    },
+  };
+}
+
 export async function showTextPreview(ctx: Pick<ExtensionCommandContext, "ui">, title: string, rawContent: string): Promise<void> {
   const content = normalizePreviewText(rawContent);
   await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
     let scrollOffset = 0;
     let pageSize = 1;
     let totalLines = 1;
+    const wrappedContent = createWrappedTextCache(content);
 
     const scrollTo = (nextOffset: number): void => {
       scrollOffset = Math.max(0, Math.min(nextOffset, Math.max(0, totalLines - pageSize)));
@@ -36,7 +58,9 @@ export async function showTextPreview(ctx: Pick<ExtensionCommandContext, "ui">, 
     };
 
     return {
-      invalidate() {},
+      invalidate() {
+        wrappedContent.invalidate();
+      },
       handleInput(data: string) {
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
           done();
@@ -64,7 +88,7 @@ export async function showTextPreview(ctx: Pick<ExtensionCommandContext, "ui">, 
         const availableHeight = Math.max(1, terminalHeight - 4);
         const viewportHeight = Math.min(30, Math.max(1, Math.floor(terminalHeight * 0.8)), availableHeight);
         pageSize = Math.max(1, viewportHeight - 6);
-        const wrapped = wrapTextWithAnsi(content, bodyWidth);
+        const wrapped = wrappedContent.get(bodyWidth);
         totalLines = wrapped.length;
         scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
         const visible = wrapped.slice(scrollOffset, scrollOffset + pageSize);

@@ -259,35 +259,73 @@ function isToolExpanded(options: any, context: any): boolean {
 }
 
 /** Keep the guide aligned when long result lines wrap at the viewport edge. */
-class ExpandedToolResultText {
-	private readonly text: string;
-	private readonly prefix: string;
+export class ExpandedToolResultText {
+	private text: string;
+	private prefix: string;
+	private normalizedText: string;
+	private cachedWidth: number | undefined;
+	private cachedLines: string[] | undefined;
 
 	constructor(text: string, prefix: string) {
 		this.text = text;
 		this.prefix = prefix;
+		this.normalizedText = text.replace(/\t/g, "   ").replace(/\n+$/, "");
+	}
+
+	setText(text: string): void {
+		if (this.text === text) return;
+		this.text = text;
+		this.normalizedText = text.replace(/\t/g, "   ").replace(/\n+$/, "");
+		this.invalidate();
+	}
+
+	setPrefix(prefix: string): void {
+		if (this.prefix === prefix) return;
+		this.prefix = prefix;
+		this.invalidate();
 	}
 
 	render(width: number): string[] {
+		if (this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines;
+
 		const prefixWidth = visibleWidth(this.prefix);
 		const contentWidth = Math.max(1, width - prefixWidth);
-		return wrapTextWithAnsi(this.text.replace(/\t/g, "   ").replace(/\n+$/, ""), contentWidth)
+		const lines = wrapTextWithAnsi(this.normalizedText, contentWidth)
 			.map((line) => truncateToWidth(this.prefix + line, width, ""));
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
 	}
 
-	invalidate() {}
+	invalidate(): void {
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
 }
 
 function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
 	return `  ⎿ ${body}${collapsedHint}`;
 }
 
-function renderExpandedToolResult(body: string, theme: any, isError: boolean): ExpandedToolResultText | Text {
+function renderExpandedToolResult(
+	body: string,
+	theme: any,
+	isError: boolean,
+	lastComponent?: unknown,
+): ExpandedToolResultText | Text {
 	const color = isError ? "error" : "muted";
 	if (!body.trim()) {
 		return new Text(theme.fg(color, renderCollapsedToolResult("Done")), 0, 0);
 	}
-	return new ExpandedToolResultText(theme.fg(color, body), theme.fg(color, "  │ "));
+
+	const text = theme.fg(color, body);
+	const prefix = theme.fg(color, "  │ ");
+	if (lastComponent instanceof ExpandedToolResultText) {
+		lastComponent.setText(text);
+		lastComponent.setPrefix(prefix);
+		return lastComponent;
+	}
+	return new ExpandedToolResultText(text, prefix);
 }
 
 function expandHint(theme: any): string {
@@ -1246,7 +1284,7 @@ function createCcstyleTool(originalTool: any): any {
 			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
 
 			const hint = !expanded && hasExpandableResult(text) ? expandHint(theme) : "";
-			if (expanded) return renderExpandedToolResult(rendered, theme, isError);
+			if (expanded) return renderExpandedToolResult(rendered, theme, isError, context?.lastComponent);
 			return new Text(
 				theme.fg(isError ? "error" : "muted", renderCollapsedToolResult(rendered, hint)),
 				0,
@@ -1505,7 +1543,7 @@ function registerWrappedTool(pi: ExtensionAPI, name: keyof ReturnType<typeof cre
 				? expandHint(theme)
 				: "";
 			const body = `${rendered}${diff ? `\n${diff}` : ""}`;
-			if (expanded) return renderExpandedToolResult(body, theme, isError);
+			if (expanded) return renderExpandedToolResult(body, theme, isError, context?.lastComponent);
 			const output = `  ⎿ ${rendered}${hint}${diff ? `\n${diff}` : ""}`;
 			return new Text(
 				theme.fg(isError ? "error" : "muted", output),
