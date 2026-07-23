@@ -4,53 +4,72 @@ import {
 	getSettingsListTheme,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
+import {
+	installCompactStyle,
+	type CompactStyleHooks,
+	type CompactStyleMode,
+} from "./compact-style.ts";
+import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 import { Container, SettingsList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Claude Code Style for pi
+ * Claude Code Style for pi.
  *
- * Tool calls and results use a compact fallback renderer by default. Renderers
- * listed in excludeRenderers remain untouched. A collapsed tool result can be
- * clicked on its Ctrl+O hint to expand only that tool.
- *
- * Dynamic commands:
- *   /ccstyle              open interactive settings
- *   /ccstyle on           enable
- *   /ccstyle off          disable
- *   /ccstyle status       show current state
- *
- * Shortcut:
- *   ctrl+shift+o          toggle on/off
+ * This is the package's only entry point. Compact transcript rendering lives in
+ * the internal compact-style module and is routed by the mode below.
  */
 
-type Config = {
-	enabled: boolean;
+export type Config = {
+	mode: CompactStyleMode;
 	excludeRenderers: string[];
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "claude-code-style.json");
+
+export function normalizeConfig(input: unknown): Config {
+	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+	const mode = source.mode;
+	const migratedMode: CompactStyleMode =
+		mode === "on" || mode === "off" || mode === "compact"
+			? mode
+			: typeof source.enabled === "boolean"
+				? (source.enabled ? "on" : "off")
+				: "on";
+	const excludeRenderers = Array.isArray(source.excludeRenderers)
+		? [...new Set(source.excludeRenderers.filter((name): name is string => typeof name === "string" && name.length > 0))]
+		: [];
+	return { mode: migratedMode, excludeRenderers };
+}
 
 let config: Config = loadConfig();
 
 function loadConfig(): Config {
 	try {
 		if (existsSync(CONFIG_PATH)) {
-			const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
-			const excludeRenderers = Array.isArray(parsed.excludeRenderers)
-				? [...new Set(parsed.excludeRenderers.filter((name): name is string => typeof name === "string" && name.length > 0))]
-				: [];
-			return {
-				enabled: parsed.enabled ?? true,
-				excludeRenderers,
-			};
+			const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as unknown;
+			const normalized = normalizeConfig(parsed);
+			const source = parsed as Record<string, unknown>;
+			// Persist the one-time enabled:boolean -> mode migration while retaining
+			// the existing exclusion list.
+			if (
+				typeof source.enabled === "boolean"
+				&& (source.mode !== "on" && source.mode !== "off" && source.mode !== "compact")
+			) {
+				try {
+					writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
+				} catch {
+					// A read-only config still uses the migrated in-memory value.
+				}
+			}
+			return normalized;
 		}
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}
-	return { enabled: true, excludeRenderers: [] };
+	return { mode: "on", excludeRenderers: [] };
 }
 
 function saveConfig() {
@@ -62,24 +81,6 @@ function oneLine(value: unknown, max = 72): string {
 		.replace(/\s+/g, " ")
 		.trim();
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-const UNSAFE_TERMINAL_ESCAPE = new RegExp(
-	"\\u001B\\][\\s\\S]*?(?:\\u0007|\\u001B\\x5C)"
-	+ "|\\u001B[PX^_][\\s\\S]*?\\u001B\\x5C"
-	+ "|(?:\\u001B\\[|\\u009B)[0-?]*[ -/]*[@-~]"
-	+ "|\\u001B[@-_]",
-	"g",
-);
-
-/** Prevent captured terminal control responses from being replayed by tool renderers. */
-function sanitizeToolResultText(value: string): string {
-	return value
-		.replace(UNSAFE_TERMINAL_ESCAPE, "")
-		.replace(/\x1B/g, "")
-		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
-		.replace(/\r\n/g, "\n")
-		.replace(/\r/g, "\n");
 }
 
 function textFromResult(result: any): string {
@@ -938,13 +939,20 @@ function scheduleSessionRender(): void {
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_RESET = "\x1b[0m";
 
-function applyEnabledState(enabled: boolean, ctx: any): void {
-	config.enabled = enabled;
-	saveConfig();
-	ctx.ui.notify(`Claude Code style: ${enabled ? "on" : "off"}`, "info");
+function refreshCurrentTranscript(compactStyle: CompactStyleHooks, ctx?: any): void {
+	compactStyle.refresh();
+	toolMouseTui?.requestRender?.(true);
+	ctx?.ui?.requestRender?.(true);
 }
 
-async function showCcstylePanel(ctx: any): Promise<void> {
+function applyStyleMode(mode: CompactStyleMode, ctx: any, compactStyle: CompactStyleHooks): void {
+	config.mode = mode;
+	saveConfig();
+	refreshCurrentTranscript(compactStyle, ctx);
+	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
+}
+
+async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Promise<void> {
 	if (ctx?.mode !== "tui" || !ctx?.hasUI || typeof ctx.ui?.custom !== "function") {
 		ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 		return;
@@ -955,17 +963,17 @@ async function showCcstylePanel(ctx: any): Promise<void> {
 		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 1));
 		const settingsList = new SettingsList(
 			[{
-				id: "enabled",
+				id: "mode",
 				label: "Output style",
-				description: "Use compact Claude Code-like tool rendering",
-				currentValue: config.enabled ? "on" : "off",
-				values: ["on", "off"],
+				description: "Claude Code, Pi native, or compact transcript rendering",
+				currentValue: config.mode,
+				values: ["on", "off", "compact"],
 			}],
 			3,
 			getSettingsListTheme(),
 			(id: string, newValue: string) => {
-				if (id !== "enabled" || (newValue !== "on" && newValue !== "off")) return;
-				applyEnabledState(newValue === "on", ctx);
+				if (id !== "mode" || (newValue !== "on" && newValue !== "off" && newValue !== "compact")) return;
+				applyStyleMode(newValue, ctx, compactStyle);
 				settingsList.updateValue(id, newValue);
 				tui.requestRender();
 			},
@@ -1027,7 +1035,7 @@ function createCcstyleTool(originalTool: any): any {
 		...originalTool,
 		renderShell: "self",
 		renderCall(args: any, theme: any, context: any) {
-			if (!config.enabled) {
+			if (config.mode !== "on") {
 				return renderDefault(originalTool, "renderCall", [args, theme, context], String(toolName));
 			}
 
@@ -1046,7 +1054,7 @@ function createCcstyleTool(originalTool: any): any {
 			return new Text(title, 0, 0);
 		},
 		renderResult(result: any, options: any, theme: any, context: any) {
-			if (!config.enabled) {
+			if (config.mode !== "on") {
 				return renderDefault(originalTool, "renderResult", [result, options, theme, context], textFromResult(result));
 			}
 
@@ -1082,19 +1090,31 @@ const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch
 const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
 const COMPONENT_TOOL_SELF_SHELL_MODE = Symbol.for("pi.ccstyle.component-tool-self-shell-mode");
 const SUBAGENT_TOOL_NAMES = new Set(["Agent"]);
-const globalToolRenderOwner = {};
+
+type ToolRenderMethods = {
+	hasRendererDefinition: (...args: any[]) => boolean;
+	getRenderShell: (...args: any[]) => "default" | "self";
+	getCallRenderer: (...args: any[]) => any;
+	getResultRenderer: (...args: any[]) => any;
+};
 
 type GlobalToolRenderPatch = {
+	version: 2;
 	prototype: any;
 	owner: object;
+	active: boolean;
 	enabled: () => boolean;
+	mode: () => CompactStyleMode;
 	wrap: (tool: any) => any;
 	byDefinition: WeakMap<object, any>;
 	byName: Map<string, any>;
-	originalHasRendererDefinition: (...args: any[]) => boolean;
-	originalGetRenderShell: (...args: any[]) => "default" | "self";
-	originalGetCallRenderer: (...args: any[]) => any;
-	originalGetResultRenderer: (...args: any[]) => any;
+	downstream: ToolRenderMethods;
+	installed: ToolRenderMethods;
+	// Keep the legacy aliases so an older extension build can read this Symbol.
+	originalHasRendererDefinition: ToolRenderMethods["hasRendererDefinition"];
+	originalGetRenderShell: ToolRenderMethods["getRenderShell"];
+	originalGetCallRenderer: ToolRenderMethods["getCallRenderer"];
+	originalGetResultRenderer: ToolRenderMethods["getResultRenderer"];
 };
 
 function isMcpToolDefinition(definition: any, toolName: string): boolean {
@@ -1118,33 +1138,43 @@ export function preservesOriginalRenderer(
 	);
 }
 
-function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): boolean {
-	const selectedMode = component[COMPONENT_TOOL_RENDER_MODE];
-	if (typeof selectedMode === "boolean") return selectedMode;
+function syncToolShell(component: any, shell: "default" | "self"): void {
+	const target = shell === "self" ? component.selfRenderContainer : component.contentBox;
+	if (!target || !Array.isArray(component.children)) return;
+	const candidates = new Set([component.contentText, component.contentBox, component.selfRenderContainer].filter(Boolean));
+	const indexes = component.children
+		.map((child: any, index: number) => candidates.has(child) ? index : -1)
+		.filter((index: number) => index >= 0);
+	const targetIndex = indexes[0];
+	// During construction getRenderShell() runs immediately before Pi mounts the
+	// selected shell. Do not mount it here or the constructor will add it twice.
+	if (targetIndex === undefined) return;
+	component.children[targetIndex] = target;
+	for (const index of indexes.sort((left: number, right: number) => right - left)) {
+		if (index !== targetIndex) component.children.splice(index, 1);
+	}
+}
 
+function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): boolean {
 	const extensionDefinition = component.toolDefinition;
 	const builtInDefinition = component.builtInToolDefinition;
 	const definition = extensionDefinition ?? builtInDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
 	const useCcstyle =
-		patch.enabled() &&
+		patch.mode() === "on" &&
 		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
-	// ToolExecutionComponent chooses its child shell in the constructor. Keep that
-	// choice stable for this row so toggling ccstyle cannot switch containers later.
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
 	return useCcstyle;
 }
 
 function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boolean {
-	const selectedMode = component[COMPONENT_TOOL_SELF_SHELL_MODE];
-	if (typeof selectedMode === "boolean") return selectedMode;
-
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
 	const useSelfShell =
 		patch.enabled() &&
 		SUBAGENT_TOOL_NAMES.has(toolName) &&
-		definition?.renderShell !== "self";
+		definition != null &&
+		definition.renderShell === undefined;
 	component[COMPONENT_TOOL_SELF_SHELL_MODE] = useSelfShell;
 	return useSelfShell;
 }
@@ -1169,61 +1199,171 @@ function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): an
 	return wrapped;
 }
 
-function installGlobalToolRendering() {
-	const prototype = (ToolExecutionComponent as any).prototype;
-	const host = globalThis as any;
-	let patch = host[GLOBAL_TOOL_RENDER_PATCH] as GlobalToolRenderPatch | undefined;
-
-	if (!patch || patch.prototype !== prototype) {
-		patch = {
-			prototype,
-			owner: globalToolRenderOwner,
-			enabled: () => config.enabled,
-			wrap: createCcstyleTool,
-			byDefinition: new WeakMap(),
-			byName: new Map(),
-			originalHasRendererDefinition: prototype.hasRendererDefinition,
-			originalGetRenderShell: prototype.getRenderShell,
-			originalGetCallRenderer: prototype.getCallRenderer,
-			originalGetResultRenderer: prototype.getResultRenderer,
-		};
-
-		host[GLOBAL_TOOL_RENDER_PATCH] = patch;
-	}
-
-	patch.owner = globalToolRenderOwner;
-	patch.enabled = () => config.enabled;
-	patch.wrap = createCcstyleTool;
-	patch.byDefinition = new WeakMap();
-	patch.byName.clear();
-
-	// Rebind on every load. /reload preserves the shared prototype and global
-	// patch object, so leaving these closures installed only in the initialization
-	// branch would keep the previous extension version's rendering logic alive.
-	prototype.hasRendererDefinition = function (...args: any[]) {
-		if (shouldGloballyStyleTool(this, patch!)) return true;
-		return patch!.originalHasRendererDefinition.apply(this, args);
-	};
-	prototype.getRenderShell = function (...args: any[]) {
-		if (shouldUseSelfShell(this, patch!) || shouldGloballyStyleTool(this, patch!)) return "self";
-		return patch!.originalGetRenderShell.apply(this, args);
-	};
-	prototype.getCallRenderer = function (...args: any[]) {
-		if (shouldGloballyStyleTool(this, patch!)) return getGloballyStyledTool(this, patch!).renderCall;
-		return patch!.originalGetCallRenderer.apply(this, args);
-	};
-	prototype.getResultRenderer = function (...args: any[]) {
-		if (shouldGloballyStyleTool(this, patch!)) return getGloballyStyledTool(this, patch!).renderResult;
-		return patch!.originalGetResultRenderer.apply(this, args);
+function prototypeToolRenderMethods(prototype: any): ToolRenderMethods {
+	return {
+		hasRendererDefinition: prototype.hasRendererDefinition,
+		getRenderShell: prototype.getRenderShell,
+		getCallRenderer: prototype.getCallRenderer,
+		getResultRenderer: prototype.getResultRenderer,
 	};
 }
 
-function deactivateGlobalToolRendering() {
-	const patch = (globalThis as any)[GLOBAL_TOOL_RENDER_PATCH] as GlobalToolRenderPatch | undefined;
-	if (patch?.owner !== globalToolRenderOwner) return;
+function isOwnershipAwarePatch(value: any): value is GlobalToolRenderPatch {
+	if (!value || value.version !== 2 || !value.installed || !value.downstream) return false;
+	return ["hasRendererDefinition", "getRenderShell", "getCallRenderer", "getResultRenderer"]
+		.every((name) => typeof value.installed[name] === "function" && typeof value.downstream[name] === "function");
+}
+
+function isLegacyInstalledWrapper(method: unknown, downstreamField: string): boolean {
+	if (typeof method !== "function") return false;
+	try {
+		const source = Function.prototype.toString.call(method);
+		return source.includes(downstreamField)
+			&& (
+				source.includes("shouldGloballyStyleTool")
+				|| source.includes("shouldUseSelfShell")
+				|| source.includes("getGloballyStyledTool")
+			);
+	} catch {
+		return false;
+	}
+}
+
+function downstreamForGlobalToolInstall(prototype: any, previous: any): ToolRenderMethods {
+	const current = prototypeToolRenderMethods(prototype);
+	if (!previous || previous.prototype !== prototype) return current;
+	if (isOwnershipAwarePatch(previous)) {
+		return {
+			hasRendererDefinition: current.hasRendererDefinition === previous.installed.hasRendererDefinition
+				? previous.downstream.hasRendererDefinition
+				: current.hasRendererDefinition,
+			getRenderShell: current.getRenderShell === previous.installed.getRenderShell
+				? previous.downstream.getRenderShell
+				: current.getRenderShell,
+			getCallRenderer: current.getCallRenderer === previous.installed.getCallRenderer
+				? previous.downstream.getCallRenderer
+				: current.getCallRenderer,
+			getResultRenderer: current.getResultRenderer === previous.installed.getResultRenderer
+				? previous.downstream.getResultRenderer
+				: current.getResultRenderer,
+		};
+	}
+
+	// Pre-v2 Symbol state did not retain wrapper references. Recognize its known
+	// wrappers when possible; otherwise preserve the current method as external.
+	const legacyDownstream = (method: Function, field: string): Function => {
+		const saved = previous[field];
+		return typeof saved === "function" && isLegacyInstalledWrapper(method, field) ? saved : method;
+	};
+	return {
+		hasRendererDefinition: legacyDownstream(
+			current.hasRendererDefinition,
+			"originalHasRendererDefinition",
+		) as ToolRenderMethods["hasRendererDefinition"],
+		getRenderShell: legacyDownstream(
+			current.getRenderShell,
+			"originalGetRenderShell",
+		) as ToolRenderMethods["getRenderShell"],
+		getCallRenderer: legacyDownstream(
+			current.getCallRenderer,
+			"originalGetCallRenderer",
+		) as ToolRenderMethods["getCallRenderer"],
+		getResultRenderer: legacyDownstream(
+			current.getResultRenderer,
+			"originalGetResultRenderer",
+		) as ToolRenderMethods["getResultRenderer"],
+	};
+}
+
+function disconnectGlobalToolRenderPatch(patch: any): void {
+	if (!patch || typeof patch !== "object") return;
+	patch.active = false;
 	patch.enabled = () => false;
+	patch.mode = () => "off";
+	patch.wrap = (tool: any) => tool;
 	patch.byDefinition = new WeakMap();
-	patch.byName.clear();
+	if (patch.byName && typeof patch.byName.clear === "function") patch.byName.clear();
+	else patch.byName = new Map();
+}
+
+function installGlobalToolRendering(): GlobalToolRenderPatch {
+	const prototype = (ToolExecutionComponent as any).prototype;
+	const host = globalThis as any;
+	const previous = host[GLOBAL_TOOL_RENDER_PATCH];
+	const downstream = downstreamForGlobalToolInstall(prototype, previous);
+	// Any wrapper retained by an external owner must become a callback-free
+	// pass-through before the new installation is linked above it.
+	disconnectGlobalToolRenderPatch(previous);
+
+	const patch: GlobalToolRenderPatch = {
+		version: 2,
+		prototype,
+		owner: {},
+		active: true,
+		enabled: () => config.mode === "on",
+		mode: () => config.mode,
+		wrap: createCcstyleTool,
+		byDefinition: new WeakMap(),
+		byName: new Map(),
+		downstream,
+		installed: undefined as any,
+		originalHasRendererDefinition: downstream.hasRendererDefinition,
+		originalGetRenderShell: downstream.getRenderShell,
+		originalGetCallRenderer: downstream.getCallRenderer,
+		originalGetResultRenderer: downstream.getResultRenderer,
+	};
+
+	patch.installed = {
+		hasRendererDefinition: function (this: any, ...args: any[]) {
+			if (patch.active && shouldGloballyStyleTool(this, patch)) return true;
+			return patch.downstream.hasRendererDefinition.apply(this, args);
+		},
+		getRenderShell: function (this: any, ...args: any[]) {
+			if (!patch.active) return patch.downstream.getRenderShell.apply(this, args);
+			const shell = shouldUseSelfShell(this, patch) || shouldGloballyStyleTool(this, patch)
+				? "self"
+				: patch.downstream.getRenderShell.apply(this, args);
+			syncToolShell(this, shell);
+			return shell;
+		},
+		getCallRenderer: function (this: any, ...args: any[]) {
+			if (patch.active && shouldGloballyStyleTool(this, patch)) {
+				return getGloballyStyledTool(this, patch).renderCall;
+			}
+			return patch.downstream.getCallRenderer.apply(this, args);
+		},
+		getResultRenderer: function (this: any, ...args: any[]) {
+			if (patch.active && shouldGloballyStyleTool(this, patch)) {
+				return getGloballyStyledTool(this, patch).renderResult;
+			}
+			return patch.downstream.getResultRenderer.apply(this, args);
+		},
+	};
+
+	prototype.hasRendererDefinition = patch.installed.hasRendererDefinition;
+	prototype.getRenderShell = patch.installed.getRenderShell;
+	prototype.getCallRenderer = patch.installed.getCallRenderer;
+	prototype.getResultRenderer = patch.installed.getResultRenderer;
+	host[GLOBAL_TOOL_RENDER_PATCH] = patch;
+	return patch;
+}
+
+function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
+	if (!patch.active) return;
+	disconnectGlobalToolRenderPatch(patch);
+	const prototype = patch.prototype;
+	if (prototype.hasRendererDefinition === patch.installed.hasRendererDefinition) {
+		prototype.hasRendererDefinition = patch.downstream.hasRendererDefinition;
+	}
+	if (prototype.getRenderShell === patch.installed.getRenderShell) {
+		prototype.getRenderShell = patch.downstream.getRenderShell;
+	}
+	if (prototype.getCallRenderer === patch.installed.getCallRenderer) {
+		prototype.getCallRenderer = patch.downstream.getCallRenderer;
+	}
+	if (prototype.getResultRenderer === patch.installed.getResultRenderer) {
+		prototype.getResultRenderer = patch.downstream.getResultRenderer;
+	}
 }
 
 const GLOBAL_COMPACTION_RENDER_PATCH = Symbol.for("pi.ccstyle.compaction-render-patch");
@@ -1251,15 +1391,20 @@ function notePendingScrollMessage(role: unknown): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	installGlobalToolRendering();
+	const globalToolRendering = installGlobalToolRendering();
 	deactivateLegacyCompactionRendering();
+	const compactStyle: CompactStyleHooks = installCompactStyle(pi, {
+		getMode: () => config.mode,
+		getExcludeRenderers: () => config.excludeRenderers,
+	});
 
 	pi.registerCommand("ccstyle", {
 		description: "Configure Claude Code style",
 		getArgumentCompletions: (prefix) => {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
-				{ value: "off", label: "off", description: "Disable Claude Code style" },
+				{ value: "off", label: "off", description: "Use Pi's native renderer" },
+				{ value: "compact", label: "compact", description: "Use compact transcript rendering" },
 				{ value: "status", label: "status", description: "Show current state" },
 			];
 			return topLevel.filter((item) => item.value.startsWith(prefix));
@@ -1267,31 +1412,23 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 			if (!arg) {
-				await showCcstylePanel(ctx);
+				await showCcstylePanel(ctx, compactStyle);
 				return;
 			}
-			if (arg === "on" || arg === "off") {
-				applyEnabledState(arg === "on", ctx);
+			if (arg === "on" || arg === "off" || arg === "compact") {
+				applyStyleMode(arg, ctx, compactStyle);
 				return;
 			}
 			if (arg === "status") {
-				ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
+				ctx.ui.notify(`Claude Code style: ${config.mode}`, "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /ccstyle [on|off|status]", "warning");
+			ctx.ui.notify("Usage: /ccstyle [on|off|compact|status]", "warning");
 		},
 	});
 
-	pi.registerShortcut("ctrl+shift+o", {
-		description: "Toggle Claude Code-like output style",
-		handler: async (ctx) => {
-			config.enabled = !config.enabled;
-			saveConfig();
-			ctx.ui.notify(`Claude Code style: ${config.enabled ? "on" : "off"}`, "info");
-		},
-	});
-
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
+		compactStyle?.onSessionStart(event, ctx);
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
@@ -1303,7 +1440,8 @@ export default function (pi: ExtensionAPI) {
 		notePendingScrollMessage(event?.message?.role);
 	});
 
-	pi.on("message_update", async (event) => {
+	pi.on("message_update", async (event, ctx) => {
+		compactStyle?.onMessageUpdate(event, ctx);
 		if (event?.message?.role === "assistant") notePendingScrollMessage("assistant");
 	});
 
@@ -1311,9 +1449,34 @@ export default function (pi: ExtensionAPI) {
 		if (event?.message?.role === "assistant") assistantMessageActive = false;
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("agent_start", async (event, ctx) => {
+		compactStyle?.onAgentStart(event, ctx);
+	});
+
+	pi.on("agent_end", async (event, ctx) => {
+		compactStyle?.onAgentEnd(event, ctx);
+	});
+
+	pi.on("turn_start", async (event, ctx) => {
+		compactStyle?.onTurnStart(event, ctx);
+	});
+
+	pi.on("tool_execution_start", async (event, ctx) => {
+		compactStyle?.onToolExecutionStart(event, ctx);
+	});
+
+	pi.on("tool_execution_update", async (event, ctx) => {
+		compactStyle?.onToolExecutionUpdate(event, ctx);
+	});
+
+	pi.on("tool_execution_end", async (event, ctx) => {
+		compactStyle?.onToolExecutionEnd(event, ctx);
+	});
+
+	pi.on("session_shutdown", async (event, ctx) => {
+		compactStyle?.onSessionShutdown(event, ctx);
 		teardownToolMouseInteraction();
-		deactivateGlobalToolRendering();
+		deactivateGlobalToolRendering(globalToolRendering);
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 	});

@@ -4,6 +4,8 @@
 /* eslint-disable */
 declare module "@earendil-works/pi-tui" {
   export const Text: any;
+  export const Markdown: any;
+  export const Spacer: any;
   export const Component: any;
   export const Container: any;
   export const SelectList: any;

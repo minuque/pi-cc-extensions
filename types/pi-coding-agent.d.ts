@@ -7,6 +7,7 @@ declare module "@earendil-works/pi-coding-agent" {
   export const CustomEditor: any;
   export const ReadonlyFooterDataProvider: any;
   export const ToolExecutionComponent: any;
+  export const AssistantMessageComponent: any;
   export function estimateTokens(...args: any[]): any;
   export function copyToClipboard(...args: any[]): any;
   export function createBashToolDefinition(...args: any[]): any;
@@ -18,6 +19,7 @@ declare module "@earendil-works/pi-coding-agent" {
   export function createWriteToolDefinition(...args: any[]): any;
   export function generateDiffString(...args: any[]): any;
   export function getSettingsListTheme(...args: any[]): any;
+  export function initTheme(...args: any[]): any;
   export function renderDiff(...args: any[]): any;
   export function keyHint(...args: any[]): any;
 

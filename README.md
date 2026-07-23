@@ -50,31 +50,38 @@
 
 `extensions/claude-code-style.ts` 提供：
 
-- Claude Code 风格的工具调用行与结果摘要（默认覆盖普通工具 renderer）
+- `on`：Claude Code 风格的工具调用行与结果摘要（默认覆盖普通工具 renderer）
+- `off`：使用 Pi 原生输出
+- `compact`：单行工具预览、运行状态与耗时、连续同名工具合并、失败独立行、运行总结，以及隐藏 thinking 时的标题 ticker
 - Pi 默认输入栏
-- 通过 `excludeRenderers` 保留指定工具的原生或扩展 renderer
-- 工具结果的折叠与展开
-- 类 claude code 滚动到底部 button
+- 通过 `excludeRenderers` 保留指定工具的原生或扩展 renderer；`Agent` 始终保留专用 renderer
+- 工具结果的折叠与展开；切换模式会立即重绘已有 transcript
+- 类 Claude Code 滚动到底部 button
 
 常用命令：
 
 ```text
 /ccstyle             # 打开交互式配置面板
-/ccstyle on          # 开启
-/ccstyle off         # 关闭
-/ccstyle status      # 查看状态
+/ccstyle on          # Claude Code 风格
+/ccstyle off         # Pi 原生输出
+/ccstyle compact     # 紧凑 transcript 风格
+/ccstyle status      # 查看当前模式
 ```
 
 需要保留指定工具的原生或扩展 renderer 时，编辑 `~/.pi/agent/claude-code-style.json`：
 
 ```json
 {
-  "enabled": true,
+  "mode": "compact",
   "excludeRenderers": ["edit", "write"]
 }
 ```
 
-名单使用精确工具名；修改后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
+`mode` 可取 `on`、`off` 或 `compact`。旧版 `enabled: true/false` 会自动迁移为 `on/off`。排除名单使用精确工具名；手动修改配置后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
+
+`compact` 不会自动修改 Pi 的 `hideThinkingBlock` 或 `outputPad` 设置。运行总结会持久化到 Session，但只在 `compact` 模式显示。
+
+Compact transcript 行为改编自 [avhagedorn/pi-compact-transcript](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT，Alan Hagedorn）。
 
 ### 上下文窗口查看
 
