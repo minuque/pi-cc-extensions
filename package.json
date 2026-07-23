@@ -27,8 +27,7 @@
       "./extensions/claude-code-style.ts",
       "./extensions/context.ts",
       "./extensions/session-reference.ts",
-      "./extensions/agent-autocomplete.ts",
-      "./extensions/compact-style.ts"
+      "./extensions/agent-autocomplete.ts"
     ],
     "image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
   },
