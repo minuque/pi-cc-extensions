@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：为 Pi 提供 Claude Code 风格界面、上下文洞察和历史 Session 引用">
+  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：集成 Claude Code 风格界面、上下文检查及 Agent 与 Session 引用的 Pi 效率扩展套件">
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  为 Pi 补充一套更接近 Claude Code 的终端工作流 · 上下文洞察 · 历史 Session 引用
+  面向 Pi 的终端效率扩展套件 · Claude Code 风格界面 · 上下文检查 · Agent 与 Session 引用
 </p>
 
 ---
