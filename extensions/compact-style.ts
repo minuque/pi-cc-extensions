@@ -501,7 +501,7 @@ function anchorCurrentThoughtTo(info: ToolInfo) {
 
 function currentThoughtLine(toolCallId: string, theme: Theme): string {
 	if (!thoughtTickerEnabled() || state.thoughtAnchorId !== toolCallId || !state.currentThoughtHeading) return "";
-	const prefix = "↳ ";
+	const prefix = " ↳ ";
 	const budget = previewWidth((process.stdout.columns || 100) - prefix.length);
 	return theme.fg("dim", prefix) + theme.fg("thinkingText", limitPlain(state.currentThoughtHeading, budget));
 }
@@ -625,11 +625,12 @@ function compactToolLine(
 		isError: info.isError,
 		hasResult: result != null || !!info.result,
 	});
-	if (!isBurst) return marker + theme.fg("muted", limitPlain(details));
+	const indent = " ";
+	if (!isBurst) return indent + marker + theme.fg("muted", limitPlain(details));
 
 	const prefix = `${info.burstCount}× `;
-	const budget = previewWidth((process.stdout.columns || 100) - prefix.length - MARKER_WIDTH);
-	return marker + theme.fg("muted", prefix + limitPlain(details, budget));
+	const budget = previewWidth((process.stdout.columns || 100) - indent.length - prefix.length - MARKER_WIDTH);
+	return indent + marker + theme.fg("muted", prefix + limitPlain(details, budget));
 }
 
 function shouldCompactComponent(component: any, mode: CompactStyleMode): boolean {
@@ -1019,7 +1020,11 @@ export class DynamicSummaryComponent {
 	render(width: number): string[] {
 		const line = currentMode() !== "off" ? summaryLine(this.data) : "";
 		if (!line) return [];
-		return new Text(this.theme.fg("muted", line), 0, 0).render(width);
+		const italic = typeof (this.theme as any).italic === "function"
+			? (this.theme as any).italic(this.theme.fg("muted", line))
+			: this.theme.fg("muted", line);
+		const prefix = this.theme.fg("borderMuted", "│ ");
+		return new Text(prefix + italic, 0, 0).render(width);
 	}
 }
 

@@ -20,6 +20,9 @@ const theme = {
 	fg(_color: string, text: string) {
 		return text;
 	},
+	italic(text: string) {
+		return text;
+	},
 } as any;
 
 function createContext(ui: any) {
@@ -116,14 +119,20 @@ test("summary renderer is a dynamic component and refresh requests a repaint", (
 	});
 	hooks.onSessionStart({}, createContext(ui));
 
-	const component = summaryRenderer({ data: { reads: 2, durationMs: 1000 } }, {}, theme);
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
+	const styledTheme = {
+		...theme,
+		italic(text: string) {
+			return `<italic>${text}</italic>`;
+		},
+	};
+	const component = summaryRenderer({ data: { reads: 2, durationMs: 1000 } }, {}, styledTheme);
+	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
 	mode = "off";
 	assert.deepEqual(component.render(80), [], "the same mounted component hides immediately");
 	mode = "on";
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
+	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
 	mode = "compact";
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
+	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
 
 	new ToolExecutionComponent("read", "refresh-test", { path: "a.ts" }, {}, undefined, ui, process.cwd());
 	hooks.refresh();
@@ -449,7 +458,7 @@ test("compact tool rows align with and separate a thinking ticker", () => {
 	}, ctx);
 	assert.deepEqual(
 		tool.render(120).map((line: string) => line.trimEnd()),
-		["", "✓ read a.ts {running}", "↳ Inspect the implementation"],
+		["", " ✓ read a.ts {running}", " ↳ Inspect the implementation"],
 	);
 	hooks.onSessionShutdown({}, ctx);
 });
