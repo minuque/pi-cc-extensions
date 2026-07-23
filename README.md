@@ -19,6 +19,13 @@
 
 <table>
   <tr>
+    <td colspan="2" align="center">
+      <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
+      <br>
+      <sub><b>欢迎界面</b><br>结合 <code>npm:pi-startup-header</code> 与 <code>npm:pi-zentui</code> 的 Pi 工作区</sub>
+    </td>
+  </tr>
+  <tr>
     <td width="50%" align="center">
       <img src="./assets/readme/fixed-editor-navigation.webp" width="100%" alt="Pi fixed-editor 中的工具结果、回到底部按钮与 Ctrl+End 快捷键">
       <br>

@@ -171,18 +171,18 @@ test("reload and resume keep transcript components rebuilt before session_start"
 			process.cwd(),
 		);
 		assert.match(rendered(rebuiltAssistant), /Thinking/);
-		assert.doesNotMatch(rendered(rebuiltTool), /◆/);
+		assert.doesNotMatch(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 
 		hooks.onSessionStart({ reason }, createContext(ui));
 		assert.doesNotMatch(rendered(rebuiltAssistant), /Thinking/, `${reason} retains the rebuilt assistant row`);
-		assert.match(rendered(rebuiltTool), /◆/, `${reason} retains the rebuilt tool row`);
+		assert.match(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, `${reason} retains the rebuilt tool row`);
 		assert.ok(renderRequests.includes(true), `${reason} retains the rebuilt row's TUI`);
 		assert.equal(staleInvalidations, 0, `${reason} discarded old-session registries at shutdown`);
 
 		mode = "off";
 		hooks.refresh();
 		assert.match(rendered(rebuiltAssistant), /Thinking/, `${reason} can restore the rebuilt assistant row`);
-		assert.doesNotMatch(rendered(rebuiltTool), /◆/, `${reason} can restore the rebuilt tool row`);
+		assert.doesNotMatch(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, `${reason} can restore the rebuilt tool row`);
 		hooks.onSessionShutdown({ reason: "quit" }, createContext(ui));
 	}
 });
@@ -208,7 +208,7 @@ test("shutdown restores compact rows and prototype methods owned by this install
 		assistantMessage([{ type: "thinking", thinking: "restore me" }]),
 		true,
 	);
-	assert.match(rendered(tool), /◆/);
+	assert.match(rendered(tool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 	assert.doesNotMatch(rendered(assistant), /Thinking/);
 
 	hooks.onSessionShutdown({ reason: "quit" }, createContext(ui));
@@ -219,7 +219,7 @@ test("shutdown restores compact rows and prototype methods owned by this install
 		[tool.contentText, tool.contentBox, tool.selfRenderContainer].filter((child) => tool.children.includes(child)),
 		[tool.contentText],
 	);
-	assert.doesNotMatch(rendered(tool), /◆/);
+	assert.doesNotMatch(rendered(tool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 	assert.match(rendered(assistant), /Thinking/);
 	modeCalls = 0;
 	tool.invalidate();
@@ -337,14 +337,14 @@ test("compact restores contentText for tools without definitions", () => {
 	) as any;
 	assert.equal(component.children.includes(component.selfRenderContainer), true);
 	assert.equal(component.children.includes(component.contentText), false);
-	assert.match(rendered(component), /◆/);
+	assert.match(rendered(component), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 
 	mode = "off";
 	hooks.refresh();
 	const mountedShells = [component.contentText, component.contentBox, component.selfRenderContainer]
 		.filter((child) => component.children.includes(child));
 	assert.deepEqual(mountedShells, [component.contentText]);
-	assert.doesNotMatch(rendered(component), /◆/);
+	assert.doesNotMatch(rendered(component), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 	assert.equal(rendered(component).match(/undefined-definition/g)?.length, 1, "no stale self-rendered duplicate row remains");
 	hooks.onSessionShutdown({}, createContext(ui));
 });
@@ -377,7 +377,7 @@ test("Agent and excluded tools retain their dedicated renderers and declared she
 	assert.equal(agent.children.includes(agent.selfRenderContainer), false);
 	assert.match(rendered(agent), /agent call/);
 	assert.match(rendered(agent), /agent result/);
-	assert.doesNotMatch(rendered(agent), /◆/);
+	assert.doesNotMatch(rendered(agent), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 
 	const excluded = new ToolExecutionComponent(
 		"special",
@@ -392,7 +392,7 @@ test("Agent and excluded tools retain their dedicated renderers and declared she
 	assert.equal(excluded.children.includes(excluded.selfRenderContainer), true, "excluded tool's self shell is respected");
 	assert.match(rendered(excluded), /special call/);
 	assert.match(rendered(excluded), /special result/);
-	assert.doesNotMatch(rendered(excluded), /◆/);
+	assert.doesNotMatch(rendered(excluded), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 	hooks.onSessionShutdown({}, createContext(ui));
 });
 
@@ -465,6 +465,8 @@ test("reload and resume hydration split failed tools from same-name bursts", () 
 
 			const later = rebuild(`${reason}-success-2`, `${reason}-later.ts`, textResult("ok"));
 			const outputs = [rendered(first), rendered(failed), rendered(later)];
+			assert.match(outputs[0]!, /✓/, `${reason} uses the Claude-style success marker`);
+			assert.match(outputs[1]!, /✗/, `${reason} uses the Claude-style error marker`);
 			assert.match(outputs[1]!, /permission denied/, `${reason} keeps the failed row visible`);
 			assert.match(outputs[2]!, new RegExp(`read ${reason}-later\\.ts`));
 			for (const output of outputs) {
@@ -501,6 +503,7 @@ test("bursts merge, failures regain an independent row, and agent_end persists a
 	assert.deepEqual(components[0]!.render(120), []);
 	assert.deepEqual(components[1]!.render(120), []);
 	assert.match(rendered(components[2]), /3× read c\.ts/);
+	assert.match(rendered(components[2]), /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, "running tools use Claude's braille loader");
 
 	hooks.onToolExecutionEnd({
 		toolCallId: "read-2",
@@ -549,6 +552,28 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	const command = commands.get("ccstyle");
 	assert.deepEqual(command.getArgumentCompletions("").map((item: any) => item.value), ["on", "off", "compact", "status"]);
 	assert.deepEqual(shortcuts, []);
+
+	let panel: any;
+	const panelTheme = { ...theme, bold: (text: string) => text };
+	await command.handler("", {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			custom(factory: Function) {
+				panel = factory({ requestRender() {} }, panelTheme, {}, () => {});
+				return Promise.resolve();
+			},
+			notify() {},
+			setStatus() {},
+		},
+	});
+	const panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("on") && line.includes("Claude Code style")));
+	assert.ok(panelLines.some((line: string) => line.includes("off") && line.includes("Pi native output")));
+	assert.ok(panelLines.some((line: string) => line.includes("compact") && line.includes("Compact transcript")));
+	assert.match(panelLines[0]!, /─|━/, "panel has a top divider");
+	assert.match(panelLines.at(-1)!, /─|━/, "panel has a bottom divider");
+
 	for (const name of [
 		"session_start",
 		"agent_start",

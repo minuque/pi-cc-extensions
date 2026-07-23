@@ -8,6 +8,7 @@ declare module "@earendil-works/pi-coding-agent" {
   export const ReadonlyFooterDataProvider: any;
   export const ToolExecutionComponent: any;
   export const AssistantMessageComponent: any;
+  export const DynamicBorder: any;
   export function estimateTokens(...args: any[]): any;
   export function copyToClipboard(...args: any[]): any;
   export function createBashToolDefinition(...args: any[]): any;

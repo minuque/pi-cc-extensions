@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
+	DynamicBorder,
 	keyHint,
-	getSettingsListTheme,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -10,7 +10,7 @@ import {
 	type CompactStyleMode,
 } from "./compact-style.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
-import { Container, SettingsList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Container, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -254,7 +254,7 @@ export class ExpandedToolResultText {
 }
 
 function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
-	return `  ⎿ ${body}${collapsedHint}`;
+	return `\n    ⎿ ${body}${collapsedHint}`;
 }
 
 function renderExpandedToolResult(
@@ -958,37 +958,38 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 		return;
 	}
 
-	await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: (value?: void) => void) => {
+	const modes: Array<{ value: CompactStyleMode; label: string; description: string }> = [
+		{ value: "on", label: "on", description: "Claude Code style" },
+		{ value: "off", label: "off", description: "Pi native output" },
+		{ value: "compact", label: "compact", description: "Compact transcript" },
+	];
+	const selectedMode = await (ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: (value?: CompactStyleMode) => void) => {
 		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 1));
-		const settingsList = new SettingsList(
-			[{
-				id: "mode",
-				label: "Output style",
-				description: "Claude Code, Pi native, or compact transcript rendering",
-				currentValue: config.mode,
-				values: ["on", "off", "compact"],
-			}],
-			3,
-			getSettingsListTheme(),
-			(id: string, newValue: string) => {
-				if (id !== "mode" || (newValue !== "on" && newValue !== "off" && newValue !== "compact")) return;
-				applyStyleMode(newValue, ctx, compactStyle);
-				settingsList.updateValue(id, newValue);
-				tui.requestRender();
-			},
-			() => done(),
-		);
-		container.addChild(settingsList);
+		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
+		const selectList = new SelectList(modes, modes.length, {
+			selectedPrefix: (text: string) => theme.fg("accent", text),
+			selectedText: (text: string) => theme.fg("accent", text),
+			description: (text: string) => theme.fg("muted", text),
+			scrollInfo: (text: string) => theme.fg("dim", text),
+			noMatch: (text: string) => theme.fg("warning", text),
+		});
+		selectList.setSelectedIndex(modes.findIndex((item) => item.value === config.mode));
+		selectList.onSelect = (item: { value: string }) => done(item.value as CompactStyleMode);
+		selectList.onCancel = () => done();
+		container.addChild(selectList);
+		container.addChild(new Text(theme.fg("dim", "↑↓ navigate · enter select · esc cancel"), 1, 0));
+		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		return {
 			render: (width: number) => container.render(width),
 			invalidate: () => container.invalidate(),
 			handleInput(data: string) {
-				settingsList.handleInput?.(data);
+				selectList.handleInput(data);
 				tui.requestRender();
 			},
 		};
-	});
+	}) as Promise<CompactStyleMode | undefined>);
+	if (selectedMode) applyStyleMode(selectedMode, ctx, compactStyle);
 }
 
 function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any[], fallback = "") {
@@ -1171,7 +1172,7 @@ function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boole
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
 	const useSelfShell =
-		patch.enabled() &&
+		patch.mode() !== "off" &&
 		SUBAGENT_TOOL_NAMES.has(toolName) &&
 		definition != null &&
 		definition.renderShell === undefined;

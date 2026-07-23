@@ -104,7 +104,6 @@ type RuntimeState = {
 	hiddenToolIds: Set<string>;
 	runningToolIds: Set<string>;
 	agentActive: boolean;
-	blinkOn: boolean;
 	blinkTimer?: ReturnType<typeof setInterval>;
 	runStats: RunStats;
 	toolComponents: Set<any>;
@@ -123,8 +122,11 @@ const MIN_PREVIEW_WIDTH = 20;
 const MAX_PREVIEW_WIDTH = 104;
 // Leave room for pi's row gutter/padding so compact lines never wrap.
 const PREVIEW_MARGIN = 6;
-const BLINK_INTERVAL_MS = 400;
-// Status marker is two cells wide ("◆ ").
+// Keep the running marker in sync with Claude mode's braille loader.
+const BLINK_INTERVAL_MS = 80;
+const CLAUDE_LOADING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const CLAUDE_LOADING_TOOLS = new Set(["read", "bash", "edit", "write", "find", "grep", "ls"]);
+// Status marker is two cells wide ("✓ ", "✗ ", or the Claude-style running frame).
 const MARKER_WIDTH = 2;
 const STATE_KEY = Symbol.for("pi.ccstyle.compact-style.state");
 const TOOL_PATCH_KEY = Symbol.for("pi.ccstyle.compact-style.tool-patch");
@@ -153,7 +155,6 @@ function getState(): RuntimeState {
 		hiddenToolIds: new Set(),
 		runningToolIds: new Set(),
 		agentActive: false,
-		blinkOn: true,
 		runStats: newRunStats(),
 		toolComponents: new Set(),
 		assistantComponents: new Set(),
@@ -378,7 +379,6 @@ function ensureBlinkTimer() {
 			stopBlinkTimer();
 			return;
 		}
-		state.blinkOn = !state.blinkOn;
 		for (const id of state.runningToolIds) state.toolsById.get(id)?.invalidate?.();
 	}, BLINK_INTERVAL_MS);
 	state.blinkTimer.unref?.();
@@ -387,14 +387,21 @@ function ensureBlinkTimer() {
 function stopBlinkTimer() {
 	if (state.blinkTimer) clearInterval(state.blinkTimer);
 	state.blinkTimer = undefined;
-	state.blinkOn = true;
 }
 
-function statusMarker(theme: Theme, opts: { running?: boolean; isError?: boolean; hasResult?: boolean }): string {
-	if (opts.isError) return theme.fg("error", "◆ ");
-	if (opts.running) return theme.fg("dim", state.blinkOn ? "◆ " : "◇ ");
-	if (opts.hasResult) return theme.fg("success", "◆ ");
-	return theme.fg("dim", "◆ ");
+function statusMarker(
+	theme: Theme,
+	name: string,
+	opts: { running?: boolean; isError?: boolean; hasResult?: boolean },
+): string {
+	if (opts.isError) return theme.fg("error", "✗ ");
+	if (opts.running) {
+		if (!CLAUDE_LOADING_TOOLS.has(name)) return theme.fg("accent", "● ");
+		const frame = CLAUDE_LOADING_FRAMES[Math.floor(Date.now() / BLINK_INTERVAL_MS) % CLAUDE_LOADING_FRAMES.length] ?? "⠋";
+		return theme.fg("accent", `${frame} `);
+	}
+	if (opts.hasResult) return theme.fg("success", "✓ ");
+	return theme.fg("dim", "● ");
 }
 
 function textSignalHasVisibleContent(assistantMessageEvent: any): boolean {
@@ -611,7 +618,7 @@ function compactToolLine(
 	const inner = [info.result ? oneLine(info.result) : "", durationText].filter(Boolean).join(" · ");
 	const status = inner ? ` {${inner}}` : info.running ? " {running}" : "";
 	const details = `${info.preview}${status}`;
-	const marker = statusMarker(theme, {
+	const marker = statusMarker(theme, name, {
 		running: info.running,
 		isError: info.isError,
 		hasResult: result != null || !!info.result,
