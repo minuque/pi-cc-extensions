@@ -50,9 +50,9 @@
 
 `extensions/claude-code-style.ts` 提供：
 
-- Claude Code 风格的工具调用行与结果摘要
+- Claude Code 风格的工具调用行与结果摘要（默认覆盖普通工具 renderer）
 - Pi 默认输入栏
-- 未被专用 renderer 接管的工具兜底渲染
+- 通过 `excludeRenderers` 保留指定工具的原生或扩展 renderer
 - 工具结果的折叠与展开
 - 类 claude code 滚动到底部 button
 
@@ -64,6 +64,17 @@
 /ccstyle off         # 关闭
 /ccstyle status      # 查看状态
 ```
+
+需要保留指定工具的原生或扩展 renderer 时，编辑 `~/.pi/agent/claude-code-style.json`：
+
+```json
+{
+  "enabled": true,
+  "excludeRenderers": ["edit", "write"]
+}
+```
+
+名单使用精确工具名；修改后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
 
 ### 上下文窗口查看
 

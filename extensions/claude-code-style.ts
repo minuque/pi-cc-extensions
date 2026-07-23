@@ -12,8 +12,8 @@ import { join } from "node:path";
 /**
  * Claude Code Style for pi
  *
- * Tool calls and results use a compact fallback renderer. Dedicated renderers
- * supplied by other extensions remain untouched. A collapsed tool result can be
+ * Tool calls and results use a compact fallback renderer by default. Renderers
+ * listed in excludeRenderers remain untouched. A collapsed tool result can be
  * clicked on its Ctrl+O hint to expand only that tool.
  *
  * Dynamic commands:
@@ -28,6 +28,7 @@ import { join } from "node:path";
 
 type Config = {
 	enabled: boolean;
+	excludeRenderers: string[];
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "claude-code-style.json");
@@ -38,14 +39,18 @@ function loadConfig(): Config {
 	try {
 		if (existsSync(CONFIG_PATH)) {
 			const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
+			const excludeRenderers = Array.isArray(parsed.excludeRenderers)
+				? [...new Set(parsed.excludeRenderers.filter((name): name is string => typeof name === "string" && name.length > 0))]
+				: [];
 			return {
 				enabled: parsed.enabled ?? true,
+				excludeRenderers,
 			};
 		}
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}
-	return { enabled: true };
+	return { enabled: true, excludeRenderers: [] };
 }
 
 function saveConfig() {
@@ -1069,10 +1074,9 @@ function createCcstyleTool(originalTool: any): any {
 
 /**
  * This extension does not register tools. ToolExecutionComponent is shared by
- * the TUI and exported by pi; patch its renderer lookup once so generic tools
- * use the same compact fallback shell.
- * Native Pi tools and extension tools without a dedicated renderer can use the
- * fallback; subagents and extension-owned renderers keep their own output.
+ * the TUI and exported by pi; patch its renderer lookup once so tools use the
+ * same compact fallback shell by default. Tools named in excludeRenderers keep
+ * their original renderer; subagent rendering remains protected.
  */
 const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
 const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
@@ -1098,21 +1102,20 @@ function isMcpToolDefinition(definition: any, toolName: string): boolean {
 	return toolName === "mcp" || label === "MCP" || label.startsWith("MCP: ");
 }
 
-/**
- * ToolExecutionComponent keeps extension-supplied and native definitions in
- * separate fields. Native renderers are eligible for ccstyle's fallback, while
- * an extension-owned dedicated renderer must remain untouched.
- */
+/** Return true when this tool must keep its original renderer. */
 export function preservesOriginalRenderer(
 	extensionDefinition: any,
 	toolName: string,
 	builtInToolDefinition?: any,
+	excludeRenderers: readonly string[] = config.excludeRenderers,
 ): boolean {
 	if (SUBAGENT_TOOL_NAMES.has(toolName)) return true;
-	if (!extensionDefinition || extensionDefinition === builtInToolDefinition) return false;
-	return extensionDefinition.renderShell === "self"
-		|| typeof extensionDefinition.renderCall === "function"
-		|| typeof extensionDefinition.renderResult === "function";
+	if (!excludeRenderers.includes(toolName)) return false;
+	return [extensionDefinition, builtInToolDefinition].some((definition) =>
+		definition?.renderShell === "self"
+		|| typeof definition?.renderCall === "function"
+		|| typeof definition?.renderResult === "function",
+	);
 }
 
 function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): boolean {
