@@ -12,7 +12,7 @@ import {
 	summaryLine,
 	type CompactStyleMode,
 } from "../extensions/compact-style.ts";
-import claudeCodeStyleExtension, { normalizeConfig } from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension, { normalizeConfig, renderCollapsedToolResult } from "../extensions/claude-code-style.ts";
 
 initTheme("dark");
 
@@ -72,6 +72,7 @@ test("rendererRoute keeps Agent and exclusions native in every mode", () => {
 });
 
 test("compact duration, previews, and summaries stay concise", () => {
+	assert.equal(renderCollapsedToolResult("Done"), "  ↳ Done");
 	assert.equal(formatDuration(999), "");
 	assert.equal(formatDuration(1000), "1s");
 	assert.equal(formatDuration(61_000), "1m1s");
@@ -119,6 +120,8 @@ test("summary renderer is a dynamic component and refresh requests a repaint", (
 	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
 	mode = "off";
 	assert.deepEqual(component.render(80), [], "the same mounted component hides immediately");
+	mode = "on";
+	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
 	mode = "compact";
 	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["Read 2 files · 1s"]);
 
@@ -318,6 +321,41 @@ test("compact prototype replacement chains external wrappers", () => {
 	assistantPrototype.updateContent = originalUpdateContent;
 });
 
+test("compact reclaims assistant rendering after a later thinking extension patch", () => {
+	let mode: CompactStyleMode = "compact";
+	const ui = createUi();
+	const ctx = createContext(ui);
+	const prototype = AssistantMessageComponent.prototype as any;
+	const originalUpdateContent = prototype.updateContent;
+	const hooks = installCompactStyle({} as any, {
+		getMode: () => mode,
+		getExcludeRenderers: () => [],
+	});
+	const ccstyleUpdateContent = prototype.updateContent;
+	const laterRenderer = function (this: any, message: any) {
+		if (this.hideThinkingBlock) {
+			this.contentContainer.clear();
+			this.contentContainer.addChild(new Text("Thought for 6s", 0, 0));
+			this.lastMessage = message;
+			return;
+		}
+		return ccstyleUpdateContent.call(this, message);
+	};
+	prototype.updateContent = laterRenderer;
+	try {
+		hooks.onSessionStart({}, ctx);
+		assert.equal(prototype.updateContent, ccstyleUpdateContent, "ccstyle reclaims the outer renderer");
+		const component = new AssistantMessageComponent(
+			assistantMessage([{ type: "thinking", thinking: "hidden" }]),
+			true,
+		);
+		assert.doesNotMatch(rendered(component), /Thought for|hidden/);
+	} finally {
+		hooks.onSessionShutdown({}, ctx);
+		prototype.updateContent = originalUpdateContent;
+	}
+});
+
 test("compact restores contentText for tools without definitions", () => {
 	let mode: CompactStyleMode = "compact";
 	const ui = createUi();
@@ -396,10 +434,31 @@ test("Agent and excluded tools retain their dedicated renderers and declared she
 	hooks.onSessionShutdown({}, createContext(ui));
 });
 
-test("compact assistant rendering preserves native terminal stop notices", () => {
+test("compact tool rows align with and separate a thinking ticker", () => {
 	const ui = createUi();
+	const ctx = createContext(ui);
 	const hooks = installCompactStyle({} as any, {
 		getMode: () => "compact",
+		getExcludeRenderers: () => [],
+	});
+	hooks.onSessionStart({}, ctx);
+	const tool = new ToolExecutionComponent("read", "thinking-tool", { path: "a.ts" }, {}, undefined, ui as any, process.cwd());
+	hooks.onMessageUpdate({
+		assistantMessageEvent: { type: "thinking_delta" },
+		message: assistantMessage([{ type: "thinking", thinking: "Inspect the implementation" }]),
+	}, ctx);
+	assert.deepEqual(
+		tool.render(120).map((line: string) => line.trimEnd()),
+		["", "✓ read a.ts {running}", "↳ Inspect the implementation"],
+	);
+	hooks.onSessionShutdown({}, ctx);
+});
+
+test("compact assistant rendering hides thinking regardless of Pi setting and preserves terminal notices", () => {
+	let mode: CompactStyleMode = "compact";
+	const ui = createUi();
+	const hooks = installCompactStyle({} as any, {
+		getMode: () => mode,
 		getExcludeRenderers: () => [],
 	});
 	hooks.onSessionStart({}, createContext(ui));
@@ -430,6 +489,15 @@ test("compact assistant rendering preserves native terminal stop notices", () =>
 			assert.match(output, /partial answer/);
 		}
 	}
+
+	const nativeThinkingEnabled = new AssistantMessageComponent(
+		assistantMessage([{ type: "thinking", thinking: "must stay hidden in compact" }]),
+		false,
+	);
+	assert.doesNotMatch(rendered(nativeThinkingEnabled), /must stay hidden|Thinking|Thought for/);
+	mode = "on";
+	nativeThinkingEnabled.updateContent(nativeThinkingEnabled.lastMessage);
+	assert.match(rendered(nativeThinkingEnabled), /must stay hidden|Thinking/, "switching modes restores Pi's setting");
 	hooks.onSessionShutdown({}, createContext(ui));
 });
 
@@ -529,6 +597,33 @@ test("bursts merge, failures regain an independent row, and agent_end persists a
 		{ reads: 3, edits: 0, commands: 0, others: 0, failed: 1 },
 	);
 	hooks.onSessionShutdown({}, ctx);
+});
+
+test("on mode persists recap entries while off mode does not", () => {
+	for (const mode of ["on", "off"] as const) {
+		const entries: Array<{ type: string; data: any }> = [];
+		const ui = createUi();
+		const ctx = createContext(ui);
+		const hooks = installCompactStyle({
+			appendEntry(type: string, data: any) {
+				entries.push({ type, data });
+			},
+		} as any, {
+			getMode: () => mode,
+			getExcludeRenderers: () => [],
+		});
+		hooks.onSessionStart({}, ctx);
+		hooks.onAgentStart({}, ctx);
+		for (const [index, path] of ["a.ts", "b.ts"].entries()) {
+			const id = `${mode}-read-${index}`;
+			hooks.onToolExecutionStart({ toolCallId: id, toolName: "read", args: { path } }, ctx);
+			hooks.onToolExecutionEnd({ toolCallId: id, result: textResult("ok"), isError: false }, ctx);
+		}
+		hooks.onAgentEnd({}, ctx);
+		assert.equal(entries.length, mode === "on" ? 1 : 0);
+		if (mode === "on") assert.equal(entries[0]!.type, "compact-transcript-summary");
+		hooks.onSessionShutdown({}, ctx);
+	}
 });
 
 test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => {

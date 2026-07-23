@@ -86,7 +86,6 @@
 
 `mode` 可取 `on`、`off` 或 `compact`。旧版 `enabled: true/false` 会自动迁移为 `on/off`。排除名单使用精确工具名；手动修改配置后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
 
-`compact` 不会自动修改 Pi 的 `hideThinkingBlock` 或 `outputPad` 设置。运行总结会持久化到 Session，但只在 `compact` 模式显示。
 
 Compact transcript 行为改编自 [avhagedorn/pi-compact-transcript](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT，Alan Hagedorn）。
 

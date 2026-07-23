@@ -32,6 +32,7 @@ type AssistantPrototypePatch = {
 	prototype: any;
 	active: boolean;
 	originalUpdateContent: (...args: any[]) => any;
+	nativeUpdateContent: (...args: any[]) => any;
 	patchedUpdateContent: (...args: any[]) => any;
 };
 
@@ -131,6 +132,7 @@ const MARKER_WIDTH = 2;
 const STATE_KEY = Symbol.for("pi.ccstyle.compact-style.state");
 const TOOL_PATCH_KEY = Symbol.for("pi.ccstyle.compact-style.tool-patch");
 const ASSISTANT_PATCH_KEY = Symbol.for("pi.ccstyle.compact-style.assistant-patch");
+const ASSISTANT_REENTRY_KEY = Symbol.for("pi.ccstyle.compact-style.assistant-reentry");
 const TOOL_NATIVE_CHILD_KEY = Symbol.for("pi.ccstyle.compact-style.native-tool-child");
 
 function newRunStats(): RunStats {
@@ -499,7 +501,7 @@ function anchorCurrentThoughtTo(info: ToolInfo) {
 
 function currentThoughtLine(toolCallId: string, theme: Theme): string {
 	if (!thoughtTickerEnabled() || state.thoughtAnchorId !== toolCallId || !state.currentThoughtHeading) return "";
-	const prefix = "  ↳ ";
+	const prefix = "↳ ";
 	const budget = previewWidth((process.stdout.columns || 100) - prefix.length);
 	return theme.fg("dim", prefix) + theme.fg("thinkingText", limitPlain(state.currentThoughtHeading, budget));
 }
@@ -786,8 +788,11 @@ function patchToolExecutionComponent(installation: CompactInstallation): ToolPro
 			return;
 		}
 
-		this.selfRenderContainer.addChild(new Text(line, 0, 0));
 		const thoughtLine = currentThoughtLine(this.toolCallId, theme);
+		// Keep a compact tool group visually separate from its thinking ticker,
+		// without adding vertical space to ordinary compact tool rows.
+		if (thoughtLine) this.selfRenderContainer.addChild(new Spacer(1));
+		this.selfRenderContainer.addChild(new Text(line, 0, 0));
 		if (thoughtLine) this.selfRenderContainer.addChild(new Text(thoughtLine, 0, 0));
 	};
 
@@ -839,20 +844,34 @@ function patchAssistantMessageComponent(installation: CompactInstallation): Assi
 		prototype,
 		active: true,
 		originalUpdateContent: prototype.updateContent,
+		nativeUpdateContent: prototype.updateContent,
 		patchedUpdateContent: undefined as any,
 	};
 
 	patch.patchedUpdateContent = function patchedUpdateContent(this: any, message: any) {
+		// A renderer loaded after ccstyle may call the previous ccstyle wrapper.
+		// Bypass the newly linked downstream wrapper on that re-entry to avoid a
+		// recursion loop while preserving the original native renderer.
+		if (this[ASSISTANT_REENTRY_KEY] === patch) {
+			return patch.nativeUpdateContent.call(this, message);
+		}
 		if (!patch.active || !installation.active || state.activeInstallation !== installation) {
 			return patch.originalUpdateContent.call(this, message);
 		}
 
 		state.assistantComponents.add(this);
-		state.thinkingHidden = !!this.hideThinkingBlock;
 		const mode = currentMode();
-		if (mode !== "compact" || !this.hideThinkingBlock || !Array.isArray(message?.content)) {
+		// Compact owns thinking presentation: always suppress the full native block
+		// and surface only the short ticker, without changing Pi's persisted setting.
+		state.thinkingHidden = mode === "compact" || !!this.hideThinkingBlock;
+		if (mode !== "compact" || !Array.isArray(message?.content)) {
 			if (mode !== "compact") clearCurrentThought();
-			return patch.originalUpdateContent.call(this, message);
+			this[ASSISTANT_REENTRY_KEY] = patch;
+			try {
+				return patch.originalUpdateContent.call(this, message);
+			} finally {
+				delete this[ASSISTANT_REENTRY_KEY];
+			}
 		}
 		const theme = state.currentTheme;
 		if (!theme || !this.contentContainer || typeof this.contentContainer.clear !== "function") {
@@ -884,6 +903,17 @@ function patchAssistantMessageComponent(installation: CompactInstallation): Assi
 	prototype.updateContent = patch.patchedUpdateContent;
 	prototype[ASSISTANT_PATCH_KEY] = patch;
 	return patch;
+}
+
+/** Reclaim the outermost assistant renderer after another extension patches it. */
+function ensureAssistantPatchOwnership(installation: CompactInstallation): void {
+	const patch = installation.assistantPatch;
+	if (!installation.active || !patch) return;
+	const prototype = patch.prototype;
+	if (prototype.updateContent === patch.patchedUpdateContent) return;
+	patch.originalUpdateContent = prototype.updateContent;
+	prototype.updateContent = patch.patchedUpdateContent;
+	prototype[ASSISTANT_PATCH_KEY] = patch;
 }
 
 function patchRenderers(installation: CompactInstallation): void {
@@ -987,7 +1017,7 @@ export class DynamicSummaryComponent {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const line = isCompact() ? summaryLine(this.data) : "";
+		const line = currentMode() !== "off" ? summaryLine(this.data) : "";
 		if (!line) return [];
 		return new Text(this.theme.fg("muted", line), 0, 0).render(width);
 	}
@@ -996,7 +1026,7 @@ export class DynamicSummaryComponent {
 function appendRunSummary() {
 	const stats = state.runStats;
 	// A single tool row is already the summary.
-	if (!isCompact() || stats.toolCount < 2 || !state.pi?.appendEntry) return;
+	if (currentMode() === "off" || stats.toolCount < 2 || !state.pi?.appendEntry) return;
 	const data: CompactSummaryData = {
 		reads: stats.readFiles.size,
 		edits: stats.editFiles.size,
@@ -1077,6 +1107,7 @@ export function installCompactStyle(pi: ExtensionAPI, host: CompactStyleHost): C
 	return {
 		onSessionStart: (_event, ctx) => {
 			if (!isOwner()) return;
+			ensureAssistantPatchOwnership(installation);
 			captureTheme(ctx);
 			state.agentActive = false;
 			state.runStats = newRunStats();
@@ -1111,6 +1142,7 @@ export function installCompactStyle(pi: ExtensionAPI, host: CompactStyleHost): C
 		},
 		onMessageUpdate: (event, ctx) => {
 			if (!isOwner()) return;
+			ensureAssistantPatchOwnership(installation);
 			captureTheme(ctx);
 			const type = event?.assistantMessageEvent?.type;
 			if (typeof type === "string" && type.startsWith("thinking_")) updateCurrentThoughtFromMessage(event.message);

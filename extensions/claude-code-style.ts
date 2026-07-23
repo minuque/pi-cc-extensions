@@ -253,8 +253,8 @@ export class ExpandedToolResultText {
 	}
 }
 
-function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
-	return `\n    ⎿ ${body}${collapsedHint}`;
+export function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
+	return `  ↳ ${body}${collapsedHint}`;
 }
 
 function renderExpandedToolResult(
@@ -1172,7 +1172,7 @@ function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boole
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
 	const useSelfShell =
-		patch.mode() !== "off" &&
+		patch.enabled() &&
 		SUBAGENT_TOOL_NAMES.has(toolName) &&
 		definition != null &&
 		definition.renderShell === undefined;
