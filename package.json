@@ -1,12 +1,22 @@
 {
   "name": "pi-cc-extensions",
   "version": "0.7.6",
-  "description": "Personal extensions for the Pi coding agent",
+  "description": "Claude Code-style UI, context insights, and session references for the Pi coding agent",
   "type": "module",
   "keywords": [
     "pi-package",
-    "pi-extension"
+    "pi-extension",
+    "pi-coding-agent",
+    "claude-code"
   ],
+  "homepage": "https://github.com/minuque/pi-cc-extensions#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minuque/pi-cc-extensions.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minuque/pi-cc-extensions/issues"
+  },
   "files": [
     "extensions",
     "assets/readme",
@@ -18,7 +28,8 @@
       "./extensions/context.ts",
       "./extensions/session-reference.ts",
       "./extensions/agent-autocomplete.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/fixed-editor-navigation.webp"
   },
   "scripts": {
     "test": "node --test tests/**/*.test.ts",
