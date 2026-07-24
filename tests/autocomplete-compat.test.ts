@@ -144,6 +144,31 @@ test("agent autocomplete shows at most two agent candidates", async () => {
 	assert.equal(result?.items.filter((item) => item.label.startsWith("[SubAgent]")).length, 2);
 });
 
+test("agent autocomplete discards downstream agent matches outside agent names", async () => {
+	const staleProvider: AutocompleteProvider = {
+		...fffProvider,
+		async getSuggestions() {
+			return {
+				prefix: "@Implement",
+				items: [
+					{ value: "@coder", label: "[SubAgent] Coder" },
+					{ value: "@src/index.ts", label: "index.ts" },
+					{ value: "@session:run-1", label: "[SubAgent] Previous run" },
+				],
+			};
+		},
+	};
+	const provider = createAgentAutocompleteProvider(staleProvider, () => agents);
+	const result = await provider.getSuggestions(
+		["@Implement"],
+		0,
+		10,
+		{ signal: new AbortController().signal },
+	);
+
+	assert.deepEqual(result?.items.map((item) => item.value), ["@src/index.ts", "@session:run-1"]);
+});
+
 test("agent autocomplete does not duplicate delegated agent entries", async () => {
 	const delegated: AutocompleteProvider = {
 		...fffProvider,

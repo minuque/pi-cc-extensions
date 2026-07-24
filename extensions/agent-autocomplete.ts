@@ -88,7 +88,7 @@ export function createAgentAutocompleteProvider(
 			const [baseSuggestions, matches] = await Promise.all([
 				current.getSuggestions(lines, cursorLine, cursorCol, options),
 				Promise.resolve(query.trim()
-					? fuzzyFilter(agents, query, (a) => `${a.name} ${a.displayName} ${a.description}`)
+					? fuzzyFilter(agents, query, (a) => a.name)
 					: agents),
 			]);
 			if (options.signal.aborted) return null;
@@ -101,8 +101,10 @@ export function createAgentAutocompleteProvider(
 					description: agent.description
 						+ (agent.model ? ` · ${agent.model}` : ""),
 				}));
-			const baseItems = baseSuggestions?.prefix === `@${query}`
-				? baseSuggestions.items
+			const hasCompatibleBaseSuggestions = baseSuggestions?.prefix === `@${query}`;
+			const agentValues = new Set(agents.map((agent) => `@${agent.name}`));
+			const baseItems = hasCompatibleBaseSuggestions
+				? baseSuggestions.items.filter((item) => !agentValues.has(item.value))
 				: [];
 			const seen = new Set<string>();
 			const items = [...agentItems, ...baseItems].filter((item) => {
@@ -112,7 +114,7 @@ export function createAgentAutocompleteProvider(
 				return true;
 			});
 
-			if (items.length === 0) return baseSuggestions;
+			if (items.length === 0 && !hasCompatibleBaseSuggestions) return baseSuggestions;
 			return { items, prefix: `@${query}` };
 		},
 
