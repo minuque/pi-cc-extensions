@@ -102,13 +102,16 @@ Configuration is stored in `~/.pi/agent/claude-code-style.json`:
 {
   "mode": "on",
   "excludeRenderers": [],
-  "fixedEditorFeatures": true
+  "fixedEditorFeatures": true,
+  "toolMouseInteraction": true
 }
 ```
 
 - `excludeRenderers` uses exact tool names. `Agent` always keeps its dedicated renderer.
-- `fixedEditorFeatures: true` enables `@tifan/pi-fixed-editor` plus mouse scrolling, clicks, viewport mapping, and the back-to-bottom indicator.
-- Set it to `false`, or toggle **Fixed editor** in `/ccstyle`, to restore Pi's native scrolling editor immediately. `Ctrl+End` remains available.
+- `fixedEditorFeatures: true` enables `@tifan/pi-fixed-editor`, which captures mouse input for transcript scrolling and selection.
+- `toolMouseInteraction: true` enables tool hover, click-to-expand, and `Ctrl+End`. With the fixed editor on, it also enables the back-to-bottom indicator and new-message count. With the fixed editor off, it still enables terminal mouse reporting, so native selection requires Shift.
+- Set both options to `false`, or turn **Fixed editor** off in `/ccstyle`, to preserve native terminal wheel scrolling, selection, and context menus. Turning Fixed editor off in the panel also turns Tool mouse off; it can be re-enabled separately.
+- Existing configs without `toolMouseInteraction` inherit the `fixedEditorFeatures` value, so an existing `fixedEditorFeatures: false` config automatically restores native terminal mouse behavior.
 - Run `/reload` after editing the file manually.
 
 ### `@` references

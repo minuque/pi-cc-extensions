@@ -77,6 +77,23 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Session 引用                 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:`         |
 | 主题                         | 随包提供内置 GitHub Dark Default 主题                                           | `/theme`            |
 
+### 鼠标交互
+
+配置保存在 `~/.pi/agent/claude-code-style.json`：
+
+```json
+{
+  "fixedEditorFeatures": true,
+  "toolMouseInteraction": true
+}
+```
+
+- `fixedEditorFeatures: true` 启用 `@tifan/pi-fixed-editor`，它会接管鼠标以实现会话滚动和文本选择。
+- `toolMouseInteraction: true` 启用工具悬停、点击展开和 `Ctrl+End`；Fixed editor 开启时还会启用回到底部提示和新消息计数。关闭 Fixed editor 后单独启用它仍会开启终端鼠标报告，原生文本选择需要按住 Shift。
+- 将两项都设为 `false`，或在 `/ccstyle` 面板中关闭 **Fixed editor**，可保留终端原生滚轮、文本选择和右键菜单。面板会同步关闭 **Tool mouse**，之后仍可单独重新启用。
+- 旧配置如果没有 `toolMouseInteraction`，会继承 `fixedEditorFeatures` 的值；因此已有的 `fixedEditorFeatures: false` 会自动恢复终端原生鼠标行为。
+- 手动编辑配置后执行 `/reload`。
+
 ## 本地开发
 
 ```bash

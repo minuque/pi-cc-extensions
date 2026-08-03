@@ -54,6 +54,7 @@ export type Config = {
 	mode: CompactStyleMode;
 	excludeRenderers: string[];
 	fixedEditorFeatures: boolean;
+	toolMouseInteraction: boolean;
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
@@ -93,6 +94,7 @@ export const DEFAULT_CONFIG: Config = {
 	mode: "on",
 	excludeRenderers: [],
 	fixedEditorFeatures: true,
+	toolMouseInteraction: true,
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
@@ -158,10 +160,15 @@ export function normalizeConfig(input: unknown): Config {
 			]
 		: [];
 	const fixedEditorFeatures = source.fixedEditorFeatures !== false;
+	const toolMouseInteraction =
+		typeof source.toolMouseInteraction === "boolean"
+			? source.toolMouseInteraction
+			: fixedEditorFeatures;
 	return {
 		mode: migratedMode,
 		excludeRenderers,
 		fixedEditorFeatures,
+		toolMouseInteraction,
 		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
 		diffIndicatorMode: pickEnum(
 			source.diffIndicatorMode,
@@ -228,6 +235,7 @@ export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,
 		`fixedEditor=${source.fixedEditorFeatures ? "on" : "off"}`,
+		`toolMouse=${source.toolMouseInteraction ? "on" : "off"}`,
 		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
@@ -983,7 +991,7 @@ function withIoViewMarkers(view: ExpandedToolIoView, lines: string[]): string[] 
 
 const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_MOTION_ENABLE = "\x1b[?1003h\x1b[?1006h";
-const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
+const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
@@ -1881,7 +1889,10 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	return consumed ? { consume: true } : undefined;
 }
 
-function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
+function teardownToolMouseInteraction(
+	nextFixedEditorFeatures = false,
+	nextToolMouseInteraction = false,
+): void {
 	if (sessionRenderTimer) {
 		clearTimeout(sessionRenderTimer);
 		sessionRenderTimer = null;
@@ -1892,7 +1903,7 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	try {
-		if (!toolMouseFixedFeaturesEnabled && !nextFixedEditorFeatures) {
+		if (!nextFixedEditorFeatures && !nextToolMouseInteraction) {
 			toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	} catch {
@@ -1922,8 +1933,10 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 export function installToolMouseInteraction(
 	ctx: any,
 	fixedEditorFeatures = config.fixedEditorFeatures,
+	toolMouseInteraction = config.toolMouseInteraction,
 ): void {
-	teardownToolMouseInteraction(fixedEditorFeatures);
+	teardownToolMouseInteraction(fixedEditorFeatures, toolMouseInteraction);
+	if (!toolMouseInteraction) return;
 	if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function")
 		return;
@@ -2014,8 +2027,19 @@ function modeSettingDescription(mode: CompactStyleMode): string {
 
 function fixedEditorSettingDescription(enabled: boolean): string {
 	return enabled
-		? "Pinned editor via @tifan/pi-fixed-editor. Mouse capture, 5-row wheel, tool clicks, back-to-bottom button, message count, and Ctrl+End."
-		: "Native scrolling editor; fixed-editor mouse features and button off. Ctrl+End remains enabled.";
+		? "Pinned editor via @tifan/pi-fixed-editor. Captures mouse input for transcript scrolling and selection."
+		: "Native scrolling editor. Turning this off also disables Tool mouse to restore terminal scrolling and selection.";
+}
+
+function toolMouseSettingDescription(enabled: boolean, fixedEditorEnabled: boolean): string {
+	if (enabled) {
+		return fixedEditorEnabled
+			? "Tool hover, click-to-expand, back-to-bottom button, message count, and Ctrl+End."
+			: "Tool hover and click-to-expand. Captures terminal mouse input; use Shift for native selection.";
+	}
+	return fixedEditorEnabled
+		? "Tool hover and clicks off. The fixed editor still captures mouse input for scrolling and selection."
+		: "Terminal mouse capture off. Native wheel scrolling, selection, and context menus remain available.";
 }
 
 function excludeRenderersDescription(names: readonly string[]): string {
@@ -2150,6 +2174,16 @@ async function showCcstylePanel(
 			currentValue: config.fixedEditorFeatures ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const toolMouseSetting = {
+			id: "toolMouseInteraction",
+			label: "Tool mouse",
+			description: toolMouseSettingDescription(
+				config.toolMouseInteraction,
+				config.fixedEditorFeatures,
+			),
+			currentValue: config.toolMouseInteraction ? "on" : "off",
+			values: ["on", "off"],
+		};
 		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
 		let excludeSubmenuOpen = false;
@@ -2253,7 +2287,15 @@ async function showCcstylePanel(
 					return;
 				case "fixedEditorFeatures":
 					config.fixedEditorFeatures = value === "on";
+					if (!config.fixedEditorFeatures) {
+						config.toolMouseInteraction = false;
+						toolMouseSetting.currentValue = "off";
+					}
 					fixedEditorSetting.description = fixedEditorSettingDescription(
+						config.fixedEditorFeatures,
+					);
+					toolMouseSetting.description = toolMouseSettingDescription(
+						config.toolMouseInteraction,
 						config.fixedEditorFeatures,
 					);
 					saveConfig();
@@ -2261,6 +2303,17 @@ async function showCcstylePanel(
 					installToolMouseInteraction(ctx);
 					refreshCurrentTranscript(compactStyle, ctx);
 					ctx.ui.notify(`Fixed editor: ${value}`, "info");
+					return;
+				case "toolMouseInteraction":
+					config.toolMouseInteraction = value === "on";
+					toolMouseSetting.description = toolMouseSettingDescription(
+						config.toolMouseInteraction,
+						config.fixedEditorFeatures,
+					);
+					saveConfig();
+					installToolMouseInteraction(ctx);
+					refreshCurrentTranscript(compactStyle, ctx);
+					ctx.ui.notify(`Tool mouse: ${value}`, "info");
 					return;
 				case "excludeRenderers":
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
@@ -2334,7 +2387,7 @@ async function showCcstylePanel(
 			{
 				id: "editor",
 				label: "Editor",
-				items: [fixedEditorSetting],
+				items: [fixedEditorSetting, toolMouseSetting],
 			},
 			{
 				id: "diff",

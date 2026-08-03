@@ -91,6 +91,7 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			mode: "off",
 			excludeRenderers: ["edit"],
 			fixedEditorFeatures: true,
+			toolMouseInteraction: true,
 			...displayDefaults,
 		},
 	);
@@ -98,6 +99,7 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 		mode: "on",
 		excludeRenderers: [],
 		fixedEditorFeatures: true,
+		toolMouseInteraction: true,
 		...displayDefaults,
 	});
 	assert.deepEqual(
@@ -106,6 +108,7 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			mode: "compact",
 			excludeRenderers: ["Agent"],
 			fixedEditorFeatures: true,
+			toolMouseInteraction: true,
 			...displayDefaults,
 		},
 	);
@@ -113,12 +116,24 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 		mode: "off",
 		excludeRenderers: [],
 		fixedEditorFeatures: false,
+		toolMouseInteraction: false,
 		...displayDefaults,
 	});
+	assert.equal(
+		normalizeConfig({ fixedEditorFeatures: false, toolMouseInteraction: true })
+			.toolMouseInteraction,
+		true,
+	);
+	assert.equal(
+		normalizeConfig({ fixedEditorFeatures: true, toolMouseInteraction: false })
+			.toolMouseInteraction,
+		false,
+	);
 	assert.deepEqual(normalizeConfig({ mode: "unknown" }), {
 		mode: "on",
 		excludeRenderers: [],
 		fixedEditorFeatures: true,
+		toolMouseInteraction: true,
 		...displayDefaults,
 	});
 	assert.deepEqual(
@@ -138,6 +153,7 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			mode: "on",
 			excludeRenderers: [],
 			fixedEditorFeatures: true,
+			toolMouseInteraction: true,
 			diffViewMode: "split",
 			diffIndicatorMode: "classic",
 			diffSplitMinWidth: 140,
@@ -932,7 +948,11 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 		},
 	};
 
-	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
+	claudeCodeStyleExtension(pi as any, {
+		mode: "on",
+		fixedEditorFeatures: true,
+		toolMouseInteraction: true,
+	});
 	const command = commands.get("ccstyle");
 	assert.deepEqual(
 		command.getArgumentCompletions("").map((item: any) => item.value),
@@ -974,7 +994,10 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	assert.ok(
 		panelLines.some((line: string) => line.includes("Fixed editor") && line.includes("on")),
 	);
-	assert.ok(panelLines.some((line: string) => line.includes("Mouse capture")));
+	assert.ok(panelLines.some((line: string) => line.includes("Captures mouse input")));
+	assert.ok(panelLines.some((line: string) => line.includes("Tool mouse") && line.includes("on")));
+	panel.handleInput("\x1b[B");
+	panelLines = panel.render(80).map((line: string) => line.trimEnd());
 	assert.ok(panelLines.some((line: string) => line.includes("Ctrl+End")));
 	// Tab → Diff section
 	panel.handleInput("\t");

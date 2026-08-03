@@ -21,7 +21,7 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grou
 initTheme("dark");
 
 test("fixed editor wheel dispatch averages five rows per tick", () => {
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({}, false, false);
 	assert.deepEqual((["up", "up", "up"] as const).map(fixedEditorWheelDispatchCount), [1, 2, 2]);
 	assert.deepEqual(
 		(["down", "down", "down"] as const).map(fixedEditorWheelDispatchCount),
@@ -161,7 +161,10 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		},
 	};
 
-	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
+	claudeCodeStyleExtension(pi as any, {
+		fixedEditorFeatures: true,
+		toolMouseInteraction: true,
+	});
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 	class SnapshotCompositor {
 		tui = tui;
@@ -347,6 +350,7 @@ test("identical fixed-editor tools hit the visible first tool, not the offscreen
 			},
 		},
 		true,
+		true,
 	);
 	class SnapshotCompositor {
 		tui = tui;
@@ -368,7 +372,7 @@ test("identical fixed-editor tools hit the visible first tool, not the offscreen
 		assert.equal(expanded, "visible-first");
 		assert.equal(offscreen.expanded, false);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -423,6 +427,7 @@ test("fixed editor uses the rendered frame when dynamic Todo rows change", () =>
 			},
 		},
 		true,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -437,7 +442,7 @@ test("fixed editor uses the rendered frame when dynamic Todo rows change", () =>
 		assert.equal(first.expanded, false);
 		assert.equal(second.expanded, true);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -493,6 +498,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 				},
 			},
 			false,
+			true,
 		);
 		tui.doRender();
 		const headerRow = tui.previousLines.findIndex((line: string) =>
@@ -511,7 +517,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, false);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 		grouping.shutdown();
 	}
 });
@@ -562,6 +568,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 			},
 		},
 		false,
+		true,
 	);
 	tui.doRender();
 
@@ -584,7 +591,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 	assert.deepEqual(inputHandler?.("\x1b[<0;30;2M"), { consume: true });
 	assert.equal(tool.expanded, true);
 
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({}, false, false);
 });
 
 test("parenthesized rich diff hint highlights and expands on click", async () => {
@@ -630,6 +637,7 @@ test("parenthesized rich diff hint highlights and expands on click", async () =>
 			},
 		},
 		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -639,7 +647,7 @@ test("parenthesized rich diff hint highlights and expands on click", async () =>
 		assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
 		assert.equal(tool.expanded, true);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -704,13 +712,13 @@ test("show-more hover targets the view rendered in the current frame after compa
 			},
 		},
 	};
-	installToolMouseInteraction(interactionCtx, true);
+	installToolMouseInteraction(interactionCtx, true, true);
 	// fixed-editor can retain the prior doRender wrapper while compact installs a new one.
 	const retainedRender = tui.doRender;
 	tui.doRender = function (this: any, ...args: any[]) {
 		return Reflect.apply(retainedRender, this, args);
 	};
-	installToolMouseInteraction(interactionCtx, true);
+	installToolMouseInteraction(interactionCtx, true, true);
 	try {
 		tui.doRender();
 		const inputHeader = tui.previousLines[1];
@@ -719,7 +727,7 @@ test("show-more hover targets the view rendered in the current frame after compa
 		assert.match(currentView.render(78)[0], /\x1b\[97m/);
 		assert.doesNotMatch(staleView.render(78)[0], /\x1b\[97m/);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -790,13 +798,13 @@ test("expanded native card collapses on click and preserves the viewport", async
 		},
 	};
 
-	installToolMouseInteraction(ctx, true);
+	installToolMouseInteraction(ctx, true, true);
 	tui.doRender();
 	tui.handleInput("\x1b[<0;10;2M");
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.equal(tool.expanded, false);
 	assert.equal(wheelDownDispatches, 1);
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({}, false, false);
 });
 
 test("fixed editor restores motion reporting after the right-click menu pause", async () => {
@@ -849,7 +857,7 @@ test("fixed editor restores motion reporting after the right-click menu pause", 
 	assert.equal(writes.at(-1), "\x1b[?1002h", "dispose restores the native terminal writer");
 });
 
-test("disabled fixed editor features release mouse reporting but retain Ctrl+End", () => {
+test("native tool mouse mode retains capture and Ctrl+End after fixed editor is disabled", () => {
 	const writes: string[] = [];
 	const widgetValues: unknown[] = [];
 	const renderRequests: unknown[] = [];
@@ -885,10 +893,10 @@ test("disabled fixed editor features release mouse reporting but retain Ctrl+End
 		},
 	};
 
-	installToolMouseInteraction(ctx, true);
+	installToolMouseInteraction(ctx, true, true);
 	assert.ok(!writes.some((value) => value.includes("?1000h")));
 	const disabledWritesStart = writes.length;
-	installToolMouseInteraction(ctx, false);
+	installToolMouseInteraction(ctx, false, true);
 	const disabledWrites = writes.slice(disabledWritesStart);
 	assert.ok(!disabledWrites.some((value) => value.includes("?1000l")));
 	assert.ok(disabledWrites.some((value) => value.includes("?1003h")));
@@ -899,7 +907,106 @@ test("disabled fixed editor features release mouse reporting but retain Ctrl+End
 	assert.equal(writes.at(-1), "\x1b[0m");
 	assert.deepEqual(renderRequests, [undefined]);
 
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({}, false, false);
+});
+
+test("tool mouse off releases reporting and cannot re-enable it on render", () => {
+	const writes: string[] = [];
+	const widgetValues: unknown[] = [];
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	let renderCalls = 0;
+	const originalDoRender = () => {
+		renderCalls++;
+	};
+	const tui = {
+		terminal: {
+			columns: 80,
+			rows: 24,
+			write(value: string) {
+				writes.push(value);
+			},
+		},
+		children: [],
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		handleInput() {},
+		requestRender() {},
+		render: () => [] as string[],
+		doRender: originalDoRender,
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, value: any) {
+				widgetValues.push(value);
+				if (typeof value === "function") {
+					value(tui, { fg: (_color: string, text: string) => text });
+				}
+			},
+			onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
+				inputHandler = handler;
+				return () => {
+					if (inputHandler === handler) inputHandler = undefined;
+				};
+			},
+		},
+	};
+
+	try {
+		installToolMouseInteraction(ctx, false, true);
+		assert.notEqual(tui.doRender, originalDoRender);
+		tui.doRender();
+		assert.ok(writes.some((value) => value.includes("?1003h") && value.includes("?1006h")));
+
+		const disabledWritesStart = writes.length;
+		installToolMouseInteraction(ctx, false, false);
+		const disabledWrites = writes.slice(disabledWritesStart).join("");
+		assert.match(disabledWrites, /\?1006l/);
+		assert.match(disabledWrites, /\?1003l/);
+		assert.match(disabledWrites, /\?1002l/);
+		assert.match(disabledWrites, /\?1000l/);
+		assert.doesNotMatch(disabledWrites, /\?100[236]h/);
+		assert.equal(tui.doRender, originalDoRender);
+		assert.equal(inputHandler, undefined);
+		assert.equal(widgetValues.at(-1), undefined);
+
+		const enableWrites = writes.filter((value) => /\?100[236]h/.test(value)).length;
+		tui.doRender();
+		assert.equal(renderCalls, 2);
+		assert.equal(
+			writes.filter((value) => /\?100[236]h/.test(value)).length,
+			enableWrites,
+			"renders after disabling must not re-enable mouse reporting",
+		);
+	} finally {
+		installToolMouseInteraction({}, false, false);
+	}
+});
+
+test("tool mouse off leaves fixed-editor mouse ownership untouched", () => {
+	let widgetCalls = 0;
+	let inputListenerCalls = 0;
+	installToolMouseInteraction(
+		{
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget() {
+					widgetCalls++;
+				},
+				onTerminalInput() {
+					inputListenerCalls++;
+					return () => undefined;
+				},
+			},
+		},
+		true,
+		false,
+	);
+	assert.equal(widgetCalls, 0);
+	assert.equal(inputListenerCalls, 0);
+	installToolMouseInteraction({}, false, false);
 });
 
 test("doRender replacement is rebound so the next painted frame stays clickable", () => {
@@ -950,14 +1057,14 @@ test("doRender replacement is rebound so the next painted frame stays clickable"
 			},
 		},
 	};
-	installToolMouseInteraction(ctx, true);
+	installToolMouseInteraction(ctx, true, true);
 	const firstWrapper = tui.doRender;
 	// Compositor rebuild replaces doRender; the old instrumentation must not stick to a dead wrapper.
 	const compositorDoRender = function (this: any) {
 		this.previousLines = this.render(80);
 	};
 	tui.doRender = compositorDoRender;
-	installToolMouseInteraction(ctx, true);
+	installToolMouseInteraction(ctx, true, true);
 	try {
 		assert.notEqual(tui.doRender, firstWrapper);
 		assert.notEqual(tui.doRender, compositorDoRender);
@@ -966,7 +1073,7 @@ test("doRender replacement is rebound so the next painted frame stays clickable"
 		tui.handleInput(`\x1b[<0;${hintCol};2M`);
 		assert.equal(expanded, "after-rebind");
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -1058,6 +1165,7 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 				},
 			},
 			false,
+			true,
 		);
 		tui.doRender();
 		const showMoreRow = tui.previousLines.findIndex((line: string) =>
@@ -1071,7 +1179,7 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 		assert.equal(group.expanded, beforeExpanded, "show-more must not collapse the group");
 		assert.equal(previewOpened, true, "show-more opens the text preview");
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 		grouping.shutdown();
 	}
 });
@@ -1122,6 +1230,7 @@ test("native mode hits the visible identical tool, not the offscreen duplicate",
 			},
 		},
 		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -1131,7 +1240,7 @@ test("native mode hits the visible identical tool, not the offscreen duplicate",
 		assert.equal(expanded, "native-visible");
 		assert.equal(offscreen.expanded, false);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -1183,6 +1292,7 @@ test("native mode hits offset columns after parent layout prefix", async () => {
 			},
 		},
 		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -1209,7 +1319,7 @@ test("native mode hits offset columns after parent layout prefix", async () => {
 		assert.deepEqual(inputHandler?.(`\x1b[<0;${offsetCol};2M`), { consume: true });
 		assert.equal(tool.expanded, true);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
 
@@ -1309,6 +1419,7 @@ test("expanded group identical show-more labels open their own content", () => {
 				},
 			},
 			false,
+			true,
 		);
 		tui.doRender();
 		assert.ok(
@@ -1339,7 +1450,7 @@ test("expanded group identical show-more labels open their own content", () => {
 			"second show-more must not open first body",
 		);
 	} finally {
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 		grouping.shutdown();
 	}
 });
@@ -1435,10 +1546,10 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 		};
 		// Mirror extension wiring: unwrap before construct, re-wrap after install.
 		setBeforeFixedEditorStart(() => {
-			installToolMouseInteraction({}, false);
+			installToolMouseInteraction({}, false, false);
 		});
 		controller.onRebuild(() => {
-			installToolMouseInteraction(ctx, true);
+			installToolMouseInteraction(ctx, true, true);
 			const factory = widgets.get("ccstyle-tool-mouse");
 			if (typeof factory === "function") {
 				factory(tui, { fg: (_c: string, text: string) => text });
@@ -1464,7 +1575,7 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 
 		// fixed on → off → on
 		controller.setEnabled(false);
-		installToolMouseInteraction(ctx, false);
+		installToolMouseInteraction(ctx, false, true);
 		const factoryOff = widgets.get("ccstyle-tool-mouse");
 		if (typeof factoryOff === "function") {
 			factoryOff(tui, { fg: (_c: string, text: string) => text });
@@ -1482,7 +1593,7 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 
 		// Hover/click on the live chain after fixed off restores a single wrapper.
 		controller.setEnabled(false);
-		installToolMouseInteraction(ctx, false);
+		installToolMouseInteraction(ctx, false, true);
 		const factoryNative = widgets.get("ccstyle-tool-mouse");
 		if (typeof factoryNative === "function") {
 			factoryNative(tui, { fg: (_c: string, text: string) => text });
@@ -1504,6 +1615,6 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 	} finally {
 		process.stdout.write = write;
 		setBeforeFixedEditorStart(undefined);
-		installToolMouseInteraction({}, false);
+		installToolMouseInteraction({}, false, false);
 	}
 });
