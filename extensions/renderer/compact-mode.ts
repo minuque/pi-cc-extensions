@@ -70,7 +70,8 @@ export function styleCompactThinkingText(
 	bold = false,
 ): string {
 	if (!theme) return text;
-	const colored = typeof theme.fg === "function" ? theme.fg("thinkingText", text) : text;
+	const colorKey = config.dimThinkingText ? "dim" : "thinkingText";
+	const colored = typeof theme.fg === "function" ? theme.fg(colorKey, text) : text;
 	const weighted = bold && typeof theme.bold === "function" ? theme.bold(colored) : colored;
 	return typeof theme.italic === "function" ? theme.italic(weighted) : weighted;
 }
