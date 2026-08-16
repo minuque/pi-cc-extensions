@@ -490,7 +490,8 @@ function compactEditWriteLine(
 				: "",
 	);
 	const isError = component.result?.isError === true;
-	const isPending = !component.result || component.isPartial === true;
+	const isPending =
+		component.executionStarted && (!component.result || component.isPartial === true);
 	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : "✓";
 	const iconColor = isError ? "error" : isPending ? "accent" : "success";
 	let statsText = "";
@@ -1136,7 +1137,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		const name = String(this.toolName ?? "");
 		if (EDIT_WRITE_TOOLS.has(name)) {
-			if (!this.result || this.isPartial === true) scheduleAnimation(this);
+			if (this.executionStarted && (!this.result || this.isPartial === true))
+				scheduleAnimation(this);
 			return compactEditWriteLines(this, width, deps.writeMetadata);
 		}
 		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。

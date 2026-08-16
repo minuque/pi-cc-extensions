@@ -69,8 +69,8 @@ type ToolStatus = "pending" | "success" | "error";
 
 function status(tool: any): ToolStatus {
 	if (tool?.result?.isError) return "error";
-	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result)) return "pending";
-	return tool?.result ? "success" : "pending";
+	if (tool?.executionStarted && (tool?.isPartial === true || !tool?.result)) return "pending";
+	return "success";
 }
 
 function statusIcon(value: ToolStatus): string {

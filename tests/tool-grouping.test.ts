@@ -12,6 +12,22 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
 function tool(name: string, id: string, args: any = {}) {
+	const component = new ToolExecutionComponent(
+		name,
+		id,
+		args,
+		{},
+		undefined,
+		ui,
+		process.cwd(),
+	) as any;
+	// pi marks executions started on tool_execution_start, before any render
+	component.markExecutionStarted();
+	return component;
+}
+
+/** Restored tool call that never ran in this process (no tool_execution_start). */
+function staleTool(name: string, id: string, args: any = {}) {
 	return new ToolExecutionComponent(name, id, args, {}, undefined, ui, process.cwd()) as any;
 }
 
@@ -75,6 +91,33 @@ test("mixed tools group across three empty separators while edit/write and conte
 		parent.addChild(assistant);
 		parent.addChild(tool("bash", "after-content"));
 		assert.equal(parent.children.at(-1).toolCallId, "after-content");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("restored tool calls that never started render settled, not running", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const read = staleTool("read", "read-stale");
+		const bash = staleTool("bash", "bash-stale");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		const rendered = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(rendered[0], /2 done/);
+		assert.doesNotMatch(rendered[0], /running/);
+		for (const line of rendered) {
+			assert.doesNotMatch(
+				line,
+				/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+				"no spinner for restored tools",
+			);
+		}
 	} finally {
 		hooks.shutdown();
 	}

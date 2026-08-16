@@ -86,6 +86,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			ui as any,
 			process.cwd(),
 		) as any;
+		component.markExecutionStarted();
 		assert.match(
 			component
 				.render(100)
