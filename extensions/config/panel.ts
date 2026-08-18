@@ -6,10 +6,7 @@
  */
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import {
-	applyThinkingTextDim,
-	clearThinkingTextDim,
-} from "../feature/thinking-text-dim.ts";
+import { applyThinkingTextDim, clearThinkingTextDim } from "../feature/thinking-text-dim.ts";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";

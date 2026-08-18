@@ -1,47 +1,47 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	Theme,
+	ThemeColor,
+} from "@earendil-works/pi-coding-agent";
 import { config } from "../config/config.ts";
 
-/**
- * Optional dimming of thinking-block text via the `thinkingText` theme token.
- *
- * Every thinking-text renderer reads the same token — pi's built-in
- * visible-mode renderer and the compact thinking preview — so setting it to
- * the theme's dim color dims thinking text everywhere. The token is
- * re-asserted on render-triggering events because the theme instance can be
- * replaced mid-session (theme reload), which would otherwise reset it.
- */
+type MutableTheme = { fgColors?: Map<ThemeColor, string> };
 
-export function applyThinkingTextDim(theme: any): void {
-	try {
-		if (!config.dimThinkingText || !theme?.fgColors?.set) return;
-		const dim = theme.fgColors.get?.("dim") ?? theme.fgColors.get?.("muted");
-		if (typeof dim === "string" && dim.length > 0) {
-			theme.fgColors.set("thinkingText", dim);
-		}
-	} catch {
-		/* theme not ready yet */
-	}
+const originalThinkingTextAnsi = new WeakMap<Theme, string>();
+
+function colorMap(theme: Theme): Map<ThemeColor, string> | undefined {
+	const colors = (theme as unknown as MutableTheme).fgColors;
+	return colors instanceof Map ? colors : undefined;
 }
 
-export function clearThinkingTextDim(theme: any): void {
-	try {
-		theme?.fgColors?.delete?.("thinkingText");
-	} catch {
-		/* theme not ready yet */
+export function applyThinkingTextDim(theme: Theme): void {
+	const colors = colorMap(theme);
+	if (!colors) return;
+
+	if (!originalThinkingTextAnsi.has(theme)) {
+		originalThinkingTextAnsi.set(theme, theme.getFgAnsi("thinkingText"));
 	}
+	colors.set("thinkingText", theme.getFgAnsi("dim"));
 }
 
-function assertOnRenderEvents(_event: unknown, ctx: any): void {
-	applyThinkingTextDim(ctx?.ui?.theme);
+export function clearThinkingTextDim(theme: Theme): void {
+	const colors = colorMap(theme);
+	const original = originalThinkingTextAnsi.get(theme);
+	if (!colors || original === undefined) return;
+
+	colors.set("thinkingText", original);
+	originalThinkingTextAnsi.delete(theme);
+}
+
+function syncThinkingTextDim(ctx: ExtensionContext): void {
+	if (config.dimThinkingText) applyThinkingTextDim(ctx.ui.theme);
+	else clearThinkingTextDim(ctx.ui.theme);
 }
 
 export default function installThinkingTextDim(pi: ExtensionAPI): void {
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui" || !ctx.hasUI) return;
-		applyThinkingTextDim(ctx.ui.theme);
+		syncThinkingTextDim(ctx);
 	});
-	pi.on("session_tree", assertOnRenderEvents);
-	pi.on("message_update", assertOnRenderEvents);
-	pi.on("message_end", assertOnRenderEvents);
-	pi.on("tool_execution_end", assertOnRenderEvents);
 }
