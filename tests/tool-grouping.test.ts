@@ -12,6 +12,22 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
 function tool(name: string, id: string, args: any = {}) {
+	const component = new ToolExecutionComponent(
+		name,
+		id,
+		args,
+		{},
+		undefined,
+		ui,
+		process.cwd(),
+	) as any;
+	// pi marks executions started on tool_execution_start, before any render
+	component.markExecutionStarted();
+	return component;
+}
+
+/** Restored tool call that never ran in this process (no tool_execution_start). */
+function staleTool(name: string, id: string, args: any = {}) {
 	return new ToolExecutionComponent(name, id, args, {}, undefined, ui, process.cwd()) as any;
 }
 
@@ -75,6 +91,60 @@ test("mixed tools group across three empty separators while edit/write and conte
 		parent.addChild(assistant);
 		parent.addChild(tool("bash", "after-content"));
 		assert.equal(parent.children.at(-1).toolCallId, "after-content");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("queued live tools stay neutral until execution starts", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const read = staleTool("read", "read-queued");
+		const bash = staleTool("bash", "bash-queued");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		const queued = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(queued[0], /2 queued/);
+		for (const line of queued) assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
+
+		read.markExecutionStarted();
+		bash.markExecutionStarted();
+		const running = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(running[0], /2 running/);
+		assert.ok(running.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("restored tool calls that never started render skipped, not running", () => {
+	const parent = new Container() as any;
+	parent.addChild(staleTool("read", "read-stale"));
+	parent.addChild(staleTool("bash", "bash-stale"));
+	const hooks = installToolGrouping(() => true);
+	try {
+		hooks.refresh(parent);
+		const group = parent.children[0] as ToolGroupComponent;
+		const rendered = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(rendered[0], /2 skipped/);
+		assert.doesNotMatch(rendered[0], /running|done/);
+		for (const line of rendered) {
+			assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/, "restored tools stay neutral");
+		}
+
+		(group.children[0] as any).updateResult({ content: [], isError: false });
+		assert.match(group.render(100).find((line: string) => line.trim())!, /1 done.*1 skipped/);
 	} finally {
 		hooks.shutdown();
 	}

@@ -232,7 +232,7 @@ function createCcstyleTool(
 			const visualState = resolveToolVisualState(context);
 			const isPending =
 				visualState === "pending" ||
-				(!visualState && (context?.isPartial || context?.executionStarted));
+				(!visualState && context?.executionStarted && context?.isPartial !== false);
 			if (isPending) scheduleAnimation(context);
 			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
 			const icon =

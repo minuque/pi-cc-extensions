@@ -86,6 +86,14 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			ui as any,
 			process.cwd(),
 		) as any;
+		const queuedCall = component
+			.render(100)
+			.join("\n")
+			.replace(/\x1b\[[0-9;]*m/g, "");
+		assert.match(queuedCall, /● Bash /);
+		assert.doesNotMatch(queuedCall, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
+
+		component.markExecutionStarted();
 		assert.match(
 			component
 				.render(100)
