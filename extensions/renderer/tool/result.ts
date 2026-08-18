@@ -79,6 +79,18 @@ function clearAnimation(context: any) {
 	}
 }
 
+const RESTORED_TOOL_STATE_KEY = "ccstyleRestoredToolCall";
+
+export function markRestoredToolCall(context: any): void {
+	const state = (context.state ??= {});
+	state[RESTORED_TOOL_STATE_KEY] = true;
+	clearAnimation(context);
+}
+
+export function isRestoredToolCall(context: any): boolean {
+	return context?.state?.[RESTORED_TOOL_STATE_KEY] === true;
+}
+
 export function clearAllAnimations() {
 	for (const ctx of activeAnimationContexts) {
 		ctx.state.ccstyleAnimationScheduled = false;
@@ -149,7 +161,7 @@ export function toolIconColor(context: any): "accent" | "error" | "success" | "m
 	const visualState = getToolVisualState(context);
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
-	if (context?.isPartial || context?.executionStarted || visualState === "pending") return "accent";
+	if (context?.executionStarted || visualState === "pending") return "accent";
 	return "muted";
 }
 

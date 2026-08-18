@@ -613,6 +613,22 @@ test("compact surfaces abort outside folded tools", () => {
 	}
 });
 
+test("queued compact edit/write stays neutral until execution starts", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const edit = tool("edit", "queued-edit", { path: "a.ts" });
+		assert.match(renderText(edit).join("\n"), /● edit a\.ts/);
+
+		edit.markExecutionStarted();
+		assert.match(renderText(edit).join("\n"), /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] edit a\.ts/);
+	} finally {
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
 test("compact edit/write keeps the stats header and inherits on-mode diff limits", () => {
 	const metadata = new WriteExecutionMetadataStore();
 	const previousMode = config.mode;

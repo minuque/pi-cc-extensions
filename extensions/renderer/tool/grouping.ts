@@ -11,6 +11,7 @@ import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import { humanizeToolLabel, toolCallSummary } from "./names.ts";
+import { isRestoredToolCall, markRestoredToolCall } from "./result.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
@@ -65,18 +66,21 @@ function previousSibling(
 	return undefined;
 }
 
-type ToolStatus = "pending" | "success" | "error";
+type ToolStatus = "queued" | "pending" | "success" | "error" | "skipped";
 
 function status(tool: any): ToolStatus {
 	if (tool?.result?.isError) return "error";
-	if (tool?.executionStarted && (tool?.isPartial === true || !tool?.result)) return "pending";
-	return "success";
+	if (tool?.result) return "success";
+	if (isRestoredToolCall(tool)) return "skipped";
+	if (tool?.executionStarted) return "pending";
+	return "queued";
 }
 
 function statusIcon(value: ToolStatus): string {
 	if (value === "success") return "✓";
 	if (value === "error") return "✗";
-	return toolLoadingIcon();
+	if (value === "pending") return toolLoadingIcon();
+	return "●";
 }
 
 function scheduleGroupAnimation(patch: Patch): void {
@@ -280,22 +284,51 @@ export class ToolGroupComponent extends Container {
 		if (cached) return cached;
 		const theme = this.patch.theme;
 		const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
-		const counts = { pending: 0, success: 0, error: 0 };
+		const counts: Record<ToolStatus, number> = {
+			queued: 0,
+			pending: 0,
+			success: 0,
+			error: 0,
+			skipped: 0,
+		};
 		for (const tool of this.children) counts[status(tool)]++;
-		const countText = (["pending", "success", "error"] as const)
+		const countText = (["pending", "queued", "success", "error", "skipped"] as const)
 			.filter((key) => counts[key])
 			.map((key) => {
-				const label = key === "pending" ? "running" : key === "success" ? "done" : "failed";
-				const color = key === "pending" ? "accent" : key;
+				const label =
+					key === "pending"
+						? "running"
+						: key === "queued"
+							? "queued"
+							: key === "success"
+								? "done"
+								: key === "error"
+									? "failed"
+									: "skipped";
+				const color =
+					key === "pending" ? "accent" : key === "queued" || key === "skipped" ? "muted" : key;
 				return `${fg(color, String(counts[key]))} ${label}`;
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
 		const label =
 			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
-		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
+		const overall: ToolStatus = counts.error
+			? "error"
+			: counts.pending
+				? "pending"
+				: counts.success
+					? "success"
+					: counts.queued
+						? "queued"
+						: "skipped";
 		if (overall === "pending") scheduleGroupAnimation(this.patch);
-		const overallColor = overall === "pending" ? "accent" : overall;
+		const overallColor =
+			overall === "pending"
+				? "accent"
+				: overall === "queued" || overall === "skipped"
+					? "muted"
+					: overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
 		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
@@ -312,7 +345,12 @@ export class ToolGroupComponent extends Container {
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
 			const toolStatus = status(tool);
-			const color = toolStatus === "pending" ? "accent" : toolStatus;
+			const color =
+				toolStatus === "pending"
+					? "accent"
+					: toolStatus === "queued" || toolStatus === "skipped"
+						? "muted"
+						: toolStatus;
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
 			if (!this._expanded) {
@@ -433,6 +471,9 @@ function regroup(patch: Patch, root: any): void {
 		if (Array.isArray(children)) {
 			for (const child of [...children]) {
 				if (child && typeof child === "object") child[PARENT_KEY] = value;
+				if (isGroupable(child) && !child.executionStarted && !child.result) {
+					markRestoredToolCall(child);
+				}
 				maybeGroup(patch, value, child);
 			}
 		}

@@ -96,28 +96,55 @@ test("mixed tools group across three empty separators while edit/write and conte
 	}
 });
 
-test("restored tool calls that never started render settled, not running", () => {
+test("queued live tools stay neutral until execution starts", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
-		const read = staleTool("read", "read-stale");
-		const bash = staleTool("bash", "bash-stale");
+		const read = staleTool("read", "read-queued");
+		const bash = staleTool("bash", "bash-queued");
 		parent.addChild(read);
 		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		const queued = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(queued[0], /2 queued/);
+		for (const line of queued) assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
+
+		read.markExecutionStarted();
+		bash.markExecutionStarted();
+		const running = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(running[0], /2 running/);
+		assert.ok(running.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("restored tool calls that never started render skipped, not running", () => {
+	const parent = new Container() as any;
+	parent.addChild(staleTool("read", "read-stale"));
+	parent.addChild(staleTool("bash", "bash-stale"));
+	const hooks = installToolGrouping(() => true);
+	try {
+		hooks.refresh(parent);
 		const group = parent.children[0] as ToolGroupComponent;
 		const rendered = group
 			.render(100)
 			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 			.filter((line: string) => line.trim());
-		assert.match(rendered[0], /2 done/);
-		assert.doesNotMatch(rendered[0], /running/);
+		assert.match(rendered[0], /2 skipped/);
+		assert.doesNotMatch(rendered[0], /running|done/);
 		for (const line of rendered) {
-			assert.doesNotMatch(
-				line,
-				/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
-				"no spinner for restored tools",
-			);
+			assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/, "restored tools stay neutral");
 		}
+
+		(group.children[0] as any).updateResult({ content: [], isError: false });
+		assert.match(group.render(100).find((line: string) => line.trim())!, /1 done.*1 skipped/);
 	} finally {
 		hooks.shutdown();
 	}
