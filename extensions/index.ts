@@ -12,6 +12,7 @@ import agentSummary from "./feature/agent-summary/index.ts";
 import context from "./feature/context.ts";
 import sessionReference from "./feature/reference/index.ts";
 import { installCompactThinking } from "./feature/compact-thinking.ts";
+import installThinkingTextDim from "./feature/thinking-text-dim.ts";
 
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
@@ -26,6 +27,7 @@ export default function (pi: ExtensionAPI): void {
 	// render stack：thinking controller 直接交给 style 作 query
 	markdownEnhance(pi);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
+	installThinkingTextDim(pi);
 
 	// features
 	if (config.enableContextCommand) context(pi);

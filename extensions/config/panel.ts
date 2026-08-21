@@ -6,6 +6,7 @@
  */
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { applyThinkingTextDim, clearThinkingTextDim } from "../feature/thinking-text-dim.ts";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
@@ -351,6 +352,15 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingAnimationSetting, closeSubmenu),
 		};
+		const thinkingDimSetting = {
+			id: "dimThinkingText",
+			label: "Dim thinking text",
+			description: config.dimThinkingText
+				? "Thinking text uses the theme's dim color."
+				: "Keep the default thinking text color.",
+			currentValue: config.dimThinkingText ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const startupHeaderSetting = {
 			id: "showStartupHeader",
 			label: "Startup header",
@@ -510,6 +520,18 @@ export async function showCcstylePanel(
 					});
 					thinkingAnimationSetting.currentValue = String(config.animationIntervalMs);
 					break;
+				case "dimThinkingText":
+					updateConfig({ dimThinkingText: value === "on" });
+					thinkingDimSetting.currentValue = String(config.dimThinkingText);
+					thinkingDimSetting.description = config.dimThinkingText
+						? "Thinking text uses the theme's dim color."
+						: "Keep the default thinking text color.";
+					if (config.dimThinkingText) {
+						applyThinkingTextDim(ctx.ui.theme);
+					} else {
+						clearThinkingTextDim(ctx.ui.theme);
+					}
+					break;
 				case "showStartupHeader":
 					updateConfig({ showStartupHeader: value === "on" });
 					startupHeaderSetting.description = config.showStartupHeader
@@ -554,7 +576,12 @@ export async function showCcstylePanel(
 			{
 				id: "thinking",
 				label: "Thinking",
-				items: [thinkingTitleSetting, thinkingPreviewSetting, thinkingAnimationSetting],
+				items: [
+					thinkingTitleSetting,
+					thinkingPreviewSetting,
+					thinkingAnimationSetting,
+					thinkingDimSetting,
+				],
 			},
 			{
 				id: "feature",
