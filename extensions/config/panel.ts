@@ -74,6 +74,12 @@ function excludeRenderersDescription(names: readonly string[]): string {
 		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
 }
 
+function mcpGatewayServerIdDescription(enabled: boolean): string {
+	return enabled
+		? "`mcp` gateway calls extract the MCP server id from the call for the title; falls back to MCP."
+		: "`mcp` gateway calls always render as MCP.";
+}
+
 function customFooterDescription(enabled: boolean): string {
 	if (!enabled) return "Pi native footer restored. Chip layout below still applies when turned on.";
 	return "Custom status bar with model, context, cache, cost, git, and plugin chips.";
@@ -399,6 +405,13 @@ export async function showCcstylePanel(
 				);
 			},
 		};
+		const mcpGatewayServerIdSetting = {
+			id: "mcpGatewayServerIdExtraction",
+			label: "MCP gateway title",
+			description: mcpGatewayServerIdDescription(config.mcpGatewayServerIdExtraction),
+			currentValue: config.mcpGatewayServerIdExtraction ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const inputClipSetting = {
 			id: "inputClip",
 			label: "Input clip",
@@ -684,6 +697,12 @@ export async function showCcstylePanel(
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
 					return;
+				case "mcpGatewayServerIdExtraction":
+					updateConfig({ mcpGatewayServerIdExtraction: value === "on" });
+					mcpGatewayServerIdSetting.description = mcpGatewayServerIdDescription(
+						config.mcpGatewayServerIdExtraction,
+					);
+					break;
 				case "diffViewMode":
 					updateConfig({ diffViewMode: value as DiffViewMode });
 					diffViewSetting.description = diffViewModeDescription(config.diffViewMode);
@@ -806,7 +825,7 @@ export async function showCcstylePanel(
 			{
 				id: "style",
 				label: "Style",
-				items: [modeSetting, excludeSetting],
+				items: [modeSetting, excludeSetting, mcpGatewayServerIdSetting],
 			},
 			{
 				id: "feature",

@@ -47,6 +47,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   // style
   "mode": "on",                            // on / compact / off
   "excludeRenderers": [],                  // 走原生渲染的工具名；Agent 始终保留专用渲染器
+  "mcpGatewayServerIdExtraction": false,   // `mcp` gateway 调用按规则提取 MCP server 作标题；关闭时显示 MCP
 
   // features
   "enableSessionReference": true,          // @ session 引用

@@ -17,6 +17,7 @@ import {
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
+import { mcpToolTitle } from "./mcp-title.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
@@ -42,6 +43,18 @@ type Patch = {
 
 function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
+}
+
+/** Row/header title: MCP tools use the unified entry (same as standalone cards), others humanize the tool name. */
+function toolTitle(tool: any): string {
+	const name = toolName(tool);
+	return (
+		mcpToolTitle({
+			toolName: name,
+			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
+			args: tool?.args,
+		}) ?? humanizeToolLabel(name)
+	);
 }
 
 function isGroupable(value: unknown): boolean {
@@ -170,6 +183,7 @@ export function paddedBackgroundRow(
 
 function toolSummary(tool: any): ToolCallSummary {
 	return toolCallSummary(toolName(tool), tool?.args ?? {}, {
+		title: toolTitle(tool),
 		variant: "grouping",
 		cwd: tool?.cwd,
 	});
@@ -347,8 +361,9 @@ export class ToolGroupComponent extends Container {
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
-		const label =
-			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
+		// Same-name tools may still differ in title (MCP gateway extracts the server per call); mismatch -> Multiple Tools
+		const titles = names.size === 1 ? new Set(this.children.map(toolTitle)) : undefined;
+		const label = titles?.size === 1 ? [...titles][0]! : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (
 			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")

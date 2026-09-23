@@ -37,6 +37,7 @@ import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
+import { mcpToolTitle } from "./tool/mcp-title.ts";
 
 // 成功勾：亮绿 truecolor（与 message-display 一致）
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
@@ -100,25 +101,6 @@ export function shouldRenderRichDiff(
 	isError: boolean,
 ): boolean {
 	return mode === "on" && !isError && (toolName === "edit" || toolName === "write");
-}
-
-export function isMcpToolDefinition(definition: any, toolName: string): boolean {
-	const label = typeof definition?.label === "string" ? definition.label.trim() : "";
-	if (/^MCP(?::|$)/i.test(label)) return true;
-	if (toolName === "mcp" || /^mcp[_:-]|[_:-]mcp[_:-]/i.test(toolName)) return true;
-	if (label) return false;
-	const description = typeof definition?.description === "string" ? definition.description : "";
-	return /\bModel Context Protocol\b/i.test(description);
-}
-
-export function humanizeMcpToolName(toolName: string): string {
-	const words = toolName
-		.replace(/^mcp(?:[_:-]+)+/i, "")
-		.split(/[_:-]+/)
-		.filter(Boolean);
-	return words.length
-		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
-		: "MCP";
 }
 
 /** 排除名单内且自带 renderer 的工具保留原渲染。 */
@@ -225,9 +207,8 @@ function createCcstyleTool(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): any {
 	const toolName = originalTool.name;
-	const label = isMcpToolDefinition(originalTool, toolName)
-		? humanizeMcpToolName(toolName)
-		: originalTool.label || toolName;
+	const label = originalTool.label || toolName;
+	const defaultTitle = label === toolName ? humanizeToolLabel(label) : label;
 
 	return {
 		...originalTool,
@@ -252,7 +233,8 @@ function createCcstyleTool(
 			// 不再每次 tick 走 updateDisplay 把整张卡重建一遍。
 			const pendingIconStyled = () => theme.fg(toolIconColor(context), pendingIcon(toolName));
 			const summary = toolCallSummary(toolName, args, {
-				title: label === toolName ? humanizeToolLabel(label) : label,
+				// MCP titles depend on call args (gateway server id extraction), so compute per call
+				title: mcpToolTitle({ toolName, definition: originalTool, args }) ?? defaultTitle,
 				variant: "default",
 				cwd: context?.cwd,
 			});
