@@ -7,6 +7,7 @@ import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { installCursorWriteDedupe } from "../cursor-dedupe.ts";
+import { markHeaderVisibility } from "../tool/header-visibility.ts";
 import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
@@ -571,8 +572,10 @@ function buildInteractionFrame(
 	const viewportBottomLine = viewportTopLine + visibleRows - 1;
 	for (const [component, componentPlacements] of placementsByComponent) {
 		const headerLine = Math.min(...componentPlacements.map((item) => item.lineIndex));
-		const state = (component.rendererState ??= {});
-		state.ccstyleHeaderVisible = headerLine >= viewportTopLine && headerLine <= viewportBottomLine;
+		markHeaderVisibility(
+			component,
+			headerLine >= viewportTopLine && headerLine <= viewportBottomLine,
+		);
 	}
 	for (const [component, componentPlacements] of placementsByComponent) {
 		const rendered = renderedByComponent.get(component);

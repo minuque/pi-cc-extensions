@@ -4,6 +4,7 @@ import { config } from "../../config/config.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
+import { isAnimationContextVisible } from "./header-visibility.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
@@ -77,7 +78,7 @@ let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
  * 头部不可见时 spinner 本来就看不到，停帧只省开销。
  */
 function animationIsOffscreen(context: any): boolean {
-	return context?.state?.ccstyleHeaderVisible === false;
+	return !isAnimationContextVisible(context);
 }
 
 function clearAnimation(context: any) {

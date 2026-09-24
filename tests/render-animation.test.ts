@@ -9,6 +9,7 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/
 import { installToolMouseInteraction } from "../extensions/renderer/mouse/interaction.ts";
 import { teardownToolMouseInteraction } from "../extensions/renderer/mouse/interaction.ts";
 import { getToolMouseTui, setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
+import { isHeaderVisible } from "../extensions/renderer/tool/header-visibility.ts";
 import { TOOL_LOADING_INTERVAL_MS } from "../extensions/utils/tool-loading-icon.ts";
 
 initTheme("dark");
@@ -126,6 +127,56 @@ test("卡片头部滚出视口后停掉 spinner 动画", async () => {
 	}
 });
 
+test("分组卡头部滚出视口后停掉分组动画", async () => {
+	const previous = getToolMouseTui();
+	const hooks = installToolGrouping(() => true);
+	const { ui, state } = toolUi();
+	const { tui } = fakeTui(6);
+	const parent = new Container() as any;
+	for (const id of ["a", "b"]) {
+		const tool = new ToolExecutionComponent(
+			"read",
+			id,
+			{ path: `${id}.ts` },
+			{},
+			undefined,
+			ui,
+			process.cwd(),
+		) as any;
+		tool.markExecutionStarted();
+		parent.addChild(tool);
+	}
+	const group = parent.children[0] as ToolGroupComponent;
+	tui.children = [parent];
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					factory?.(tui, ui.theme);
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+		tui.doRender();
+		assert.equal(isHeaderVisible(group), true, "分组头部在可视区内");
+		tui.previousViewportTop = 40;
+		tui.doRender();
+		assert.equal(isHeaderVisible(group), false, "分组头部已在可视区上方");
+		group.render(100);
+		const before = state.renders;
+		await tickWait();
+		assert.equal(state.renders, before, "视口外的分组动画不该继续请求渲染");
+	} finally {
+		teardownToolMouseInteraction();
+		restoreTuiSlot(previous);
+		hooks.shutdown();
+	}
+});
+
 test("帧捕获按视口位置标注卡片头部可见性", () => {
 	const previous = getToolMouseTui();
 	const { ui } = toolUi();
@@ -157,11 +208,11 @@ test("帧捕获按视口位置标注卡片头部可见性", () => {
 			},
 		});
 		tui.doRender();
-		assert.equal(tool.rendererState.ccstyleHeaderVisible, true, "卡片首行在可视区内");
+		assert.equal(isHeaderVisible(tool), true, "卡片首行在可视区内");
 		// 转录长过视口后头部落到可视区上方
 		tui.previousViewportTop = 50;
 		tui.doRender();
-		assert.equal(tool.rendererState.ccstyleHeaderVisible, false, "卡片首行已在可视区上方");
+		assert.equal(isHeaderVisible(tool), false, "卡片首行已在可视区上方");
 	} finally {
 		teardownToolMouseInteraction();
 		restoreTuiSlot(previous);
