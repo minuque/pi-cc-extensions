@@ -59,7 +59,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   // ui
   "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
-  "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
+  "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
   "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "scrollStepLines": 3,                    // fullscreen 滚轮步进
@@ -89,7 +89,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 ```
 
 > [!TIP]
-> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览，双击展开面板收起。
+> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines • click to show more` 打开全量预览，双击展开面板收起。
 
 > [!NOTE]
 > **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。

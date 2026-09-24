@@ -46,6 +46,7 @@ import {
 	displayConfigCacheKey,
 	resolveDiffIndicatorMode,
 	resolveLiveDisplayConfig,
+	normalizeCollapsedHintLine,
 	type DiffRenderOptions,
 	type DisplayConfigInput,
 } from "./diff-component.ts";
@@ -407,6 +408,11 @@ export function renderWriteDiffResult(
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** 鼠标层只在真正的 remainder 行上提供展开入口。 */
+		isCollapsedHintLine(plainLine: string): boolean {
+			const hint = cache.getHintLine();
+			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
+		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -433,22 +439,21 @@ export function renderWriteDiffResult(
 			const writeCollapsedLimit = resolveWriteCollapsedLimit(live);
 			const statsOnlyCollapsed = !options.expanded && writeCollapsedLimit === 0;
 			if (statsOnlyCollapsed) {
+				const hintLines = renderWriteCollapsedHintLine(
+					options.fileExistedBeforeWrite === true,
+					safeWidth,
+					theme,
+					hovered,
+					options.headerLabel,
+				);
 				return cache.set(
 					safeWidth,
 					options.expanded,
 					mode,
 					configKey,
 					hovered,
-					clampDiffLinesToWidth(
-						renderWriteCollapsedHintLine(
-							options.fileExistedBeforeWrite === true,
-							safeWidth,
-							theme,
-							hovered,
-							options.headerLabel,
-						),
-						safeWidth,
-					),
+					clampDiffLinesToWidth(hintLines, safeWidth),
+					normalizeCollapsedHintLine(hintLines[0]),
 				);
 			}
 
@@ -500,11 +505,7 @@ export function renderWriteDiffResult(
 			}
 
 			const data = getDetailedData();
-			const displayLimit = resolveDiffDisplayLimit(
-				options.expanded,
-				writeCollapsedLimit,
-				live.expandedPreviewMaxLines,
-			);
+			const displayLimit = resolveDiffDisplayLimit(options.expanded, writeCollapsedLimit);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			const entryBudget = takeEntriesForLineBudget(data.entries, processBudget);
 			const splitBudget = takeSplitRowsForBudget(data.splitRows, processBudget);
@@ -541,7 +542,6 @@ export function renderWriteDiffResult(
 				safeWidth,
 				options.expanded,
 				writeCollapsedLimit,
-				live.expandedPreviewMaxLines,
 				data.hunkCount,
 				theme,
 				unprocessedLogicalRows,
@@ -549,9 +549,19 @@ export function renderWriteDiffResult(
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
-				mode === "unified" ? [header, frame, ...bodyWithLimit, frame] : [header, ...bodyWithLimit];
+				mode === "unified"
+					? [header, frame, ...bodyWithLimit.lines, frame]
+					: [header, ...bodyWithLimit.lines];
 			const finalLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, finalLines);
+			return cache.set(
+				safeWidth,
+				options.expanded,
+				mode,
+				configKey,
+				hovered,
+				finalLines,
+				normalizeCollapsedHintLine(bodyWithLimit.hintLine),
+			);
 		},
 		invalidate: cache.invalidate,
 	} as Component;

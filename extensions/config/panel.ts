@@ -555,7 +555,7 @@ export async function showCcstylePanel(
 		const subagentAutocompleteToggle = featureToggleSetting(
 			"enableSubagentAutocomplete",
 			"Subagent autocomplete",
-			"@ subagent mentions suggest agents and inject delegation instructions. Next restart applies.",
+			"@subagent:[name] mentions suggest agents and inject delegation instructions. Next restart applies.",
 			"Subagent autocomplete disabled.",
 			config.enableSubagentAutocomplete,
 		);

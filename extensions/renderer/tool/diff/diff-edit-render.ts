@@ -32,6 +32,7 @@ import {
 	displayConfigCacheKey,
 	resolveDiffIndicatorMode,
 	resolveLiveDisplayConfig,
+	normalizeCollapsedHintLine,
 	type DiffRenderOptions,
 	type DisplayConfigInput,
 } from "./diff-component.ts";
@@ -127,6 +128,11 @@ export function renderEditDiffResult(
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** 鼠标层只在真正的 remainder 行上提供展开入口。 */
+		isCollapsedHintLine(plainLine: string): boolean {
+			const hint = cache.getHintLine();
+			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
+		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -161,11 +167,7 @@ export function renderEditDiffResult(
 			}
 
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
-			const displayLimit = resolveDiffDisplayLimit(
-				options.expanded,
-				live.editDiffCollapsedLines,
-				live.expandedPreviewMaxLines,
-			);
+			const displayLimit = resolveDiffDisplayLimit(options.expanded, live.editDiffCollapsedLines);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			// Only highlight/render a prefix that can fill the display limit; full-diff
 			// LCS + syntax highlight on thousands of hidden lines is pure waste when collapsed.
@@ -198,7 +200,6 @@ export function renderEditDiffResult(
 				safeWidth,
 				options.expanded,
 				live.editDiffCollapsedLines,
-				live.expandedPreviewMaxLines,
 				parsed.stats.hunks,
 				theme,
 				unprocessedLogicalRows,
@@ -207,11 +208,19 @@ export function renderEditDiffResult(
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
 				mode === "unified"
-					? [...headerRows.map((row) => row.text), frame, ...bodyWithLimit, frame]
-					: [...headerRows.map((row) => row.text), ...bodyWithLimit];
+					? [...headerRows.map((row) => row.text), frame, ...bodyWithLimit.lines, frame]
+					: [...headerRows.map((row) => row.text), ...bodyWithLimit.lines];
 
 			const clampedLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, clampedLines);
+			return cache.set(
+				safeWidth,
+				options.expanded,
+				mode,
+				configKey,
+				hovered,
+				clampedLines,
+				normalizeCollapsedHintLine(bodyWithLimit.hintLine),
+			);
 		},
 		invalidate: cache.invalidate,
 	} as Component;

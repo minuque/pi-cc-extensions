@@ -65,8 +65,8 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 ```
 
 - hover `click to show more` 时由 muted 切换为白色 text。
-- 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。
-- 展开态下 diff 行数提示为 warning 色。
+- 点击提示展开工具，展开态 diff 全量显示，不再截断。
+- 折叠态 diff 行数提示为 muted 色。
 
 write 新建 / 覆盖：
 

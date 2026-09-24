@@ -59,7 +59,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // ui
   "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
   "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
-  "expandedPreviewMaxLines": 40,           // max lines for expanded diff/TaskList bodies
+  "expandedPreviewMaxLines": 40,           // max lines for expanded TaskList bodies (expanded diffs always show all)
   "inputClip": 100,                        // tool summary path/command clip length
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "scrollStepLines": 3,                    // fullscreen wheel scroll step
@@ -89,7 +89,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 ```
 
 > [!TIP]
-> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. When expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Double-click an expanded panel to collapse it.
+> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Double-click an expanded panel to collapse it.
 
 > [!NOTE]
 > **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.

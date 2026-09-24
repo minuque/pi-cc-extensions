@@ -31,18 +31,16 @@ function renderDiffSpacerLine(width: number): string {
 	return safeWidth > 0 ? " ".repeat(safeWidth) : "";
 }
 
-export function resolveDiffDisplayLimit(
-	expanded: boolean,
-	maxCollapsedLines: number,
-	maxExpandedLines: number,
-): number {
-	const expandedLimit = Number.isFinite(maxExpandedLines)
-		? maxExpandedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines;
+/**
+ * Body lines to render before the remainder hint. Expanded diffs are never capped:
+ * clicking `click to show more` expands the card to the whole diff.
+ */
+export function resolveDiffDisplayLimit(expanded: boolean, maxCollapsedLines: number): number {
+	if (expanded) return Number.POSITIVE_INFINITY;
 	const collapsedLimit = Number.isFinite(maxCollapsedLines)
 		? maxCollapsedLines
 		: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines;
-	return expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
+	return Math.max(1, collapsedLimit);
 }
 
 export function resolveWriteCollapsedLimit(
@@ -99,7 +97,6 @@ export function applyLineLimit(
 	width: number,
 	expanded: boolean,
 	maxCollapsedLines: number,
-	maxExpandedLines: number,
 	totalHunks: number,
 	theme: DiffTheme,
 	/**
@@ -108,17 +105,17 @@ export function applyLineLimit(
 	 */
 	unprocessedLogicalRows = 0,
 	hovered = false,
-): string[] {
-	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines, maxExpandedLines);
+): { lines: string[]; hintLine?: string } {
+	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines);
 	const safeUnprocessed = Math.max(0, unprocessedLogicalRows);
 	if (limit === 0 || (rows.length <= limit && safeUnprocessed === 0)) {
-		return rows.map((row) => clampDiffLineToWidth(row.text, width));
+		return { lines: rows.map((row) => clampDiffLineToWidth(row.text, width)) };
 	}
 
 	const shown = rows.length <= limit ? rows : rows.slice(0, limit);
 	const remaining = Math.max(0, rows.length - shown.length) + safeUnprocessed;
 	if (remaining === 0) {
-		return shown.map((row) => clampDiffLineToWidth(row.text, width));
+		return { lines: shown.map((row) => clampDiffLineToWidth(row.text, width)) };
 	}
 	const visibleHunks = new Set(
 		shown
@@ -137,15 +134,19 @@ export function applyLineLimit(
 
 	const clickLabel = showMoreHintText();
 	const clickIndex = hintText.lastIndexOf(clickLabel);
+	// 展开态不会再截断，剩下的分支必是折叠态提示。
 	const styledHint =
-		hovered && !expanded && clickIndex >= 0
+		hovered && clickIndex >= 0
 			? theme.fg("muted", hintText.slice(0, clickIndex)) +
 				theme.fg("text", clickLabel) +
 				theme.fg("muted", hintText.slice(clickIndex + clickLabel.length))
-			: theme.fg(expanded ? "warning" : "muted", hintText);
-	return [
-		...shown.map((row) => clampDiffLineToWidth(row.text, width)),
-		renderDiffSpacerLine(width),
-		clampDiffLineToWidth(styledHint, width),
-	];
+			: theme.fg("muted", hintText);
+	return {
+		lines: [
+			...shown.map((row) => clampDiffLineToWidth(row.text, width)),
+			renderDiffSpacerLine(width),
+			clampDiffLineToWidth(styledHint, width),
+		],
+		hintLine: hintText,
+	};
 }

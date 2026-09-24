@@ -1,3 +1,4 @@
+import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
@@ -312,6 +313,31 @@ const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
 const FULLSCREEN_WHEEL_SCROLL_ORIGINAL = Symbol("ccstyle.fullscreen-wheel-scroll-original");
 
 /**
+ * diff 结果组件自带 remainder 行：声明存在时只有那一行是展开入口（正文里的同名字样不算）；
+ * 未声明的组件继续用文本规则。
+ */
+function isCollapsedHintRow(component: any, finalLine: string): boolean {
+	const result = component?.resultRendererComponent;
+	return typeof result?.isCollapsedHintLine === "function"
+		? result.isCollapsedHintLine(finalLine)
+		: true;
+}
+
+/**
+ * pi 0.87 给工具结果区套了 MouseRegion：整卡左键 click 都会 setExpanded。
+ * 命中该区域时官方会跳过文本选区，所以可以安全吞掉；单行摘要卡没有声明
+ * remainder 行，继续走官方整行行为。
+ */
+function blocksOfficialCardToggle(component: any, event: any): boolean {
+	if (event?.type !== "click" || event.button !== "left" || component?.expanded) return false;
+	const result = component?.resultRendererComponent;
+	if (typeof result?.isCollapsedHintLine !== "function") return false;
+	const lines = component.render?.(Math.max(1, Math.floor(Number(event.width) || 0)));
+	const line = Array.isArray(lines) ? lines[event.y] : undefined;
+	return typeof line === "string" && !result.isCollapsedHintLine(line);
+}
+
+/**
  * 官方 fullscreen 工具卡点击：collapsed hint 单击展开
  * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡双击收起，
  * 截断头 show-more 单击打开全量预览；回到底部按钮 scrollToBottom。
@@ -352,6 +378,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
 		const hint = collapsedHintHitbox(line);
 		if (!hint || packet.col < hint.startCol || packet.col > hint.endCol) return false;
+		if (!isCollapsedHintRow(component, line)) return false;
 		// single-expand：展开前收起其他已展开工具卡/group。
 		const others: any[] = [];
 		collectFullscreenToolCards(hit.box.component, others);
@@ -574,7 +601,11 @@ function buildInteractionFrame(
 			const line = placement.finalLine;
 			if (!component.expanded) {
 				const box = collapsedHintHitbox(line);
-				if (box && COLLAPSED_TOOL_SUMMARY.test(stripTerminalSequences(line))) {
+				if (
+					box &&
+					COLLAPSED_TOOL_SUMMARY.test(stripTerminalSequences(line)) &&
+					isCollapsedHintRow(component, line)
+				) {
 					regions.push({ kind: "collapsed-hint", row: finalRow, ...box, component });
 				}
 				continue;
@@ -867,6 +898,7 @@ export function teardownToolMouseInteraction(
 	setHoveredMessageDisplay(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
+	releaseToolCardMouseGuard();
 	clearExpandPanelDoubleClick();
 	try {
 		if (isLazyProxyTui(getToolMouseTui())) releaseFullscreenToolMouseMotion(getToolMouseTui());
@@ -901,6 +933,43 @@ export function resetToolHoverState(): void {
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
+/**
+ * pi 0.87 起工具卡结果区自带 MouseRegion，整卡左键 click 都会 setExpanded。
+ * ccstyle 的多行折叠卡（rich diff）只允许声明的 remainder 行展开，
+ * 其余位置直接吞掉 click，避免官方把 diff 正文当展开入口。
+ * 0.84 及更早没有 handleMouse，安装时跳过。
+ */
+const TOOL_CARD_MOUSE_GUARD_KEY = Symbol.for("pi.ccstyle.tool-card-mouse-guard");
+
+type ToolCardMouseGuard = {
+	prototype: any;
+	original: (event: any) => any;
+	wrapper: (event: any) => any;
+};
+
+function installToolCardMouseGuard(): void {
+	const prototype = (ToolExecutionComponent as any)?.prototype;
+	if (typeof prototype?.handleMouse !== "function") return;
+	const previous = (globalThis as any)[TOOL_CARD_MOUSE_GUARD_KEY] as ToolCardMouseGuard | undefined;
+	if (previous && previous.prototype === prototype && prototype.handleMouse === previous.wrapper)
+		return;
+	// 每次取当前值作为下游，可能是别的扩展的包装。
+	const original = prototype.handleMouse;
+	const wrapper = function (this: any, event: any) {
+		if (blocksOfficialCardToggle(this, event)) return { handled: true };
+		return original.call(this, event);
+	};
+	prototype.handleMouse = wrapper;
+	(globalThis as any)[TOOL_CARD_MOUSE_GUARD_KEY] = { prototype, original, wrapper };
+}
+
+function releaseToolCardMouseGuard(): void {
+	const guard = (globalThis as any)[TOOL_CARD_MOUSE_GUARD_KEY] as ToolCardMouseGuard | undefined;
+	if (!guard) return;
+	if (guard.prototype?.handleMouse === guard.wrapper) guard.prototype.handleMouse = guard.original;
+	(globalThis as any)[TOOL_CARD_MOUSE_GUARD_KEY] = undefined;
+}
+
 export function installToolMouseInteraction(
 	ctx: any,
 	owner: object = DEFAULT_TOOL_MOUSE_OWNER,
@@ -912,6 +981,7 @@ export function installToolMouseInteraction(
 
 	toolMouseInstallationOwner = owner;
 	patchRegistry.install(TOOL_MOUSE_OWNER_KEY, owner);
+	installToolCardMouseGuard();
 	setHoveredToolCallId(null);
 	toolMouseUi = ctx.ui;
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen

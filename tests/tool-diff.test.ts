@@ -89,6 +89,72 @@ test("edit rich diff is width-safe and honors collapsed/expanded limits", () => 
 	assert.ok(output(expanded, 32).length > collapsedLines.length);
 });
 
+test("expanded long edit diff shows every line instead of a remainder hint", () => {
+	const diff = ["@@ -1,80 +1,80 @@"];
+	for (let index = 1; index <= 80; index++) {
+		diff.push(`-${index}|old value ${index}`, `+${index}|new value ${index}`);
+	}
+	const render = (expanded: boolean) =>
+		output(
+			renderRichToolResult(
+				"edit",
+				{ details: { diff: diff.join("\n") }, content: [] },
+				{ expanded },
+				theme,
+				{ args: { path: "sample.ts" } },
+				new WriteExecutionMetadataStore(),
+			),
+			80,
+		).map(stripVTControlCharacters);
+
+	const collapsed = render(false);
+	assert.ok(
+		collapsed.some((line) => line.includes("more diff lines")),
+		"collapsed body caps and keeps the remainder hint",
+	);
+
+	const expanded = render(true);
+	assert.ok(
+		expanded.some((line) => line.includes("old value 80")),
+		"expanded body renders the whole diff",
+	);
+	assert.ok(
+		!expanded.some((line) => line.includes("click to show more")),
+		"expanded body has no remainder hint",
+	);
+});
+
+test("collapsed diff declares only its remainder row as the expand entry", () => {
+	const diff = ["@@ -1,30 +1,30 @@"];
+	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
+	diff.push("+   ↳ 2 lines returned • click to show more");
+	for (let index = 2; index <= 30; index++) diff.push(`+code line ${index}`);
+
+	const collapsed: any = renderEditDiffResult(
+		{ diff: diff.join("\n") },
+		{ expanded: false },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	const rows = (collapsed.render(90) as string[]).map(stripVTControlCharacters);
+	const body = rows.find((line) => line.includes("2 lines returned"));
+	const hint = rows.find((line) => line.includes("more diff lines"));
+	assert.ok(body && hint, "collapsed body renders both rows");
+	assert.equal(collapsed.isCollapsedHintLine(body), false, "body text is not the entry");
+	assert.equal(collapsed.isCollapsedHintLine(hint), true, "remainder row is the entry");
+
+	const expanded: any = renderEditDiffResult(
+		{ diff: diff.join("\n") },
+		{ expanded: true },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	expanded.render(90);
+	assert.equal(expanded.isCollapsedHintLine(hint), false, "expanded diff has no entry");
+});
+
 test("pi omissions use split number gutters and omit the terminal marker", () => {
 	const diff = [
 		"     ...",
@@ -234,7 +300,6 @@ test("diff indicator mode live-updates on the same component via config getter",
 		diffViewMode: "unified",
 		diffIndicatorMode: "classic",
 		editDiffCollapsedLines: 80,
-		expandedPreviewMaxLines: 200,
 	};
 	const component = renderRichToolResult(
 		"edit",

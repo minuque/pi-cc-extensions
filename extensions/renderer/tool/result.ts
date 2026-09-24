@@ -14,7 +14,7 @@ export function toolViewportWidth(width: number): number {
 
 /** 与默认工具结果相同的一级缩进包装。子组件只扣始终加上的 1 列；↳ 行多出的 2 列由 truncateToWidth 吃掉。 */
 export function insetComponent(component: any): any {
-	return {
+	const wrapped: Record<string, unknown> = {
 		render: (width: number) =>
 			component.render(Math.max(1, width - 1)).map((line: string) => {
 				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
@@ -22,6 +22,11 @@ export function insetComponent(component: any): any {
 			}),
 		invalidate: () => component.invalidate?.(),
 	};
+	// 内层 diff 声明的 remainder 行：鼠标层只能看到这个包装组件。
+	if (typeof component.isCollapsedHintLine === "function") {
+		wrapped.isCollapsedHintLine = (line: string) => component.isCollapsedHintLine(line);
+	}
+	return wrapped;
 }
 
 function rawTextFromResult(result: any): string {

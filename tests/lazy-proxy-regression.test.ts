@@ -28,6 +28,11 @@ import {
 	ThinkingPreviewBlock,
 } from "../extensions/feature/compact-thinking.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import {
+	renderRichToolResult,
+	DEFAULT_TOOL_DISPLAY_CONFIG,
+} from "../extensions/renderer/tool/diff/index.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -706,6 +711,65 @@ test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", asy
 		compact.shutdown();
 		config.mode = previousMode;
 		setMessageDisplayTheme(previousTheme);
+	}
+});
+
+test("lazy-proxy tui: collapsed diff body text is not an expand entry", () => {
+	const plainTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+	};
+	const diff = ["@@ -1,6 +1,6 @@"];
+	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
+	diff.push("+   ↳ 2 lines returned • click to show more");
+	for (let index = 2; index <= 6; index++) diff.push(`+code line ${index}`);
+	const inner: any = renderRichToolResult(
+		"edit",
+		{ details: { diff: diff.join("\n") }, content: [] },
+		{ expanded: false },
+		plainTheme,
+		{ args: { path: "docs/example.md" } },
+		new WriteExecutionMetadataStore(),
+		// 保持折叠卡在 fullscreen 夹具的 20 行 clip 内。
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2 },
+	);
+	const result = insetComponent(inner);
+	const card: any = {
+		toolCallId: "edit-diff",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		resultRendererComponent: result,
+		render() {
+			return ["✓ Edit docs/example.md", ...result.render(80)];
+		},
+	};
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(card, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render();
+		renderer.currentLayout = fullscreenLayout(card, null);
+		const strip = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const rows = card.render(80).map(strip);
+		const bodyRow = rows.findIndex((line: string) => line.includes("2 lines returned"));
+		const hintRow = rows.findIndex((line: string) => line.includes("more diff lines"));
+		assert.ok(bodyRow > 0 && hintRow > 0, "collapsed card renders body text and remainder");
+
+		const bodyCol = rows[bodyRow]!.indexOf("click to show more") + 1;
+		tui.handleViewportInput(`\x1b[<0;${bodyCol};${bodyRow + 1}M`);
+		assert.equal(card.expanded, false, "body text does not expand the card");
+
+		const hintCol = rows[hintRow]!.indexOf("click to show more") + 1;
+		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
+		assert.equal(card.expanded, true, "remainder row still expands the card");
+	} finally {
+		installToolMouseInteraction({});
 	}
 });
 

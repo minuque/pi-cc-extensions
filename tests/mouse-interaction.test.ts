@@ -13,6 +13,12 @@ import claudeCodeStyleExtension, {
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	renderRichToolResult,
+	DEFAULT_TOOL_DISPLAY_CONFIG,
+} from "../extensions/renderer/tool/diff/index.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 
@@ -410,6 +416,83 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 	} finally {
 		installToolMouseInteraction({});
 		grouping.shutdown();
+	}
+});
+
+test("collapsed diff card swallows card-wide clicks outside its remainder row", () => {
+	// 伪造 pi 0.87 的结果区 MouseRegion：左键 click 整卡 setExpanded。
+	const prototype = (ToolExecutionComponent as any).prototype;
+	const originalHandleMouse = prototype.handleMouse;
+	const delegated: Array<Record<string, unknown>> = [];
+	prototype.handleMouse = function (event: any) {
+		delegated.push({ type: event?.type, button: event?.button, y: event?.y });
+		return { handled: true };
+	};
+	const plainTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+	};
+	const diff = ["@@ -1,6 +1,6 @@"];
+	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
+	diff.push("+   ↳ 2 lines returned • click to show more");
+	for (let index = 2; index <= 6; index++) diff.push(`+code line ${index}`);
+	const inner: any = renderRichToolResult(
+		"edit",
+		{ details: { diff: diff.join("\n") }, content: [] },
+		{ expanded: false },
+		plainTheme,
+		{ args: { path: "a.ts" } },
+		new WriteExecutionMetadataStore(),
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2 },
+	);
+	const result = insetComponent(inner);
+	const card: any = {
+		toolName: "edit",
+		expanded: false,
+		resultRendererComponent: result,
+		render: (width: number) => ["✓ Edit a.ts", ...result.render(width)],
+	};
+	const strip = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	const rows = (card.render(80) as string[]).map(strip);
+	const bodyRow = rows.findIndex((line: string) => line.includes("2 lines returned"));
+	const hintRow = rows.findIndex((line: string) => line.includes("more diff lines"));
+	assert.ok(bodyRow >= 0 && hintRow >= 0, "collapsed diff renders body and remainder");
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		mode: "tui",
+		requestRender() {},
+	};
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, plainTheme);
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		} as any);
+
+		prototype.handleMouse.call(card, { type: "click", button: "left", y: bodyRow, width: 80 });
+		assert.deepEqual(delegated, [], "正文行不能交给官方整卡 toggle");
+
+		prototype.handleMouse.call(card, { type: "click", button: "left", y: hintRow, width: 80 });
+		assert.equal(delegated.length, 1, "remainder 行仍走官方 toggle");
+		assert.deepEqual(delegated[0], { type: "click", button: "left", y: hintRow });
+
+		prototype.handleMouse.call(card, { type: "wheel", button: "none", y: bodyRow, width: 80 });
+		prototype.handleMouse.call(
+			{ ...card, expanded: true },
+			{ type: "click", button: "left", y: bodyRow, width: 80 },
+		);
+		assert.equal(delegated.length, 3, "非左键/展开态不拦");
+	} finally {
+		installToolMouseInteraction({});
+		prototype.handleMouse = originalHandleMouse;
 	}
 });
 

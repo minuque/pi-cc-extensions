@@ -277,8 +277,8 @@ async function generateDefault() {
 					fence([longHint]),
 					[
 						"- hover `click to show more` 时由 muted 切换为白色 text。",
-						"- 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。",
-						"- 展开态下 diff 行数提示为 warning 色。",
+						"- 点击提示展开工具，展开态 diff 全量显示，不再截断。",
+						"- 折叠态 diff 行数提示为 muted 色。",
 					].join("\n"),
 					"write 新建 / 覆盖：",
 					fence([...renderLines(writeCreate), "", ...renderLines(writeOver)]),
