@@ -485,8 +485,7 @@ export async function showCcstylePanel(
 		const expandedMaxSetting = {
 			id: "expandedPreviewMaxLines",
 			label: "Expanded max lines",
-			description:
-				"Max diff/TaskList body lines when expanded. Tool Input/Output use the two settings above.",
+			description: "Max TaskList body lines when expanded. Expanded diffs show every line.",
 			currentValue: String(config.expandedPreviewMaxLines),
 			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>

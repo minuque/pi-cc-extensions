@@ -14,6 +14,7 @@ import {
 import {
 	SESSION_REFERENCE_CUSTOM_TYPE,
 	SESSION_REFERENCE_PREFIX,
+	assignReferenceTokens,
 	buildReferenceContentFromSections,
 	extractSessionReferenceIds,
 	formatReferenceSession,
@@ -123,7 +124,7 @@ function formatDate(date: Date): string {
 const sessionSearchTextCache = new WeakMap<SessionReference, string>();
 const sessionItemCache = new WeakMap<
 	SessionReference,
-	{ cwd: string; named?: AutocompleteItem; stable?: AutocompleteItem }
+	{ cwd: string; token: string; item: AutocompleteItem }
 >();
 
 function sessionSearchText(reference: SessionReference): string {
@@ -138,30 +139,24 @@ function sessionSearchText(reference: SessionReference): string {
 function sessionItem(
 	reference: SessionReference,
 	currentCwd: string,
-	useStableId: boolean,
+	token: string,
 ): AutocompleteItem {
-	let cached = sessionItemCache.get(reference);
-	const variant = useStableId ? "stable" : "named";
-	if (cached?.cwd === currentCwd && cached[variant]) return cached[variant];
+	const cached = sessionItemCache.get(reference);
+	if (cached?.cwd === currentCwd && cached.token === token) return cached.item;
 
 	const session = reference.info;
 	const workspace = samePath(session.cwd, currentCwd)
 		? "current workspace"
 		: session.cwd || "unknown workspace";
-	const label = reference.kind === "subagent" ? "[SubAgent]" : "[Session]";
-	// 唯一名称保持短格式；同名或无名称时使用稳定 ID，避免引用歧义。
-	const sessionName = session.name?.trim();
-	const referenceId = useStableId
-		? reference.referenceIds[0]
-		: (sessionName ?? reference.referenceIds[0]);
+	const kindLabel = reference.kind === "subagent" ? "[SubAgent]" : "[Session]";
+	// 消歧后的 token 会带上日期；回落到 ID 时下拉仍显示可读标题。
+	const title = token === (reference.referenceIds[0] ?? session.id) ? sessionTitle(session) : token;
 	const item: AutocompleteItem = {
-		value: `${SESSION_REFERENCE_PREFIX}[${referenceId}]`,
-		label: `${label} ${sessionTitle(session)}`,
+		value: `${SESSION_REFERENCE_PREFIX}[${token}]`,
+		label: `${kindLabel} ${title}`,
 		description: `${workspace} · ${session.messageCount} messages · ${formatDate(session.modified)}`,
 	};
-	if (cached?.cwd !== currentCwd) cached = { cwd: currentCwd };
-	cached[variant] = item;
-	sessionItemCache.set(reference, cached);
+	sessionItemCache.set(reference, { cwd: currentCwd, token, item });
 	return item;
 }
 
@@ -197,11 +192,7 @@ function filterSessions(
 	if (query.startsWith("session:")) return [];
 
 	const ordered = orderSessionReferences(references, currentCwd);
-	const nameCounts = new Map<string, number>();
-	for (const reference of ordered) {
-		const name = reference.info.name?.trim();
-		if (name) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
-	}
+	const tokens = assignReferenceTokens(ordered);
 	const trimmed = query.trim();
 	// 模糊匹配只接受有 session name 的会话；subagent 按 agent name 匹配。
 	const searchable = ordered.filter(
@@ -211,10 +202,11 @@ function filterSessions(
 	const matches = trimmed
 		? fuzzyFilter(searchable, trimmed, sessionSearchText)
 		: ordered.slice(0, MAX_SESSION_SUGGESTIONS);
-	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => {
-		const name = reference.info.name?.trim();
-		return sessionItem(reference, currentCwd, Boolean(name && (nameCounts.get(name) ?? 0) > 1));
-	});
+	return matches
+		.slice(0, MAX_SESSION_SUGGESTIONS)
+		.map((reference) =>
+			sessionItem(reference, currentCwd, tokens.get(reference) ?? reference.info.id),
+		);
 }
 
 function isPathLikeQuery(query: string): boolean {
@@ -452,22 +444,17 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 				),
 			));
 		const referencesById = new Map<string, SessionReference>();
-		const referencesByName = new Map<string, SessionReference>();
-		const ambiguousNames = new Set<string>();
+		const referencesByToken = new Map<string, SessionReference>();
 		for (const reference of references) {
 			for (const id of reference.referenceIds) referencesById.set(id, reference);
-			const name = reference.info.name?.trim();
-			if (!name || ambiguousNames.has(name)) continue;
-			if (referencesByName.has(name)) {
-				referencesByName.delete(name);
-				ambiguousNames.add(name);
-			} else {
-				referencesByName.set(name, reference);
-			}
+		}
+		// 同位重名的会话用带日期的 token 区分，解析端与补全端用同一套分配。
+		for (const [reference, token] of assignReferenceTokens(references)) {
+			referencesByToken.set(token, reference);
 		}
 		const seenReferences = new Set<SessionReference>();
 		const matchingReferences = referenceIds
-			.map((id) => referencesById.get(id) ?? referencesByName.get(id))
+			.map((id) => referencesById.get(id) ?? referencesByToken.get(id))
 			.filter((reference): reference is SessionReference => {
 				if (!reference || reference.info.id === currentSessionId || seenReferences.has(reference))
 					return false;

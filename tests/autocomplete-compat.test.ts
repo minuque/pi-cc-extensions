@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
-import { createAgentAutocompleteProvider } from "../extensions/feature/reference/subagent.ts";
+import {
+	createAgentAutocompleteProvider,
+	extractSubagentReferenceNames,
+	subagentReferenceValue,
+} from "../extensions/feature/reference/subagent.ts";
 import { createAutocompleteProvider as createSessionAutocompleteProvider } from "../extensions/feature/reference/index.ts";
 
 const fffProvider: AutocompleteProvider = {
@@ -108,7 +112,7 @@ test("session autocomplete fuzzy-matches explicit session names only", async () 
 					info: {
 						id: "unnamed-session",
 						cwd: "/repo",
-						firstMessage: "Release plan",
+						firstMessage: "unrelated chatter",
 						messageCount: 1,
 						modified: new Date("2025-01-03T03:04:05.000Z"),
 					},
@@ -142,7 +146,36 @@ test("session candidate value uses the bracketed session name", async () => {
 	);
 });
 
-test("duplicate session names use stable ids", async () => {
+test("unnamed unique session candidate uses the title not the id", async () => {
+	const unnamed = [
+		{
+			kind: "session",
+			referenceIds: ["019f78f7-526e-78ac-afa5-ff6d5e06beb8"],
+			info: {
+				id: "019f78f7-526e-78ac-afa5-ff6d5e06beb8",
+				cwd: "/repo",
+				firstMessage: "  Refactor\n\tthe auth module  ",
+				messageCount: 2,
+				modified: new Date("2025-01-02T03:04:05.000Z"),
+			},
+		},
+	];
+	const provider = createSessionAutocompleteProvider(
+		fffProvider,
+		async () => unnamed as any,
+		"/repo",
+	);
+	const result = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+
+	assert.deepEqual(
+		result?.items.filter((item) => item.value.startsWith("@session:")).map((item) => item.value),
+		["@session:[Refactor the auth module]"],
+	);
+});
+
+test("same-named sessions keep a readable dated token", async () => {
 	const duplicates = [
 		{
 			...references[0],
@@ -170,7 +203,7 @@ test("duplicate session names use stable ids", async () => {
 
 	assert.deepEqual(
 		result?.items.filter((item) => item.value.startsWith("@session:")).map((item) => item.value),
-		["@session:[session-b]", "@session:[session-a]"],
+		["@session:[Previous work 01-03]", "@session:[Previous work 01-02]"],
 	);
 });
 
@@ -255,6 +288,16 @@ test("path-like queries put file candidates before sessions", async () => {
 	);
 });
 
+test("agent autocomplete matches @subagent: prefix queries", async () => {
+	const provider = createAgentAutocompleteProvider(fffProvider, () => agents);
+	const result = await provider.getSuggestions(["@subagent:[cod"], 0, 14, {
+		signal: new AbortController().signal,
+	});
+
+	assert.equal(result?.prefix, "@subagent:[cod");
+	assert.equal(result?.items[0]?.value, "@subagent:[coder]");
+});
+
 test("agent autocomplete shows at most two agent candidates", async () => {
 	const provider = createAgentAutocompleteProvider(fffProvider, () =>
 		Array.from({ length: 4 }, (_, index) => ({
@@ -312,5 +355,25 @@ test("agent autocomplete does not duplicate delegated agent entries", async () =
 	});
 
 	assert.equal(result?.items.length, 1);
-	assert.equal(result?.items[0]?.value, "@coder");
+	assert.equal(result?.items[0]?.value, "@subagent:[coder]");
+});
+
+test("agent candidate value uses the bracketed @subagent style", async () => {
+	const provider = createAgentAutocompleteProvider(fffProvider, () => agents);
+	const result = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+
+	assert.equal(result?.items[0]?.value, "@subagent:[coder]");
+});
+
+test("extractSubagentReferenceNames finds bracketed mentions and deduplicates them", () => {
+	assert.deepEqual(
+		extractSubagentReferenceNames(
+			"Review @subagent:[coder] and @subagent:[explore], then @subagent:[coder]",
+		),
+		["coder", "explore"],
+	);
+	assert.deepEqual(extractSubagentReferenceNames("plain @coder and @session:[x]"), []);
+	assert.equal(subagentReferenceValue("coder"), "@subagent:[coder]");
 });

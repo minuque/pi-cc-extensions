@@ -50,7 +50,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
   // features
   "enableSessionReference": true,          // @ session references
-  "enableSubagentAutocomplete": true,      // @ subagent completion and delegation hints
+  "enableSubagentAutocomplete": true,      // @subagent:[name] completion and delegation hints
   "enableContextCommand": true,            // /context usage check
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed

@@ -50,7 +50,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
   // features
   "enableSessionReference": true,          // @ session 引用
-  "enableSubagentAutocomplete": true,      // @ subagent 补全与委派提示
+  "enableSubagentAutocomplete": true,      // @subagent:[name] 补全与委派提示
   "enableContextCommand": true,            // /context 上下文检查
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时

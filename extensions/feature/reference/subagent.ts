@@ -18,9 +18,12 @@ type AgentInfo = {
 	filePath: string;
 };
 
+export const SUBAGENT_DELEGATION_CUSTOM_TYPE = "subagent-delegation";
+export const SUBAGENT_REFERENCE_PREFIX = "@subagent:";
+
 const MAX_SUGGESTIONS = 2;
-// Match `@name` but NOT `@session:` (reserved by session-reference extension).
-const AGENT_NAME_PATTERN = /(?:^|[\t ])@((?:[^\s:@][^\s:]*)?)$/;
+const MENTION_PATTERN = /(?:^|[\t ])@([^\s@]*)$/;
+const SUBAGENT_REFERENCE_PATTERN = /(?:^|\s)@subagent:\[([^\]]+)](?![\w-])/g;
 
 function getAgentDir(): string {
 	const override = process.env.PI_CODING_AGENT_DIR;
@@ -60,6 +63,36 @@ function loadAgents(): AgentInfo[] {
 		});
 }
 
+function extractMentionQuery(textBeforeCursor: string): string | undefined {
+	return textBeforeCursor.match(MENTION_PATTERN)?.[1];
+}
+
+/** Filter text for agent names, or null when this provider should not claim the @ query. */
+function agentSearchQuery(raw: string): string | null {
+	if (raw.startsWith("session:")) return null;
+	if (raw === "subagent") return "";
+	const prefixed = raw.match(/^subagent:\[?([^\]]*)$/);
+	if (prefixed) return prefixed[1] ?? "";
+	return raw;
+}
+
+export function extractSubagentReferenceNames(text: string): string[] {
+	const names: string[] = [];
+	const seen = new Set<string>();
+	for (const match of text.matchAll(SUBAGENT_REFERENCE_PATTERN)) {
+		const name = match[1]?.trim();
+		if (name && !seen.has(name)) {
+			seen.add(name);
+			names.push(name);
+		}
+	}
+	return names;
+}
+
+export function subagentReferenceValue(name: string): string {
+	return `${SUBAGENT_REFERENCE_PREFIX}[${name}]`;
+}
+
 export function createAgentAutocompleteProvider(
 	current: AutocompleteProvider,
 	getAgents: () => AgentInfo[],
@@ -74,13 +107,16 @@ export function createAgentAutocompleteProvider(
 		): Promise<AutocompleteSuggestions | null> {
 			const currentLine = lines[cursorLine] ?? "";
 			const textBeforeCursor = currentLine.slice(0, cursorCol);
-			const match = textBeforeCursor.match(AGENT_NAME_PATTERN);
-
-			if (!match) {
+			const rawQuery = extractMentionQuery(textBeforeCursor);
+			if (rawQuery === undefined) {
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
-			const query = match[1]!;
+			const search = agentSearchQuery(rawQuery);
+			if (search === null) {
+				return current.getSuggestions(lines, cursorLine, cursorCol, options);
+			}
+
 			const agents = getAgents();
 
 			if (options.signal.aborted || agents.length === 0) {
@@ -89,17 +125,20 @@ export function createAgentAutocompleteProvider(
 
 			const [baseSuggestions, matches] = await Promise.all([
 				current.getSuggestions(lines, cursorLine, cursorCol, options),
-				Promise.resolve(query.trim() ? fuzzyFilter(agents, query, (a) => a.name) : agents),
+				Promise.resolve(search.trim() ? fuzzyFilter(agents, search, (a) => a.name) : agents),
 			]);
 			if (options.signal.aborted) return null;
 
 			const agentItems: AutocompleteItem[] = matches.slice(0, MAX_SUGGESTIONS).map((agent) => ({
-				value: `@${agent.name}`,
+				value: subagentReferenceValue(agent.name),
 				label: `[SubAgent] ${agent.displayName}`,
 				description: `${agent.model ?? "?"} · ${agent.thinking ?? "?"}`,
 			}));
-			const hasCompatibleBaseSuggestions = baseSuggestions?.prefix === `@${query}`;
-			const agentValues = new Set(agents.map((agent) => `@${agent.name}`));
+			const prefix = `@${rawQuery}`;
+			const hasCompatibleBaseSuggestions = baseSuggestions?.prefix === prefix;
+			const agentValues = new Set(
+				agents.flatMap((agent) => [`@${agent.name}`, subagentReferenceValue(agent.name)]),
+			);
 			const baseItems = hasCompatibleBaseSuggestions
 				? baseSuggestions.items.filter((item) => !agentValues.has(item.value))
 				: [];
@@ -112,7 +151,7 @@ export function createAgentAutocompleteProvider(
 			});
 
 			if (items.length === 0 && !hasCompatibleBaseSuggestions) return baseSuggestions;
-			return { items, prefix: `@${query}` };
+			return { items, prefix };
 		},
 
 		applyCompletion(
@@ -166,16 +205,13 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 		sessionGeneration++;
 	});
 
-	// Inject instruction when user types @agent-name (not @session:) in prompt.
-	// Supports multiple different subagents in a single prompt.
-	const AGENT_PROMPT_PATTERN = /(?:^|[\s])@([^\s:@][^\s:]*)/g;
+	// Inject as a request message, not systemPrompt, so the cached prefix stays stable.
 	pi.on("before_agent_start", async (event, _ctx) => {
 		const agents = getAgents();
 		if (agents.length === 0) return;
 
 		const mentions: string[] = [];
-		for (const m of event.prompt.matchAll(AGENT_PROMPT_PATTERN)) {
-			const name = m[1]!;
+		for (const name of extractSubagentReferenceNames(event.prompt)) {
 			if (agents.some((a) => a.name === name) && !mentions.includes(name)) {
 				mentions.push(name);
 			}
@@ -186,12 +222,15 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 		const agentList = mentions.map((n) => `"${n}" (${agentMap.get(n)!.displayName})`).join(", ");
 
 		return {
-			systemPrompt:
-				event.systemPrompt +
-				`\n\nThe user's prompt references these subagent types: ${agentList}. ` +
-				`You MUST use the Agent tool for EACH mentioned subagent to delegate the relevant parts of the request. ` +
-				`Handle different subagents separately — do NOT merge their tasks into a single Agent call. ` +
-				`For example, if the user mentions @coder and @explore, make two separate Agent tool calls, one with subagent_type="coder" and another with subagent_type="explore".`,
+			message: {
+				customType: SUBAGENT_DELEGATION_CUSTOM_TYPE,
+				content:
+					`The user's prompt references these subagent types: ${agentList}. ` +
+					`You MUST use the Agent tool for EACH mentioned subagent to delegate the relevant parts of the request. ` +
+					`Handle different subagents separately — do NOT merge their tasks into a single Agent call. ` +
+					`For example, if the user mentions @subagent:[coder] and @subagent:[explore], make two separate Agent tool calls, one with subagent_type="coder" and another with subagent_type="explore".`,
+				display: false,
+			},
 		};
 	});
 }
