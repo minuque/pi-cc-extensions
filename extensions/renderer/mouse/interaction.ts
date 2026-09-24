@@ -932,6 +932,10 @@ export function installToolMouseInteraction(
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		setToolMouseTui(tui);
 		setToolTuiFullscreen(fullscreenLazyTui(tui));
+		// 光标去重只依赖 terminal，而 terminal 不随 renderer 切换重建：惰性 Proxy 的
+		// 普通属性会解析到当前 renderer，所以 regular / fullscreen 两种形态都能装。
+		// （不能放在下面的 !isLazyProxyTui 分支里：0.84+ 工厂永远拿到惰性 Proxy。）
+		installCursorWriteDedupe(tui);
 		if (isLazyProxyTui(tui)) {
 			patchFullscreenViewportInput(tui);
 			ensureFullscreenToolMouseMotion(tui);
@@ -949,8 +953,6 @@ export function installToolMouseInteraction(
 		}
 		// Wrap doRender to capture the live frame for tool click/hover mapping.
 		patchToolMouseMotionAfterRender(tui);
-		// regular 主屏独占的光标去重（Windows Terminal 光标闪烁）
-		installCursorWriteDedupe(tui);
 		if (toolMouseInteractionActive()) tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),

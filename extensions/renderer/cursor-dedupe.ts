@@ -10,6 +10,9 @@
  * 2. 同时扫 terminal.write：fullscreen 的 alt-screen 会把 \x1b[?25h/l 直接写进
  *    渲染缓冲，运行时切换模式时靠这一步把状态同步回来，避免之后把该写的
  *    show/hide 误判成重复。
+ *
+ * terminal 不随 renderer 切换而重建（pi 切模式时把同一个 terminal 交给新实例），
+ * 所以包装只装一次、状态跨模式连续。
  */
 
 type CursorTerminal = {
