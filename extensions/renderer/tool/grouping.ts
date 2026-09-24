@@ -6,6 +6,7 @@ import {
 	visibleWidth,
 	type Component,
 } from "@earendil-works/pi-tui";
+import { config } from "../../config/config.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
@@ -205,6 +206,7 @@ type SettledGroupCache = {
 	hover: boolean;
 	theme: unknown;
 	fullscreen: boolean;
+	mcpServerTitles: boolean;
 	children: readonly unknown[];
 	args: unknown[];
 	results: unknown[];
@@ -315,7 +317,8 @@ export class ToolGroupComponent extends Container {
 			cache.width !== width ||
 			cache.hover !== this.hintHovered ||
 			cache.theme !== this.patch.theme ||
-			cache.fullscreen !== isToolTuiFullscreen()
+			cache.fullscreen !== isToolTuiFullscreen() ||
+			cache.mcpServerTitles !== config.mcpServerTitles
 		) {
 			return;
 		}
@@ -341,6 +344,7 @@ export class ToolGroupComponent extends Container {
 			hover: this.hintHovered,
 			theme: this.patch.theme,
 			fullscreen: isToolTuiFullscreen(),
+			mcpServerTitles: config.mcpServerTitles,
 			children: [...this.children],
 			args: (this.children as any[]).map((tool) => tool?.args),
 			results: (this.children as any[]).map((tool) => tool?.result),

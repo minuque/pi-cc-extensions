@@ -224,6 +224,43 @@ test("standalone cards switch from MCP to the server once, when the result lands
 	}
 });
 
+test("settled collapsed MCP groups update titles when server titles are toggled", () => {
+	const ui = { requestRender() {} } as any;
+	const definition = ADAPTER_TOOLS[0]!.definition;
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container();
+		for (const id of ["mcp-toggle-a", "mcp-toggle-b"]) {
+			const tool = new ToolExecutionComponent(
+				definition.name,
+				id,
+				{},
+				{},
+				definition as any,
+				ui,
+				process.cwd(),
+			);
+			tool.updateResult(resultFrom("github") as any);
+			parent.addChild(tool);
+		}
+		const group = parent.children[0] as ToolGroupComponent;
+		for (const [enabled, title] of [
+			[true, "GitHub"],
+			[false, "MCP"],
+			[true, "GitHub"],
+		] as const) {
+			withServerTitles(enabled, () => {
+				// Repaint the same settled group without invalidating, resizing, or expanding it.
+				const rows = plain(group.render(100));
+				assert.match(rows[0]!, new RegExp(`^ ● ${title}: 2 done`));
+				assert.deepEqual(rows.slice(1), [` ├ ✓ ${title}`, ` └ ✓ ${title}`]);
+			});
+		}
+	} finally {
+		hooks.shutdown();
+	}
+});
+
 test("grouped MCP rows use each call's result, header falls back to MCP on mismatch", () => {
 	const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
 	const make = (definition: any, id: string) =>
