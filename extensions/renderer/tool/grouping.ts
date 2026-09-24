@@ -7,6 +7,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import { getToolMouseTui } from "../mouse/scroll.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
@@ -89,16 +90,36 @@ function scheduleGroupAnimation(patch: Patch): void {
 	patch.animationTimer = setTimeout(() => {
 		patch.animationTimer = null;
 		if (!patch.active) return;
+		let needsRender = false;
 		for (const group of patch.groups) {
 			if (
 				(group.children as any[]).some(
 					(tool) => tool?.executionStarted && status(tool) === "pending",
 				)
-			)
+			) {
 				group.invalidate();
+				// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
+				// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
+				needsRender = true;
+			}
 		}
+		if (needsRender) requestAnimationRender(patch);
 	}, TOOL_LOADING_INTERVAL_MS);
 	patch.animationTimer.unref?.();
+}
+
+/** 借用子工具卡的 ui 请求一帧；子卡缺失时回退到扩展持有的 TUI 槽。 */
+function requestAnimationRender(patch: Patch): void {
+	for (const group of patch.groups) {
+		const ui = (group.children as any[]).find(
+			(tool) => typeof tool?.ui?.requestRender === "function",
+		)?.ui;
+		if (ui) {
+			ui.requestRender();
+			return;
+		}
+	}
+	getToolMouseTui()?.requestRender?.();
 }
 
 function visibleLines(lines: string[]): string[] {

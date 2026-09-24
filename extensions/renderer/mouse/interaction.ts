@@ -6,6 +6,7 @@ import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../comp
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
+import { installCursorWriteDedupe } from "../cursor-dedupe.ts";
 import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
@@ -564,6 +565,15 @@ function buildInteractionFrame(
 		list.push(placement);
 		placementsByComponent.set(placement.component, list);
 	}
+	// 记录每张工具卡首行是否落在可视区内。动画层据此停掉看不见的 spinner：
+	// 可视区上方的一行变化会让 pi-tui 整屏重画并清 scrollback。
+	const viewportTopLine = Number(tui?.previousViewportTop) || 0;
+	const viewportBottomLine = viewportTopLine + visibleRows - 1;
+	for (const [component, componentPlacements] of placementsByComponent) {
+		const headerLine = Math.min(...componentPlacements.map((item) => item.lineIndex));
+		const state = (component.rendererState ??= {});
+		state.ccstyleHeaderVisible = headerLine >= viewportTopLine && headerLine <= viewportBottomLine;
+	}
 	for (const [component, componentPlacements] of placementsByComponent) {
 		const rendered = renderedByComponent.get(component);
 		if (!rendered) continue;
@@ -936,6 +946,8 @@ export function installToolMouseInteraction(
 		}
 		// Wrap doRender to capture the live frame for tool click/hover mapping.
 		patchToolMouseMotionAfterRender(tui);
+		// regular 主屏独占的光标去重（Windows Terminal 光标闪烁）
+		installCursorWriteDedupe(tui);
 		if (toolMouseInteractionActive()) tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),

@@ -241,12 +241,16 @@ function createCcstyleTool(
 			const isPending =
 				visualState === "pending" ||
 				(!visualState && (context?.isPartial || context?.executionStarted));
-			if (isPending && context?.executionStarted) scheduleAnimation(context);
-			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
-			const icon =
+			const animating = isPending && Boolean(context?.executionStarted);
+			if (animating) scheduleAnimation(context, { light: true });
+			const settledRawIcon = isPending ? "" : settledIcon(toolName, visualState);
+			const settledIconStyled =
 				visualState === "success"
-					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
-					: theme.fg(toolIconColor(context), rawIcon);
+					? `${BRIGHT_GREEN}${settledRawIcon}${ANSI_FG_RESET}`
+					: theme.fg(toolIconColor(context), settledRawIcon);
+			// 逐帧 spinner：帧在 render() 内取，动画定时器只需 requestRender，
+			// 不再每次 tick 走 updateDisplay 把整张卡重建一遍。
+			const pendingIconStyled = () => theme.fg(toolIconColor(context), pendingIcon(toolName));
 			const summary = toolCallSummary(toolName, args, {
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
@@ -270,10 +274,16 @@ function createCcstyleTool(
 			const extraStyled = writeStatsStyled || theme.fg("dim", summary.detail);
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
+			let cachedIcon: string | undefined;
 			const expanded = Boolean(context?.expanded);
 			return {
 				render(width: number) {
-					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
+					// 轻量 tick 只会 requestRender，靠这里续期，动画才能自维持。
+					if (animating) scheduleAnimation(context, { light: true });
+					const icon = isPending ? pendingIconStyled() : settledIconStyled;
+					if (cachedLine !== undefined && cachedWidth === width && cachedIcon === icon) {
+						return [cachedLine];
+					}
 					const viewportWidth = toolViewportWidth(width);
 					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
 					const lead = expanded ? "" : " ";
@@ -283,11 +293,15 @@ function createCcstyleTool(
 					);
 					const mainWidth = Math.max(0, callWidth - visibleWidth(extraText));
 					cachedWidth = width;
+					cachedIcon = icon;
 					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
 					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${extraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
-				invalidate() {},
+				invalidate() {
+					cachedLine = undefined;
+					cachedIcon = undefined;
+				},
 			};
 		},
 		renderResult(result: any, options: any, theme: any, context: any) {
