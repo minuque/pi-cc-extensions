@@ -165,6 +165,7 @@ test("server id comes only from the call result", () => {
 test("server display names use the static mapping before title-casing", () => {
 	assert.equal(mcpServerDisplayName("github"), "GitHub");
 	assert.equal(mcpServerDisplayName("GitHub"), "GitHub");
+	assert.equal(mcpServerDisplayName("nixos"), "NixOS");
 	assert.equal(mcpServerDisplayName("brave-search"), "Brave Search");
 	assert.equal(mcpServerDisplayName("brave_search"), "Brave Search");
 	assert.equal(mcpServerDisplayName("context7"), "Context7");

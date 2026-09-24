@@ -31,6 +31,7 @@ const SCRIPT_TITLE = "MCP Script";
  */
 export const MCP_SERVER_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
 	github: "GitHub",
+	nixos: "NixOS",
 });
 
 export function isMcpToolDefinition(definition: any, toolName: string): boolean {
