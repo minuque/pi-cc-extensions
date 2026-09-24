@@ -1,6 +1,6 @@
 {
 	"name": "pi-cc-extensions",
-	"version": "0.9.3",
+	"version": "0.9.4",
 	"license": "MIT",
 	"description": "Claude Code-style TUI output with some personal touches and handy utilities.",
 	"type": "module",
@@ -34,7 +34,7 @@
 			"./themes/cc-light.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.webp",
-		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"
+		"video": "https://github.com/minuque/pi-cc-extensions/releases/download/v0.9.4/demo.mp4"
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",
