@@ -21,7 +21,6 @@
 	"files": [
 		"extensions",
 		"assets/readme",
-		"assets/video",
 		"themes",
 		"README.md",
 		"README.en.md"
@@ -34,7 +33,7 @@
 			"./themes/cc-dark.json",
 			"./themes/cc-light.json"
 		],
-		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.png",
+		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.webp",
 		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"
 	},
 	"scripts": {

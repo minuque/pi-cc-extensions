@@ -1,26 +1,16 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%">
-</p>
-
-<p align="center">
-  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
-  <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
-</p>
-
-<p align="center">
-  类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
-</p>
-
-<p align="center">
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
----
+# pi-cc-extensions
+
+> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
 
 ## 界面预览
 
-https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
+<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-cc-extensions 界面预览" width="100%"></a>
+
+点击封面播放演示视频
 
 ## 快速开始
 
@@ -46,11 +36,13 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 状态栏                | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
 
+`on` / `compact` 两种模式的渲染样例：[默认模式](./docs/tool-render-examples-default.md) · [紧凑模式](./docs/tool-render-examples-compact.md)
+
 ## 配置
 
 `/ccstyle` 的行为由 `~/.pi/agent/pi-cc-extensions.json` 配置：
 
-```js
+```jsonc
 {
   // style
   "mode": "on",                            // on / compact / off
@@ -96,9 +88,11 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
-> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览, 双击展开面板收起。
->
-> **建议**：`markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
+> [!TIP]
+> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览，双击展开面板收起。
+
+> [!NOTE]
+> **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
 
 ## 本地开发
 
@@ -126,3 +120,7 @@ npm run typecheck
 ## 致谢
 
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md)。
+
+## 许可证
+
+[MIT](./LICENSE) © minuque
