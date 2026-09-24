@@ -2,13 +2,13 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.68 · mode=`on`。
+> 当前版本：ccstyle 0.9.2 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠼ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠧ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
@@ -172,9 +172,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠴ Read extensions/index.ts
- ├ ⠴ Bash npm test
- └ ⠴ Ffgrep extensions/
+ ├ ⠇ Read extensions/index.ts
+ ├ ⠇ Bash npm test
+ └ ⠇ Ffgrep "renderCall" in extensions/
 ```
 
 ### 收起：完成/失败
@@ -183,7 +183,7 @@ write 新建 / 覆盖：
  ● Multiple Tools: 2 done • 1 failed • read, bash, ffgrep • click to sh…
  ├ ✓ Read extensions/index.ts
  ├ ✓ Bash npm test
- └ ✗ Ffgrep extensions/
+ └ ✗ Ffgrep "renderCall" in extensions/
 ```
 
 ### 展开：完整背景卡片
@@ -212,7 +212,7 @@ write 新建 / 覆盖：
  │ │
  │ └ Output
  │   pass 79/79
- └ ✗ Ffgrep extensions/
+ └ ✗ Ffgrep "renderCall" in extensions/
    ├ Input
    │ path: extensions/
    │ pattern: renderCall
