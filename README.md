@@ -80,6 +80,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
   // footer
   "enableCustomFooter": true,              // 自定义状态栏
+  "customCurrency": "USD",                 // 费用估算使用的 ISO 4217 币种，例如 INR
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
   "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
   "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
@@ -88,6 +89,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
+> [!NOTE]
+> **底栏币种**：在 `~/.pi/agent/pi-cc-extensions.json` 中设置 `"customCurrency": "INR"` 等三位 ISO 币种代码。默认 `"USD"` 不会发起网络请求；其他币种启动时从 [Frankfurter](https://frankfurter.dev/) 获取一次美元汇率并缓存在内存中，显示估算金额。获取失败或不支持该币种时保留美元金额。修改后运行 `/reload`。参考汇率可能与银行卡实际扣款汇率不同。
+>
 > [!TIP]
 > **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览，双击展开面板收起。
 

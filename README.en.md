@@ -80,6 +80,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
   // footer
   "enableCustomFooter": true,              // custom status bar
+  "customCurrency": "USD",                 // ISO 4217 currency for estimated footer cost, e.g. INR
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerHiddenKeys": [],                  // hidden plugin chip keys
   "footerLine1Keys": ["pi-usage"],         // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
@@ -88,6 +89,9 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 }
 ```
 
+> [!NOTE]
+> **Footer currency**: Set `customCurrency` in `~/.pi/agent/pi-cc-extensions.json` to a three-letter ISO currency code (for example, `"INR"`). The default `"USD"` makes no network request. Other currencies fetch a USD-to-target mid-market rate once on startup from [Frankfurter](https://frankfurter.dev/) and show an approximate converted session cost. If the rate is unavailable or the currency is unsupported, the original USD cost remains visible. Change the config and run `/reload` to pick up a different currency. Reference rates may differ from your bank's billing rate.
+>
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. When expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Double-click an expanded panel to collapse it.
 
