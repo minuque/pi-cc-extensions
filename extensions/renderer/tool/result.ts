@@ -71,6 +71,7 @@ const activeAnimationContexts = new Set<any>();
 let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearAnimation(context: any) {
+	if (context?.state) context.state.ccstyleAnimationLight = false;
 	if (!context?.state?.ccstyleAnimationScheduled) return;
 	context.state.ccstyleAnimationScheduled = false;
 	activeAnimationContexts.delete(context);
@@ -83,6 +84,7 @@ function clearAnimation(context: any) {
 export function clearAllAnimations() {
 	for (const ctx of activeAnimationContexts) {
 		ctx.state.ccstyleAnimationScheduled = false;
+		ctx.state.ccstyleAnimationLight = false;
 	}
 	activeAnimationContexts.clear();
 	if (sharedAnimationTimer) {
@@ -98,7 +100,8 @@ export function scheduleAnimation(
 	const state = (context.state ??= {});
 	// light：调用方自己在 render() 内重取 loading 帧，定时器只需请求重绘；
 	// 否则定时器走 context.invalidate()（compact 摘要等靠它重建）。
-	if (options.light) state.ccstyleAnimationLight = true;
+	// 每次调用都按本次 options 写入，避免上次 light 残留后非 light 调用仍跳过 invalidate。
+	state.ccstyleAnimationLight = Boolean(options.light);
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);

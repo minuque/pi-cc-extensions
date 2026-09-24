@@ -100,3 +100,30 @@ test("light 动画 tick 只请求重绘，不重建工具卡", async () => {
 		restoreTuiSlot(previous);
 	}
 });
+
+test("light 标志结束后复位，后续非 light 走 invalidate", async () => {
+	const previous = getToolMouseTui();
+	const { tui, state } = fakeTui();
+	setToolMouseTui(tui);
+	let invalidates = 0;
+	const context = {
+		state: {},
+		invalidate() {
+			invalidates++;
+		},
+	};
+	try {
+		scheduleAnimation(context, { light: true });
+		await tickWait();
+		assert.equal(state.renders, 1);
+		assert.equal(invalidates, 0);
+
+		scheduleAnimation(context);
+		await tickWait();
+		assert.equal(invalidates, 1, "light 结束后非 light 应走 invalidate");
+		assert.equal(state.renders, 1, "非 light 不应再只靠 TUI requestRender");
+	} finally {
+		clearAllAnimations();
+		restoreTuiSlot(previous);
+	}
+});
