@@ -1,6 +1,6 @@
 {
 	"name": "pi-cc-extensions",
-	"version": "0.9.2",
+	"version": "0.9.3",
 	"license": "MIT",
 	"description": "Claude Code-style TUI output with some personal touches and handy utilities.",
 	"type": "module",
