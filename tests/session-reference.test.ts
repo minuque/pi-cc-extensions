@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Buffer } from "node:buffer";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	SESSION_REFERENCE_CUSTOM_TYPE,
 	assignReferenceTokens,
@@ -42,6 +43,29 @@ test("sessionReferenceLabel uses the title and strips brackets", () => {
 		sessionReferenceLabel({ ...info, firstMessage: "Fix [auth] flow" }),
 		"Fix auth flow",
 	);
+});
+
+test("sessionReferenceLabel truncates the editor token by display width", () => {
+	const long = {
+		...info,
+		name: undefined,
+		firstMessage: "<pre> 这是一次渲染验收，只做下面列出的工具调用，不要改文件。",
+	};
+	const token = sessionReferenceLabel(long);
+	assert.ok(visibleWidth(token) <= 32, "token fits the width cap");
+	assert.match(token, /…$/);
+	assert.ok(
+		visibleWidth(sessionReferenceLabel({ ...info, name: "x".repeat(80) })) <= 32,
+		"ascii titles are capped too",
+	);
+	// 同名消歧后缀在截断之后拼，不影响 token 唯一性。
+	const first = { referenceIds: [long.id], info: long };
+	const second = {
+		referenceIds: ["b"],
+		info: { ...long, id: "b", modified: new Date("2025-02-02T00:00:00.000Z") },
+	};
+	const tokens = [...assignReferenceTokens([first, second]).values()];
+	assert.equal(new Set(tokens).size, 2, "truncated titles stay distinguishable");
 });
 
 test("assignReferenceTokens keeps readable tokens for same-named sessions", () => {

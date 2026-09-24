@@ -1,3 +1,6 @@
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences } from "../../utils/ansi-text.ts";
+
 export const SESSION_REFERENCE_CUSTOM_TYPE = "session-reference";
 export const SESSION_REFERENCE_PREFIX = "@session:";
 
@@ -54,10 +57,21 @@ export function sessionTitle(info: ReferenceSessionInfo, maxLength = 80): string
 	return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
 }
 
+/**
+ * 编辑器里的 `@session:[…]` 是行内文本，token 按显示宽度收口，
+ * 不让首条消息整段挤进输入行。同名会话靠后缀消歧，不受它影响。
+ */
+export const REFERENCE_TOKEN_MAX_WIDTH = 32;
+
 /** Editor `@session:[…]` text: the readable title, never a placeholder or brackets. */
-export function sessionReferenceLabel(info: ReferenceSessionInfo, maxLength = 80): string {
-	const title = sessionTitle(info, maxLength).replace(/[[\]]/g, "").trim();
-	return !title || title === EMPTY_SESSION_TITLE ? "" : title;
+export function sessionReferenceLabel(
+	info: ReferenceSessionInfo,
+	maxWidth = REFERENCE_TOKEN_MAX_WIDTH,
+): string {
+	const title = sessionTitle(info).replace(/[[\]]/g, "").trim();
+	if (!title || title === EMPTY_SESSION_TITLE) return "";
+	// truncateToWidth 会在省略号前后补 ANSI reset，token 是明文，去掉。
+	return stripTerminalSequences(truncateToWidth(title, maxWidth, "…")).trim();
 }
 
 export interface ReferenceTokenSource {
