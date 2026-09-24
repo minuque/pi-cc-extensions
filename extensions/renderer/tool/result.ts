@@ -4,7 +4,6 @@ import { config } from "../../config/config.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
-import { isAnimationContextVisible } from "./header-visibility.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
@@ -71,16 +70,6 @@ function hasExpandableResult(text: string): boolean {
 const activeAnimationContexts = new Set<any>();
 let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
-/**
- * 卡片头部已滚到可视区上方时停帧。pi-tui 对「可视区上方那一行」的变化会升级为
- * fullRender(true)：清屏 + 清 scrollback + 从头重画整个 transcript，
- * 在 Windows Terminal 上表现为历史丢失、视口/滚动条突然回到顶部。
- * 头部不可见时 spinner 本来就看不到，停帧只省开销。
- */
-function animationIsOffscreen(context: any): boolean {
-	return !isAnimationContextVisible(context);
-}
-
 function clearAnimation(context: any) {
 	if (!context?.state?.ccstyleAnimationScheduled) return;
 	context.state.ccstyleAnimationScheduled = false;
@@ -110,10 +99,6 @@ export function scheduleAnimation(
 	// light：调用方自己在 render() 内重取 loading 帧，定时器只需请求重绘；
 	// 否则定时器走 context.invalidate()（compact 摘要等靠它重建）。
 	if (options.light) state.ccstyleAnimationLight = true;
-	if (animationIsOffscreen(context)) {
-		clearAnimation(context);
-		return;
-	}
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);

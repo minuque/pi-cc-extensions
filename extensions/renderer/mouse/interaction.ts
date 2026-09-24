@@ -6,8 +6,6 @@ import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../comp
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { installCursorWriteDedupe } from "../cursor-dedupe.ts";
-import { markHeaderVisibility } from "../tool/header-visibility.ts";
 import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
@@ -566,17 +564,6 @@ function buildInteractionFrame(
 		list.push(placement);
 		placementsByComponent.set(placement.component, list);
 	}
-	// 记录每张工具卡首行是否落在可视区内。动画层据此停掉看不见的 spinner：
-	// 可视区上方的一行变化会让 pi-tui 整屏重画并清 scrollback。
-	const viewportTopLine = Number(tui?.previousViewportTop) || 0;
-	const viewportBottomLine = viewportTopLine + visibleRows - 1;
-	for (const [component, componentPlacements] of placementsByComponent) {
-		const headerLine = Math.min(...componentPlacements.map((item) => item.lineIndex));
-		markHeaderVisibility(
-			component,
-			headerLine >= viewportTopLine && headerLine <= viewportBottomLine,
-		);
-	}
 	for (const [component, componentPlacements] of placementsByComponent) {
 		const rendered = renderedByComponent.get(component);
 		if (!rendered) continue;
@@ -932,10 +919,6 @@ export function installToolMouseInteraction(
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		setToolMouseTui(tui);
 		setToolTuiFullscreen(fullscreenLazyTui(tui));
-		// 光标去重只依赖 terminal，而 terminal 不随 renderer 切换重建：惰性 Proxy 的
-		// 普通属性会解析到当前 renderer，所以 regular / fullscreen 两种形态都能装。
-		// （不能放在下面的 !isLazyProxyTui 分支里：0.84+ 工厂永远拿到惰性 Proxy。）
-		installCursorWriteDedupe(tui);
 		if (isLazyProxyTui(tui)) {
 			patchFullscreenViewportInput(tui);
 			ensureFullscreenToolMouseMotion(tui);

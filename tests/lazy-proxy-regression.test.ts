@@ -598,46 +598,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
 });
 
-test("lazy-proxy tui: regular dedupes per-frame cursor writes (Windows Terminal flicker)", () => {
-	const tool = createTool("tool-cursor");
-	const writes: string[] = [];
-	const cursor = { show: 0, hide: 0 };
-	const terminal = {
-		columns: 80,
-		rows: 24,
-		write(data: string) {
-			writes.push(data);
-		},
-		showCursor() {
-			cursor.show++;
-			writes.push("\x1b[?25h");
-		},
-		hideCursor() {
-			cursor.hide++;
-			writes.push("\x1b[?25l");
-		},
-	};
-	const renderer = createRenderer("regular", [tool], terminal);
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx);
-
-	// pi 主屏每帧都走 positionHardwareCursor 重写一遍；状态没变就不该重复写。
-	terminal.showCursor();
-	terminal.showCursor();
-	terminal.showCursor();
-	assert.equal(cursor.show, 1, "重复 show 只写一次 ?25h");
-	terminal.hideCursor();
-	terminal.hideCursor();
-	assert.equal(cursor.hide, 1, "重复 hide 只写一次 ?25l");
-
-	// 切到 fullscreen：alt-screen 直写序列绕过两个方法，靠 write 扫描同步状态。
-	terminal.write("\x1b[?2026h\x1b[?25h\x1b[?2026l");
-	terminal.hideCursor();
-	assert.equal(cursor.hide, 2, "alt-screen 直写后该写的 hide 不能被吞掉");
-	installToolMouseInteraction({});
-});
-
 test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
 	const previousMode = config.mode;
 	const tool = createTool("tool-overlay");

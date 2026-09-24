@@ -8,7 +8,6 @@ import {
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
-import { isHeaderVisible } from "./header-visibility.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
@@ -94,18 +93,15 @@ function scheduleGroupAnimation(patch: Patch): void {
 		let needsRender = false;
 		for (const group of patch.groups) {
 			if (
-				!(group.children as any[]).some(
+				(group.children as any[]).some(
 					(tool) => tool?.executionStarted && status(tool) === "pending",
 				)
-			)
-				continue;
-			// 头部已滚到可视区上方：那一行的变化会让 pi-tui 清屏 + 清 scrollback
-			// 整屏重画，而分组头部的 spinner 也看不见，直接停帧。
-			if (!isHeaderVisible(group)) continue;
-			group.invalidate();
-			// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
-			// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
-			needsRender = true;
+			) {
+				group.invalidate();
+				// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
+				// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
+				needsRender = true;
+			}
 		}
 		if (needsRender) requestAnimationRender(patch);
 	}, TOOL_LOADING_INTERVAL_MS);
