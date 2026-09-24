@@ -12,7 +12,6 @@ type AnyToolDefinition = ToolDefinition<any, any, any>;
 import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
-	humanizeMcpToolName,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/renderer/index.ts";
@@ -205,15 +204,12 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 test("MCP detection, titles, details, and custom tools use the global wrapper", async () => {
 	const previousOutputLines = config.expandedOutputMaxLines;
 	config.expandedOutputMaxLines = 80;
-	assert.equal(isMcpToolDefinition({ label: "MCP: Files" }, "read_file"), true);
 	assert.equal(isMcpToolDefinition({}, "mcp__filesystem__read_file"), true);
-	assert.equal(isMcpToolDefinition({ description: "Model Context Protocol tool" }, "remote"), true);
-	assert.equal(
-		isMcpToolDefinition({ label: "Ordinary", description: "mentions MCP" }, "remote"),
-		false,
-	);
-	assert.equal(isMcpToolDefinition({ description: "not an MCP tool" }, "remote"), false);
-	assert.equal(humanizeMcpToolName("mcp__filesystem__read_file"), "Filesystem Read File");
+	// 名字里没有 mcp 片段时靠 adapter 的 label 判定
+	assert.equal(isMcpToolDefinition({ label: "MCP: read_file" }, "read_file"), true);
+	assert.equal(isMcpToolDefinition({ label: "read" }, "read"), false);
+	assert.equal(isMcpToolDefinition({}, "remote"), false);
+	assert.equal(isMcpToolDefinition({}, "github_search_code"), false);
 
 	const events = new Map<string, Function>();
 	claudeCodeStyleExtension(
@@ -235,7 +231,8 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 	try {
 		await events.get("session_start")?.({}, ctx);
 		for (const [name, expected] of [
-			["mcp__filesystem__read_file", "Filesystem Read File"],
+			// MCP 工具标题用真实工具名
+			["mcp__filesystem__read_file", "mcp__filesystem__read_file"],
 			["openai_custom_search", "Openai Custom Search"],
 			["custom_lookup", "Custom Lookup"],
 		] as const) {

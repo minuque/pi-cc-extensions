@@ -367,21 +367,41 @@ async function generateDefault() {
 	// 8. MCP / custom
 	{
 		const blocks: string[] = [];
+		// 网关：沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格
+		blocks.push(
+			...renderLines(
+				succeed(
+					tool("mcp", "mcp0", { tool: "github_search_code", args: { query: "pi" } }),
+					"1 hit",
+				),
+			),
+		);
+		blocks.push(...renderLines(succeed(tool("mcp", "mcp0b", { server: "chrome-devtools" }), "29 tools")));
+		blocks.push(
+			...renderLines(succeed(tool("mcp", "mcp0d", { search: "screenshot", regex: true }), "2 tools")),
+		);
+		blocks.push(...renderLines(succeed(tool("mcpScript", "mcp0c", { code: "emit(1)" }), "1 line")));
+		// 命名空间工具：标题用 adapter 暴露的真实工具名
 		blocks.push(
 			...renderLines(
 				succeed(
 					tool(
-						"mcp__github__search",
+						"mcp__github_search_code",
 						"mcp1",
 						{ query: "pi" },
-						{ name: "mcp__github__search", label: "MCP: Github Search" },
+						{ name: "mcp__github_search_code", label: "MCP: search_code" },
 					),
 					"1 hit",
 				),
 			),
 		);
 		blocks.push(...renderLines(succeed(tool("customTranslate", "c1", { text: "hi" }), "你好")));
-		chunks.push(section("8. MCP / 自定义工具", fence(blocks)));
+		chunks.push(
+			section(
+				"8. MCP / 自定义工具",
+				`${fence(blocks)}\n\n网关的标题沿用 mcp-adapter 自己的 \`mcp <动作> <目标>\` 风格（\`list\` / \`search\` / \`describe\` / \`call\` / \`connect\` / \`status\`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（\`regex\` / \`includeSchemas\`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 \`mcp__github_search_code\`），入参先走字段链（\`query\` / \`url\` / \`command\` / \`path\` …），字段链认不出的键（命名空间代理的 \`tool\`+\`args\`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：\`MCP\` / \`MCP Script\`。超过卡片宽度与 Input clip 的部分尾部截断。`,
+			),
+		);
 	}
 
 	// 9. tool grouping

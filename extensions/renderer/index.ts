@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ToolExecutionComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { installToolGrouping, type ToolGroupingHooks } from "./tool/grouping.ts";
 import {
@@ -266,11 +266,13 @@ export default function (
 // ---- 对外导出：入口/测试实际消费的符号 ----
 export { getCompactThinkingConfig } from "../config/config.ts";
 export {
-	humanizeMcpToolName,
-	isMcpToolDefinition,
 	preservesOriginalRenderer,
 	shouldRenderRichDiff,
 } from "./default-mode.ts";
+export {
+	isMcpToolDefinition,
+	mcpToolTitle,
+} from "./tool/mcp-title.ts";
 export {
 	ExpandedToolIoView,
 	ExpandedToolResultText,

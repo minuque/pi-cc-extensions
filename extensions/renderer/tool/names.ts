@@ -1,15 +1,23 @@
 import { posix, win32 } from "node:path";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
+import { headTruncateToWidth } from "./result.ts";
 
 function clip(value: unknown): string {
 	return oneLine(value, config.inputClip);
 }
 
+/** 载荷（入参 JSON / 脚本代码）至少留出这么多宽度才显示，否则整段省略（避免只剩一个孤零零的 " {…"）。 */
+const MIN_PAYLOAD_WIDTH = 10;
+
 /** 品牌大小写固定写法；humanize 推导不出来的工具名写在这里。 */
 const TOOL_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
 	powershell: "PowerShell",
+	// MCP 入口两个没有具体工具名，跟普通工具一样人性化；缩写固定大写
+	mcp: "MCP",
+	mcpscript: "MCP Script",
 };
 
 /**
@@ -49,6 +57,8 @@ export type ToolCallSummary = {
 	detail: string;
 	/** 路径摘要保留结构，供最终渲染按实际宽度优先保留文件名。 */
 	path?: { prefix: string; value: string };
+	/** 标题之外的原始载荷（完整入参 JSON、脚本代码…），已压成单行，渲染时用 dim 接在标题后。 */
+	payload?: string;
 };
 
 function pathApi(value: string) {
@@ -229,6 +239,18 @@ export function toolCallSummary(
 	const variant = opts.variant ?? "default";
 	if (!args || typeof args !== "object") return { main: title, detail: "" };
 	const name = toolName.toLowerCase();
+
+	// MCP 入口沿用 mcp-adapter 自己的标题风格（adapter 的 formatMcpProxyToolCallLines）：
+	// `MCP <动作> <目标>` / `MCP Script <代码>`，比把整包参数摊成 JSON 好读
+	if (name === "mcp") {
+		const gateway = mcpGatewaySummary(title, args);
+		if (gateway) return gateway;
+	}
+	if (name === "mcpscript") {
+		const code = typeof args.code === "string" && args.code ? clip(args.code) : "";
+		return code ? { main: title, detail: "", payload: code } : { main: title, detail: "" };
+	}
+
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
 		return `${title} ${clip(found || fallback)}`;
@@ -315,5 +337,85 @@ export function toolCallSummary(
 	if (typeof preferredPath === "string" && preferredPath) {
 		return pathSummary(title, preferredPath, opts.cwd);
 	}
-	return { main: title, detail: "" };
+
+	// 字段链认不出的参数（命名空间代理的 tool+args、第三方工具的自定义键…）展开完整入参 JSON，
+	// 而不是只剩一个标题；网关与脚本的专属形状在上面处理
+	const payload = jsonArgs(args);
+	return payload ? { main: title, detail: "", payload } : { main: title, detail: "" };
+}
+
+/**
+ * MCP 网关注解 `mcp <动作> <目标>`：动作与目标照搬 mcp-adapter 的 formatMcpProxyToolCallLines，
+ * 人眼读起来比参数 JSON 快；`instructions` 是 adapter 自己漏掉的一档（它那里会落到 mcp status）。
+ * 认不出的入参返回 undefined，交给通用 JSON 回退，不猜成 status。
+ */
+function mcpGatewaySummary(title: string, args: any): ToolCallSummary | undefined {
+	const text = (value: unknown) => (typeof value === "string" && value ? value : "");
+	const tool = text(args.tool);
+	const connect = text(args.connect);
+	const describe = text(args.describe);
+	const instructions = text(args.instructions);
+	const search = text(args.search);
+	const server = text(args.server);
+	const action = text(args.action);
+	const scoped = (target: string) => (server ? `${target} @ ${server}` : target);
+
+	if (action === "ui-messages") return { main: `${title} ${action}`, detail: "" };
+	if (tool) {
+		const main = `${title} call ${scoped(tool)}`;
+		const payload = innerArgsPayload(args.args);
+		return payload ? { main, detail: "", payload } : { main, detail: "" };
+	}
+	if (connect) return { main: `${title} connect ${connect}`, detail: "" };
+	if (describe) return { main: `${title} describe ${scoped(describe)}`, detail: "" };
+	if (instructions) return { main: `${title} instructions ${instructions}`, detail: "" };
+	if (search) {
+		const flags = [
+			args.regex === true ? "regex" : "",
+			args.includeSchemas === false ? "schemas hidden" : "",
+		].filter(Boolean);
+		return {
+			main: `${title} search ${scoped(search)}`,
+			detail: flags.length ? ` (${flags.join(", ")})` : "",
+		};
+	}
+	if (server) return { main: `${title} list ${server}`, detail: "" };
+	if (action) return { main: `${title} ${action}`, detail: "" };
+	if (Object.keys(args).length === 0) return { main: `${title} status`, detail: "" };
+	return undefined;
+}
+
+/** 网关 call 的内层工具入参：对象转单行 JSON；网关允许传 JSON 字符串，就原样取用不再转义。 */
+function innerArgsPayload(value: unknown): string {
+	if (typeof value === "string") return value ? clip(value) : "";
+	if (!value || typeof value !== "object") return "";
+	return jsonArgs(value);
+}
+
+/** 入参序列化成单行 JSON；空对象或不可序列化时返回 ""。 */
+function jsonArgs(args: any): string {
+	try {
+		const json = JSON.stringify(args);
+		return json && json !== "{}" ? clip(json) : "";
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * 标题行内容：标题用调用方的 toolTitle 色，原始载荷（入参 JSON / 脚本代码）单独用 dim。
+ * 标题优先占宽（它是身份），剩下的宽度给载荷；载荷超宽时尾部省略，连
+ * MIN_PAYLOAD_WIDTH 都放不下时整段省略。
+ */
+export function renderToolSummary(
+	summary: ToolCallSummary,
+	width: number,
+	fg: (color: ThemeColor, text: string) => string,
+): string {
+	const title = fitToolCallSummary(summary, width);
+	if (!summary.payload) return fg("toolTitle", title);
+	const room = width - visibleWidth(title);
+	return room >= MIN_PAYLOAD_WIDTH
+		? `${fg("toolTitle", title)}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
+		: fg("toolTitle", title);
 }

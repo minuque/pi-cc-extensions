@@ -2,13 +2,13 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.9.2 · mode=`on`。
+> 当前版本：ccstyle 0.9.4 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠧ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠦ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
@@ -159,12 +159,26 @@ write 新建 / 覆盖：
 ## 8. MCP / 自定义工具
 
 ```text
- ✓ Github Search pi
+ ✓ MCP call github_search_code {"query":"pi"}
    ↳ 1 line returned • click to show more
 
- ✓ Custom Translate
+ ✓ MCP list chrome-devtools
+   ↳ 1 line returned • click to show more
+
+ ✓ MCP search screenshot (regex)
+   ↳ 1 line returned • click to show more
+
+ ✓ MCP Script emit(1)
+   ↳ 1 line returned • click to show more
+
+ ✓ mcp__github_search_code pi
+   ↳ 1 line returned • click to show more
+
+ ✓ Custom Translate {"text":"hi"}
    ↳ 1 line returned • click to show more
 ```
+
+网关的标题沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格（`list` / `search` / `describe` / `call` / `connect` / `status`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（`regex` / `includeSchemas`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 `mcp__github_search_code`），入参先走字段链（`query` / `url` / `command` / `path` …），字段链认不出的键（命名空间代理的 `tool`+`args`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：`MCP` / `MCP Script`。超过卡片宽度与 Input clip 的部分尾部截断。
 
 ## 9. 工具组（tool-grouping）
 
@@ -172,9 +186,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠇ Read extensions/index.ts
- ├ ⠇ Bash npm test
- └ ⠇ Ffgrep "renderCall" in extensions/
+ ├ ⠧ Read extensions/index.ts
+ ├ ⠧ Bash npm test
+ └ ⠧ Ffgrep "renderCall" in extensions/
 ```
 
 ### 收起：完成/失败

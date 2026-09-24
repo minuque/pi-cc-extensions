@@ -36,7 +36,13 @@ import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
+import { mcpToolTitle } from "./tool/mcp-title.ts";
+import {
+	fitToolCallSummary,
+	humanizeToolLabel,
+	renderToolSummary,
+	toolCallSummary,
+} from "./tool/names.ts";
 
 // 成功勾：亮绿 truecolor（与 message-display 一致）
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
@@ -100,25 +106,6 @@ export function shouldRenderRichDiff(
 	isError: boolean,
 ): boolean {
 	return mode === "on" && !isError && (toolName === "edit" || toolName === "write");
-}
-
-export function isMcpToolDefinition(definition: any, toolName: string): boolean {
-	const label = typeof definition?.label === "string" ? definition.label.trim() : "";
-	if (/^MCP(?::|$)/i.test(label)) return true;
-	if (toolName === "mcp" || /^mcp[_:-]|[_:-]mcp[_:-]/i.test(toolName)) return true;
-	if (label) return false;
-	const description = typeof definition?.description === "string" ? definition.description : "";
-	return /\bModel Context Protocol\b/i.test(description);
-}
-
-export function humanizeMcpToolName(toolName: string): string {
-	const words = toolName
-		.replace(/^mcp(?:[_:-]+)+/i, "")
-		.split(/[_:-]+/)
-		.filter(Boolean);
-	return words.length
-		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
-		: "MCP";
 }
 
 /** 排除名单内且自带 renderer 的工具保留原渲染。 */
@@ -225,9 +212,10 @@ function createCcstyleTool(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): any {
 	const toolName = originalTool.name;
-	const label = isMcpToolDefinition(originalTool, toolName)
-		? humanizeMcpToolName(toolName)
-		: originalTool.label || toolName;
+	const label = originalTool.label || toolName;
+	const defaultTitle = label === toolName ? humanizeToolLabel(label) : label;
+	// MCP 工具直接用 adapter 暴露的真实工具名，不做人性化
+	const title = mcpToolTitle({ toolName, definition: originalTool }) ?? defaultTitle;
 
 	return {
 		...originalTool,
@@ -252,7 +240,7 @@ function createCcstyleTool(
 			// 不再每次 tick 走 updateDisplay 把整张卡重建一遍。
 			const pendingIconStyled = () => theme.fg(toolIconColor(context), pendingIcon(toolName));
 			const summary = toolCallSummary(toolName, args, {
-				title: label === toolName ? humanizeToolLabel(label) : label,
+				title,
 				variant: "default",
 				cwd: context?.cwd,
 			});
@@ -295,7 +283,7 @@ function createCcstyleTool(
 					cachedWidth = width;
 					cachedIcon = icon;
 					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${extraStyled}`;
+					cachedLine = `${lead}${icon} ${renderToolSummary(summary, mainWidth, theme.fg.bind(theme))}${extraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {

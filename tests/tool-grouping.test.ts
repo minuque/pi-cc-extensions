@@ -466,4 +466,7 @@ test("default 与 grouping 共用同一份摘要取值链", () => {
 test("humanizeToolLabel 保留品牌大小写", () => {
 	assert.equal(humanizeToolLabel("powershell"), "PowerShell");
 	assert.equal(humanizeToolLabel("bash"), "Bash");
+	// MCP 入口两个的缩写固定写法
+	assert.equal(humanizeToolLabel("mcp"), "MCP");
+	assert.equal(humanizeToolLabel("mcpScript"), "MCP Script");
 });

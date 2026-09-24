@@ -8,12 +8,14 @@ import {
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
+import { mcpToolTitle } from "./mcp-title.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
 	fitToolCallSummary,
 	humanizeToolLabel,
+	renderToolSummary,
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
@@ -42,6 +44,19 @@ type Patch = {
 
 function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
+}
+
+/**
+ * 标题：MCP 工具用 adapter 暴露的真实工具名，其余回退工具名人性化。
+ */
+function toolTitle(tool: any): string {
+	const name = toolName(tool);
+	return (
+		mcpToolTitle({
+			toolName: name,
+			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
+		}) ?? humanizeToolLabel(name)
+	);
 }
 
 function isGroupable(value: unknown): boolean {
@@ -170,6 +185,7 @@ export function paddedBackgroundRow(
 
 function toolSummary(tool: any): ToolCallSummary {
 	return toolCallSummary(toolName(tool), tool?.args ?? {}, {
+		title: toolTitle(tool),
 		variant: "grouping",
 		cwd: tool?.cwd,
 	});
@@ -347,8 +363,7 @@ export class ToolGroupComponent extends Container {
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
-		const label =
-			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
+		const label = names.size === 1 ? toolTitle(this.children[0]) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (
 			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")
@@ -398,7 +413,7 @@ export class ToolGroupComponent extends Container {
 				const mainWidth = Math.max(0, width - visibleWidth(prefix) - visibleWidth(detail));
 				lines.push(
 					truncateToWidth(
-						`${prefix}${fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${detail}`,
+						`${prefix}${renderToolSummary(summary, mainWidth, fg)}${detail}`,
 						width,
 						"",
 					),
