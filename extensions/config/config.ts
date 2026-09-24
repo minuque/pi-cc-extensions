@@ -102,6 +102,7 @@ export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",
+	"powershell",
 	"read",
 	"edit",
 	"write",

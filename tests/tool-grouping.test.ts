@@ -9,6 +9,7 @@ import {
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
@@ -414,4 +415,55 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 	} finally {
 		hooks.shutdown();
 	}
+});
+
+function plain(lines: string[]): string[] {
+	return lines
+		.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+		.filter((line) => line.trim());
+}
+
+test("powershell 分组行显示具体命令（issue 26）", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		parent.addChild(started("powershell", "ps-1", { command: "Get-ChildItem -Recurse" }));
+		parent.addChild(started("powershell", "ps-2", { command: "$env:FOO = 'bar'" }));
+		const group = parent.children[0] as ToolGroupComponent;
+		const collapsed = plain(group.render(120));
+		assert.match(collapsed[0], /^ ● PowerShell: 2 running/);
+		assert.match(collapsed[1], /PowerShell Get-ChildItem -Recurse$/);
+		assert.match(collapsed[2], /PowerShell \$env:FOO = 'bar'$/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("default 与 grouping 共用同一份摘要取值链", () => {
+	const cases: Array<[string, any, string]> = [
+		["powershell", { command: "npm test" }, "PowerShell npm test"],
+		["bash", { command: "npm test" }, "Bash npm test"],
+		["grep", { pattern: "foo|bar", path: "extensions/" }, 'Grep "foo|bar" in extensions/'],
+		["ffgrep", { pattern: "hero", path: "assets/" }, 'Ffgrep "hero" in assets/'],
+		["source_check", { claim: "README 用 webp" }, "Source Check README 用 webp"],
+		["web_search", { queries: ["a", "b"] }, "Web Search a (+1)"],
+		["web_search", { queries: ["a"] }, "Web Search a"],
+		["fetch_content", { urls: ["https://a", "https://b"] }, "Fetch Content https://a (+1)"],
+		["get_search_content", { responseId: "rid-1" }, "Get Search Content rid-1"],
+		["Agent", { description: "review code" }, "Agent review code"],
+	];
+	for (const [name, args, expected] of cases) {
+		for (const variant of ["default", "grouping"] as const) {
+			assert.equal(
+				toolCallSummary(name, args, { variant, cwd: process.cwd() }).main,
+				expected,
+				`${name} / ${variant}`,
+			);
+		}
+	}
+});
+
+test("humanizeToolLabel 保留品牌大小写", () => {
+	assert.equal(humanizeToolLabel("powershell"), "PowerShell");
+	assert.equal(humanizeToolLabel("bash"), "Bash");
 });

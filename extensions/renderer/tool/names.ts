@@ -7,11 +7,18 @@ function clip(value: unknown): string {
 	return oneLine(value, config.inputClip);
 }
 
+/** 品牌大小写固定写法；humanize 推导不出来的工具名写在这里。 */
+const TOOL_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+	powershell: "PowerShell",
+};
+
 /**
  * 工具名/标签人性化：与 default-mode 的 humanizeToolLabel、grouping 的 humanizeToolName
  * 逐字相同，收敛为一个共享实现。
  */
 export function humanizeToolLabel(label: string): string {
+	const brand = TOOL_LABEL_OVERRIDES[label.toLowerCase()];
+	if (brand) return brand;
 	return label
 		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 		.replace(/[_-]+/g, " ")
@@ -134,11 +141,84 @@ function pathSummary(
 	};
 }
 
+/** 入参是 shell 命令的工具。 */
+const SHELL_TOOL_NAMES = new Set(["bash", "powershell", "pwsh", "sh", "zsh", "cmd"]);
+
+/** 内置检索工具：pattern 缺失（无效调用）时保留 "…" 占位。 */
+const SEARCH_TOOL_NAMES = new Set(["grep", "find"]);
+
+/**
+ * 通用摘要字段优先级：default 与 grouping 共用同一份取值链。
+ * 两处曾各自维护，grouping 因此漏掉 command（powershell）和数组型入参；
+ * 路径不在链上，由 pathSummary 兜底，以便按 cwd 相对化并中间截断。
+ */
+const GENERIC_SUMMARY_FIELDS = [
+	"agent_id",
+	"command",
+	"query",
+	"queries",
+	"claim",
+	"question",
+	"questions",
+	"url",
+	"urls",
+	"responseId",
+	"findText",
+	"name",
+	"tool_use_id",
+	"toolCallId",
+	"id",
+	"subject",
+	"taskId",
+	"task_id",
+	"message",
+	"description",
+	"prompt",
+] as const;
+
+/** 通用字段链取值：字符串直接用；数组取首个可展示项并标注剩余条数。 */
+type SummaryValue = { text: string; more: number };
+
+function arrayItemText(item: unknown): string | undefined {
+	if (typeof item === "string" && item) return item;
+	if (!item || typeof item !== "object") return undefined;
+	for (const key of ["query", "url", "question", "header", "name"] as const) {
+		const text = (item as Record<string, unknown>)[key];
+		if (typeof text === "string" && text) return text;
+	}
+	return undefined;
+}
+
+function summaryFieldValue(value: unknown): SummaryValue | undefined {
+	if (typeof value === "string" && value) return { text: value, more: 0 };
+	if (!Array.isArray(value)) return undefined;
+	let first: string | undefined;
+	let count = 0;
+	for (const item of value) {
+		const text = arrayItemText(item);
+		if (!text) continue;
+		count += 1;
+		first ??= text;
+	}
+	return first === undefined ? undefined : { text: first, more: count - 1 };
+}
+
+/** 通用字段链取值；无可用字段时返回 undefined，交给调用方继续降级。 */
+function genericSummary(title: string, args: any): ToolCallSummary | undefined {
+	for (const key of GENERIC_SUMMARY_FIELDS) {
+		const found = summaryFieldValue(args[key]);
+		if (!found) continue;
+		// (+N) 追加在截断之后，避免首个元素过长时把条数挤没
+		const more = found.more > 0 ? ` (+${found.more})` : "";
+		return { main: `${title} ${clip(found.text)}${more}`, detail: "" };
+	}
+	return undefined;
+}
+
 /**
  * 单工具调用摘要（{ main, detail }）。
  *
- * default-mode 与 grouping 共用；opts.variant 保留两处各自逐字一致的输出，
- * 不改动任何现有渲染字符串。
+ * 两个变体共用同一份取值链，只有 read/agent/skill/task 等具名分支存在必要差异。
  */
 export function toolCallSummary(
 	toolName: string,
@@ -216,58 +296,24 @@ export function toolCallSummary(
 			detail,
 		};
 	}
-	if (variant === "grouping") {
-		if (toolName === "bash") return { main: `Bash ${clip(args.command || "...")}`, detail: "" };
-		if (toolName === "grep") {
-			const pattern = clip(args.pattern || "...");
-			return {
-				main: `Grep ${JSON.stringify(pattern)}${args.path ? ` in ${clip(args.path)}` : ""}`,
-				detail: "",
-			};
-		}
-		if (toolName === "find") {
-			const pattern = clip(args.pattern || "...");
-			return {
-				main: `Find ${JSON.stringify(pattern)}${args.path ? ` in ${clip(args.path)}` : ""}`,
-				detail: "",
-			};
-		}
+	if (variant === "grouping" && SHELL_TOOL_NAMES.has(name)) {
+		// 分组行缺 command 时保留占位，避免与单工具卡一样只剩标题
+		return { main: value("...", "command"), detail: "" };
 	}
-	if (variant === "default") {
-		const preferredPath = args.path ?? args.file_path;
-		if (typeof preferredPath === "string" && preferredPath) {
-			return pathSummary(title, preferredPath, opts.cwd);
-		}
-		const preferred =
-			args.command ??
-			args.query ??
-			args.question ??
-			args.pattern ??
-			args.url ??
-			args.name ??
-			args.tool_use_id ??
-			args.toolCallId ??
-			args.id ??
-			args.message;
-		return {
-			main:
-				preferred !== undefined && preferred !== null && typeof preferred !== "object"
-					? `${title} ${clip(preferred)}`
-					: title,
-			detail: "",
-		};
+
+	// 检索类：pattern 是正文，path 只是范围；两个变体同格式
+	if (typeof args.pattern === "string" || SEARCH_TOOL_NAMES.has(name)) {
+		const pattern = clip(args.pattern || "...");
+		const scope = typeof args.path === "string" && args.path ? ` in ${clip(args.path)}` : "";
+		return { main: `${title} ${JSON.stringify(pattern)}${scope}`, detail: "" };
 	}
-	const preferred =
-		args.agent_id ??
-		args.path ??
-		args.file_path ??
-		args.url ??
-		args.description ??
-		args.query ??
-		args.name ??
-		args.prompt;
-	return {
-		main: `${title}${preferred === undefined ? "" : ` ${clip(preferred)}`}`,
-		detail: "",
-	};
+
+	const generic = genericSummary(title, args);
+	if (generic) return generic;
+
+	const preferredPath = args.path ?? args.file_path;
+	if (typeof preferredPath === "string" && preferredPath) {
+		return pathSummary(title, preferredPath, opts.cwd);
+	}
+	return { main: title, detail: "" };
 }
