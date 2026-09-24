@@ -159,7 +159,7 @@ write 新建 / 覆盖：
 ## 8. MCP / 自定义工具
 
 ```text
- ✓ Github Search pi
+ ✓ GitHub pi
    ↳ 1 line returned • click to show more
 
  ✓ Custom Translate

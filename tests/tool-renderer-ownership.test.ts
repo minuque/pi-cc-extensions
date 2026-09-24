@@ -12,7 +12,6 @@ type AnyToolDefinition = ToolDefinition<any, any, any>;
 import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
-	humanizeMcpToolName,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/renderer/index.ts";
@@ -213,7 +212,6 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		false,
 	);
 	assert.equal(isMcpToolDefinition({ description: "not an MCP tool" }, "remote"), false);
-	assert.equal(humanizeMcpToolName("mcp__filesystem__read_file"), "Filesystem Read File");
 
 	const events = new Map<string, Function>();
 	claudeCodeStyleExtension(
@@ -235,7 +233,8 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 	try {
 		await events.get("session_start")?.({}, ctx);
 		for (const [name, expected] of [
-			["mcp__filesystem__read_file", "Filesystem Read File"],
+			// MCP title comes from result.details.server; this result names none
+			["mcp__filesystem__read_file", "MCP"],
 			["openai_custom_search", "Openai Custom Search"],
 			["custom_lookup", "Custom Lookup"],
 		] as const) {

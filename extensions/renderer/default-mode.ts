@@ -233,8 +233,10 @@ function createCcstyleTool(
 			// 不再每次 tick 走 updateDisplay 把整张卡重建一遍。
 			const pendingIconStyled = () => theme.fg(toolIconColor(context), pendingIcon(toolName));
 			const summary = toolCallSummary(toolName, args, {
-				// MCP titles depend on call args (gateway server id extraction), so compute per call
-				title: mcpToolTitle({ toolName, definition: originalTool, args }) ?? defaultTitle,
+				// MCP titles depend on the call (the MCP server comes from the result), so compute per call
+				title:
+					mcpToolTitle({ toolName, definition: originalTool, args, result: context?.result }) ??
+					defaultTitle,
 				variant: "default",
 				cwd: context?.cwd,
 			});
@@ -557,7 +559,11 @@ function installGlobalToolRendering(
 		},
 		getCallRenderer: function (this: any, ...args: any[]) {
 			if (patch.active && shouldGloballyStyleTool(this, patch)) {
-				return getGloballyStyledTool(this, patch).renderCall;
+				const renderCall = getGloballyStyledTool(this, patch).renderCall;
+				const component = this;
+				// Pi's call render context has no result; pass it through for result-driven titles
+				return (callArgs: any, theme: any, context: any) =>
+					renderCall(callArgs, theme, { ...context, result: component.result });
 			}
 			return patch.downstream.getCallRenderer.apply(this, args);
 		},

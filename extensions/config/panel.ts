@@ -74,10 +74,10 @@ function excludeRenderersDescription(names: readonly string[]): string {
 		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
 }
 
-function mcpGatewayServerIdDescription(enabled: boolean): string {
+function mcpServerTitlesDescription(enabled: boolean): string {
 	return enabled
-		? "`mcp` gateway calls extract the MCP server id from the call for the title; falls back to MCP."
-		: "`mcp` gateway calls always render as MCP.";
+		? "MCP tool calls show the MCP server from the call result once it finishes; MCP until then."
+		: "MCP tool calls always render as MCP (MCP Script unchanged).";
 }
 
 function customFooterDescription(enabled: boolean): string {
@@ -405,11 +405,11 @@ export async function showCcstylePanel(
 				);
 			},
 		};
-		const mcpGatewayServerIdSetting = {
-			id: "mcpGatewayServerIdExtraction",
-			label: "MCP gateway title",
-			description: mcpGatewayServerIdDescription(config.mcpGatewayServerIdExtraction),
-			currentValue: config.mcpGatewayServerIdExtraction ? "on" : "off",
+		const mcpServerTitlesSetting = {
+			id: "mcpServerTitles",
+			label: "MCP server titles",
+			description: mcpServerTitlesDescription(config.mcpServerTitles),
+			currentValue: config.mcpServerTitles ? "on" : "off",
 			values: ["on", "off"],
 		};
 		const inputClipSetting = {
@@ -697,11 +697,9 @@ export async function showCcstylePanel(
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
 					return;
-				case "mcpGatewayServerIdExtraction":
-					updateConfig({ mcpGatewayServerIdExtraction: value === "on" });
-					mcpGatewayServerIdSetting.description = mcpGatewayServerIdDescription(
-						config.mcpGatewayServerIdExtraction,
-					);
+				case "mcpServerTitles":
+					updateConfig({ mcpServerTitles: value === "on" });
+					mcpServerTitlesSetting.description = mcpServerTitlesDescription(config.mcpServerTitles);
 					break;
 				case "diffViewMode":
 					updateConfig({ diffViewMode: value as DiffViewMode });
@@ -825,7 +823,7 @@ export async function showCcstylePanel(
 			{
 				id: "style",
 				label: "Style",
-				items: [modeSetting, excludeSetting, mcpGatewayServerIdSetting],
+				items: [modeSetting, excludeSetting, mcpServerTitlesSetting],
 			},
 			{
 				id: "feature",

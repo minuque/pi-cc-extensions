@@ -47,7 +47,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // style
   "mode": "on",                            // on / compact / off
   "excludeRenderers": [],                  // tools keeping the native renderer; Agent always keeps its dedicated renderer
-  "mcpGatewayServerIdExtraction": false,   // extract the MCP server from `mcp` gateway calls for titles; off = MCP
+  "mcpServerTitles": true,                 // show the MCP server from MCP tool call results in titles; off = MCP
 
   // features
   "enableSessionReference": true,          // @ session references

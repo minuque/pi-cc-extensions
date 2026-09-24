@@ -270,7 +270,6 @@ export {
 	shouldRenderRichDiff,
 } from "./default-mode.ts";
 export {
-	humanizeMcpToolName,
 	isMcpToolDefinition,
 	mcpServerDisplayName,
 	mcpToolTitle,

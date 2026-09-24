@@ -45,14 +45,17 @@ function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
 }
 
-/** Row/header title: MCP tools use the unified entry (same as standalone cards), others humanize the tool name. */
-function toolTitle(tool: any): string {
+/**
+ * Row/header title: MCP tools use the unified entry (same as standalone cards), others humanize the tool name.
+ * `withCall: false` gives the tool-level title, ignoring this call's args and result.
+ */
+function toolTitle(tool: any, withCall = true): string {
 	const name = toolName(tool);
 	return (
 		mcpToolTitle({
 			toolName: name,
 			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
-			args: tool?.args,
+			...(withCall ? { args: tool?.args, result: tool?.result } : {}),
 		}) ?? humanizeToolLabel(name)
 	);
 }
@@ -361,9 +364,15 @@ export class ToolGroupComponent extends Container {
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
-		// Same-name tools may still differ in title (MCP gateway extracts the server per call); mismatch -> Multiple Tools
-		const titles = names.size === 1 ? new Set(this.children.map(toolTitle)) : undefined;
-		const label = titles?.size === 1 ? [...titles][0]! : "Multiple Tools";
+		// Same-name tools may still differ in title (the MCP server comes from each call's result);
+		// on mismatch fall back to the tool-level title ("MCP") instead of Multiple Tools
+		const titles =
+			names.size === 1 ? new Set(this.children.map((tool) => toolTitle(tool))) : undefined;
+		const label = !titles
+			? "Multiple Tools"
+			: titles.size === 1
+				? [...titles][0]!
+				: toolTitle(this.children[0], false);
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (
 			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")

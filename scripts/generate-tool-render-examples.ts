@@ -371,12 +371,13 @@ async function generateDefault() {
 			...renderLines(
 				succeed(
 					tool(
-						"mcp__github__search",
+						"github_search_code",
 						"mcp1",
 						{ query: "pi" },
-						{ name: "mcp__github__search", label: "MCP: Github Search" },
+						{ name: "github_search_code", label: "MCP: search_code" },
 					),
 					"1 hit",
+					{ server: "github", tool: "search_code" },
 				),
 			),
 		);

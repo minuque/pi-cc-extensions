@@ -47,8 +47,8 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 export type Config = {
 	mode: CompactStyleMode;
 	excludeRenderers: string[];
-	/** Extract the server id from `mcp` gateway calls for titles; always "MCP" when off. */
-	mcpGatewayServerIdExtraction: boolean;
+	/** Take the MCP server from MCP tool call results for titles; always "MCP" when off. */
+	mcpServerTitles: boolean;
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
@@ -118,7 +118,7 @@ export const EXCLUDE_RENDERER_CANDIDATES = [
 export const DEFAULT_CONFIG: Config = {
 	mode: "on",
 	excludeRenderers: [],
-	mcpGatewayServerIdExtraction: false,
+	mcpServerTitles: true,
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
@@ -178,7 +178,7 @@ export function normalizeConfig(input: unknown): Config {
 	return {
 		mode,
 		excludeRenderers,
-		mcpGatewayServerIdExtraction: source.mcpGatewayServerIdExtraction === true,
+		mcpServerTitles: source.mcpServerTitles !== false,
 		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
 		diffIndicatorMode: pickEnum(
 			source.diffIndicatorMode,
@@ -277,7 +277,7 @@ export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,
 		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
-		`mcpGatewayId=${source.mcpGatewayServerIdExtraction ? "on" : "off"}`,
+		`mcpServerTitles=${source.mcpServerTitles ? "on" : "off"}`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
 		`diffSplitMin=${source.diffSplitMinWidth}`,
