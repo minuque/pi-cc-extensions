@@ -46,6 +46,6 @@ export class FooterCurrencyConverter {
 	format(costUsd: number, currency: string): string {
 		const rate = this.rates.get(currency);
 		if (currency === "USD" || rate === undefined) return `$${costUsd.toFixed(2)}`;
-		return `≈${new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(costUsd * rate)}`;
+		return `≈${new Intl.NumberFormat("en", { style: "currency", currency }).format(costUsd * rate)}`;
 	}
 }
