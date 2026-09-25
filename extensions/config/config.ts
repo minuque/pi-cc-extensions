@@ -71,7 +71,7 @@ export type Config = {
 	enableAliases: boolean;
 	enableCustomFooter: boolean;
 	/** ISO 4217 target currency for the footer's USD cost estimate. */
-	customCurrency: string;
+	footerCurrency: string;
 	footerNerdIcons: boolean;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
@@ -141,7 +141,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableCustomFooter: true,
-	customCurrency: "USD",
+	footerCurrency: "USD",
 	footerNerdIcons: true,
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
@@ -243,10 +243,10 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
-		customCurrency:
-			typeof source.customCurrency === "string" &&
-			/^[A-Za-z]{3}$/.test(source.customCurrency.trim())
-				? source.customCurrency.trim().toUpperCase()
+		footerCurrency:
+			typeof source.footerCurrency === "string" &&
+			/^[A-Za-z]{3}$/.test(source.footerCurrency.trim())
+				? source.footerCurrency.trim().toUpperCase()
 				: "USD",
 		footerNerdIcons: source.footerNerdIcons !== false,
 		...normalizeFooterChipLayout(source),
@@ -304,7 +304,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
-		`customCurrency=${source.customCurrency}`,
+		`footerCurrency=${source.footerCurrency}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		formatFooterChipSummary(source),
 	].join(" · ");

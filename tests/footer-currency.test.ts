@@ -4,11 +4,11 @@ import { normalizeConfig } from "../extensions/config/config.ts";
 import { FooterCurrencyConverter } from "../extensions/feature/shell/footer-currency.ts";
 
 test("currency setting defaults to USD and normalizes ISO codes", () => {
-	assert.equal(normalizeConfig({}).customCurrency, "USD");
-	assert.equal(normalizeConfig({ customCurrency: " inr " }).customCurrency, "INR");
-	assert.equal(normalizeConfig({ customCurrency: "eur" }).customCurrency, "EUR");
-	assert.equal(normalizeConfig({ customCurrency: "INR/../../bad" }).customCurrency, "USD");
-	assert.equal(normalizeConfig({ customCurrency: 42 }).customCurrency, "USD");
+	assert.equal(normalizeConfig({}).footerCurrency, "USD");
+	assert.equal(normalizeConfig({ footerCurrency: " inr " }).footerCurrency, "INR");
+	assert.equal(normalizeConfig({ footerCurrency: "eur" }).footerCurrency, "EUR");
+	assert.equal(normalizeConfig({ footerCurrency: "INR/../../bad" }).footerCurrency, "USD");
+	assert.equal(normalizeConfig({ footerCurrency: 42 }).footerCurrency, "USD");
 });
 
 test("loads one rate per currency and formats estimated conversion", async () => {

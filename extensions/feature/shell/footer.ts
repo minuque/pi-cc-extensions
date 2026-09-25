@@ -386,7 +386,7 @@ const createCustomFooterFactory =
 				cachePct > 0 ? `${glyphs.cache ? `${glyphs.cache} ` : ""}${Math.floor(cachePct)}%` : "";
 			const costChip =
 				cost || usingSubscription
-					? theme.fg("dim", currencyConverter.format(cost, config.customCurrency)) +
+					? theme.fg("dim", currencyConverter.format(cost, config.footerCurrency)) +
 						(usingSubscription ? theme.fg("warning", " sub") : "")
 					: "";
 			const line1 = joinChips([
@@ -454,7 +454,7 @@ export function applyCustomFooter(ctx: ExtensionContext): void {
 	try {
 		ctx.ui.setFooter(createCustomFooterFactory(ctx));
 		// Fetch once when enabled; rerender after the rate arrives without blocking startup.
-		void currencyConverter.load(config.customCurrency).then(() => currentTui?.requestRender());
+		void currencyConverter.load(config.footerCurrency).then(() => currentTui?.requestRender());
 	} catch (err) {
 		ctx.ui.notify(`footer error: ${err instanceof Error ? err.message : String(err)}`, "error");
 	}
