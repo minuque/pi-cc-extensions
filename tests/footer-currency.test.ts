@@ -32,6 +32,24 @@ test("loads one rate per currency and formats estimated conversion", async () =>
 	assert.equal(converter.format(0.76, "USD"), "$0.76");
 });
 
+test("failed request falls back to USD but retries on the next initialization", async () => {
+	let calls = 0;
+	const converter = new FooterCurrencyConverter(async () => {
+		calls++;
+		return calls === 1
+			? new Response("unavailable", { status: 503 })
+			: new Response(JSON.stringify({ base: "USD", quote: "INR", rate: 95.68 }));
+	});
+	await Promise.all([converter.load("INR"), converter.load("INR")]);
+	assert.equal(calls, 1);
+	assert.equal(converter.format(1, "INR"), "$1.00");
+	await converter.load("INR");
+	assert.equal(calls, 2);
+	assert.equal(converter.format(1, "INR"), "≈₹95.68");
+	await converter.load("INR");
+	assert.equal(calls, 2);
+});
+
 test("failed, invalid, and nonpositive rates preserve USD display", async () => {
 	for (const response of [
 		new Response("unavailable", { status: 503 }),
