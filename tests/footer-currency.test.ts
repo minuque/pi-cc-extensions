@@ -24,6 +24,7 @@ test("loads one rate per currency and formats estimated conversion", async () =>
 	await Promise.all([converter.load("INR"), converter.load("INR")]);
 	assert.deepEqual(requests, ["https://api.frankfurter.dev/v2/rate/usd/inr"]);
 	assert.equal(converter.format(0.76, "INR"), "≈₹72.72");
+	assert.equal(converter.format(1_000, "INR"), "≈₹95,680.00");
 	await converter.load("EUR");
 	assert.match(converter.format(1, "EUR"), /^≈.*€/);
 	await converter.load("USD");
