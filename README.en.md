@@ -46,6 +46,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 {
   // style
   "mode": "on",                            // on / compact / off
+  "compactRunningDisplay": "summary",    // compact folded state: summary = summary line only; live = keep live thinking previews and the in-flight tool card while the round is running, fold back into the summary line when it ends
   "excludeRenderers": [],                  // tools keeping the native renderer; Agent always keeps its dedicated renderer
 
   // features

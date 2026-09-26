@@ -10,6 +10,9 @@ import { join } from "node:path";
 
 export type CompactStyleMode = "on" | "compact" | "off";
 
+/** compact 折叠态下，回合进行中是否显示实时内容（thinking 预览与运行中的工具）。 */
+export type CompactRunningDisplay = "summary" | "live";
+
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 
@@ -45,6 +48,8 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 
 export type Config = {
 	mode: CompactStyleMode;
+	/** compact 折叠态：回合进行中显示实时 thinking 预览与运行中的工具卡，回合结束自动收起回摘要行。 */
+	compactRunningDisplay: CompactRunningDisplay;
 	excludeRenderers: string[];
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
@@ -81,6 +86,7 @@ export const CONFIG_PATH = join(AGENT_DIR, "pi-cc-extensions.json");
 const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
+export const COMPACT_RUNNING_DISPLAY_MODES: CompactRunningDisplay[] = ["summary", "live"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
 export const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"];
@@ -114,6 +120,7 @@ export const EXCLUDE_RENDERER_CANDIDATES = [
 
 export const DEFAULT_CONFIG: Config = {
 	mode: "on",
+	compactRunningDisplay: "summary",
 	excludeRenderers: [],
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
@@ -162,6 +169,11 @@ export function pickPositiveNumber(value: unknown, fallback: number, min = 1): n
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 	const mode = pickEnum(source.mode, ["on", "compact", "off"], DEFAULT_CONFIG.mode);
+	const compactRunningDisplay = pickEnum(
+		source.compactRunningDisplay,
+		COMPACT_RUNNING_DISPLAY_MODES,
+		DEFAULT_CONFIG.compactRunningDisplay,
+	);
 	const excludeRenderers = Array.isArray(source.excludeRenderers)
 		? [
 				...new Set(
@@ -173,6 +185,7 @@ export function normalizeConfig(input: unknown): Config {
 		: [];
 	return {
 		mode,
+		compactRunningDisplay,
 		excludeRenderers,
 		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
 		diffIndicatorMode: pickEnum(
@@ -271,6 +284,7 @@ export function formatExcludeRenderers(names: readonly string[]): string {
 export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,
+		`compactRunning=${source.compactRunningDisplay}`,
 		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
