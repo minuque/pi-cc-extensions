@@ -585,19 +585,27 @@ function installGlobalToolRendering(
 			return originalRender.call(this, width);
 		}
 		const cache = patch.paintCache;
-		const hit = cache?.get(this);
+		// A running partial tool owns a time-varying spinner. Light animation ticks
+		// request a repaint without invalidating the component, so settled-content
+		// caching must not intercept those paints.
+		const cacheable = !(this.executionStarted && this.isPartial);
+		const hit = cacheable ? cache?.get(this) : undefined;
 		if (hit && toolPaintMatches(hit, this, width)) return hit.lines;
 		const lines = originalRender.call(this, width);
-		cache?.set(this, {
-			width,
-			expanded: Boolean(this.expanded),
-			isPartial: Boolean(this.isPartial),
-			result: this.result,
-			args: this.args,
-			callHover: isToolCallHovered(this.toolCallId),
-			ioHover: ioHoverOf(this),
-			lines,
-		});
+		if (cacheable) {
+			cache?.set(this, {
+				width,
+				expanded: Boolean(this.expanded),
+				isPartial: Boolean(this.isPartial),
+				result: this.result,
+				args: this.args,
+				callHover: isToolCallHovered(this.toolCallId),
+				ioHover: ioHoverOf(this),
+				lines,
+			});
+		} else {
+			cache?.delete(this);
+		}
 		return lines;
 	};
 	patch.invalidatePaint = function (this: any): void {

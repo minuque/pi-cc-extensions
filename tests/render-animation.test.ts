@@ -4,9 +4,12 @@ import test from "node:test";
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 
-import { clearAllAnimations, scheduleAnimation } from "../extensions/renderer/tool/result.ts";
+import { config } from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { getToolMouseTui, setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
+import { clearAllAnimations, scheduleAnimation } from "../extensions/renderer/tool/result.ts";
 import { TOOL_LOADING_INTERVAL_MS } from "../extensions/utils/tool-loading-icon.ts";
 
 initTheme("dark");
@@ -25,7 +28,7 @@ function toolUi() {
 	return { ui, state };
 }
 
-function fakeTui(rows = 24) {
+function fakeTui(rows = 24, onRender?: () => void) {
 	const state = { renders: 0 };
 	return {
 		tui: {
@@ -35,6 +38,7 @@ function fakeTui(rows = 24) {
 			previousViewportTop: 0,
 			requestRender() {
 				state.renders++;
+				onRender?.();
 			},
 			doRender() {
 				this.previousLines = this.children.flatMap((child: any) => child.render(100));
@@ -46,6 +50,11 @@ function fakeTui(rows = 24) {
 
 function restoreTuiSlot(previous: unknown) {
 	setToolMouseTui(previous);
+}
+
+async function waitForRenderCount(state: { renders: number }, expected: number): Promise<void> {
+	for (let attempt = 0; attempt < 30 && state.renders < expected; attempt++) await wait(10);
+	assert.equal(state.renders, expected);
 }
 
 test("pending 分组的动画 tick 自己请求渲染", async () => {
@@ -76,6 +85,57 @@ test("pending 分组的动画 tick 自己请求渲染", async () => {
 		);
 	} finally {
 		hooks.shutdown();
+	}
+});
+
+test("pending 单工具的 paint cache 不得冻住 spinner", async () => {
+	const previousMode = config.mode;
+	const previousTui = getToolMouseTui();
+	const originalNow = Date.now;
+	let now = 0;
+	Date.now = () => now;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	const { ui } = toolUi();
+	const paintedFrames: string[] = [];
+	let tool: any;
+	const { tui, state } = fakeTui(24, () => paintedFrames.push(tool.render(80).join("\n")));
+	setToolMouseTui(tui);
+	try {
+		tool = new ToolExecutionComponent(
+			"read",
+			"animated-single-tool",
+			{ path: "a.ts" },
+			{},
+			undefined,
+			ui,
+			process.cwd(),
+		) as any;
+		const restored = tool.render(80);
+		assert.equal(tool.render(80), restored, "an unstarted restored row remains cacheable");
+
+		tool.markExecutionStarted();
+		const first = tool.render(80);
+		assert.match(first.join("\n"), /⠋/, "time zero should render the first spinner frame");
+
+		now = TOOL_LOADING_INTERVAL_MS;
+		await waitForRenderCount(state, 1);
+		assert.match(paintedFrames.at(-1)!, /⠙/, "the first tick must paint the next frame");
+
+		now = TOOL_LOADING_INTERVAL_MS * 2;
+		await waitForRenderCount(state, 2);
+		assert.match(paintedFrames.at(-1)!, /⠹/, "painting must renew the animation timer");
+		assert.notDeepEqual(paintedFrames[0], first.join("\n"));
+
+		tool.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		const settled = tool.render(80);
+		assert.equal(tool.render(80), settled, "a completed tool regains settled paint caching");
+	} finally {
+		Date.now = originalNow;
+		clearAllAnimations();
+		restoreTuiSlot(previousTui);
+		hooks.shutdown();
+		config.mode = previousMode;
 	}
 });
 
