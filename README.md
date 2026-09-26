@@ -46,6 +46,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 {
   // style
   "mode": "on",                            // on / compact / off
+  "compactRunningDisplay": "summary",    // compact 折叠态：summary = 只显示摘要行；live = 回合进行中实时显示 thinking 预览与运行中的工具卡，回合结束自动收起回摘要行
   "excludeRenderers": [],                  // 走原生渲染的工具名；Agent 始终保留专用渲染器
 
   // features

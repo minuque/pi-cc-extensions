@@ -521,6 +521,82 @@ test("expanded running round keeps thinking and tools in transcript order", () =
 	}
 });
 
+test("compact live running display keeps thinking and the in-flight tool visible, then folds when the round settles", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousRunning = config.compactRunningDisplay;
+	config.compactRunningDisplay = "live";
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const message1 = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "live-plan" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-live" } },
+			],
+		};
+		const assistant1 = new AssistantMessageComponent(message1 as any, true) as any;
+		assistant1.updateContent(message1);
+
+		// live 运行中：thinking 预览可见，Running 摘要行仍挂在下方。
+		const runningText = renderText(assistant1).join("\n");
+		assert.ok(/live-plan/.test(runningText), `live 态应显示 thinking 预览: ${runningText}`);
+		assert.match(runningText, /Running\.{3}.*bash×1/);
+
+		// 运行中的工具保持原生渲染（非空）；完成后隐藏，由摘要行计数接管。
+		const bash = tool("bash", "b1", { command: "echo-live" });
+		bash.executionStarted = true;
+		assert.ok(renderText(bash).length > 0, "live 态运行中工具应可见");
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		assert.deepEqual(renderText(bash), []);
+
+		// 回合收尾（最终 text 消息出现）→ thinking 自动收起回摘要行。
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "done-live" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		final.updateContent(finalMessage);
+		const folded = renderText(assistant1).join("\n");
+		assert.ok(!/live-plan/.test(folded), `回合结束后 thinking 应回收: ${folded}`);
+
+		// 默认 summary 模式：运行中也不显示 thinking（现状不变）。
+		config.compactRunningDisplay = "summary";
+		const message2 = {
+			role: "assistant",
+			timestamp: 3,
+			content: [
+				{ type: "thinking", thinking: "quiet-plan" },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "echo-quiet" } },
+			],
+		};
+		const assistant2 = new AssistantMessageComponent(message2 as any, true) as any;
+		assistant2.updateContent(message2);
+		const summaryText = renderText(assistant2).join("\n");
+		assert.ok(!/quiet-plan/.test(summaryText), `summary 态不应显示 thinking: ${summaryText}`);
+	} finally {
+		config.compactRunningDisplay = previousRunning;
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("Running duration recomputes on each render via round wall clock", () => {
 	const previousMode = config.mode;
 	config.mode = "compact";

@@ -1163,11 +1163,21 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 		for (const [component, message] of round.messages) {
 			if (component === round.anchor) {
-				renderAssistantWithoutThinking(component, message);
+				if (round.active && config.compactRunningDisplay === "live") {
+					// 围观态：回合进行中保留 thinking（compact-thinking 渲染尾部预览），
+					// 摘要行仍挂在下方；回合结束（endRound→renderRound 非 active 分支）自动收起。
+					passThroughAssistant(component, message);
+				} else {
+					renderAssistantWithoutThinking(component, message);
+				}
 				// 空摘要不挂行（getter 在 Running 启动瞬间也可能短暂为空）
 				if (summary || round.active) compactAssistantLine(component, getSummary, deps.query);
 				// 折叠时工具行被隐藏：abort/error/length 必须挂在摘要外层。
 				appendStopStatus(component, stopStatus);
+			} else if (round.active && config.compactRunningDisplay === "live") {
+				// 围观态：非 anchor 成员也保留各自 thinking 块（完成态 Thought 行 + 尾部预览），
+				// 回合结束后同样回到 clear。
+				passThroughAssistant(component, message);
 			} else {
 				component.contentContainer?.clear?.();
 			}
@@ -1314,6 +1324,16 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。
 		if (expandedRoundToolIds.has(String(this.toolCallId ?? ""))) return [];
+		// 围观态：回合进行中的工具保持原生渲染（运行卡），回合结束由摘要行接管计数。
+		// 完成但回合未收尾的工具仍隐藏，避免与摘要行重复。
+		if (
+			config.compactRunningDisplay === "live" &&
+			activeRound?.active === true &&
+			this.executionStarted &&
+			(!this.result || this.isPartial === true)
+		) {
+			return patch.toolOriginalRender.call(this, width);
+		}
 		// 普通工具折叠时不显示独立行（摘要行已统计），独立展开走原 renderer。
 		if (this.expanded === true) {
 			return patch.toolOriginalRender.call(this, width);
