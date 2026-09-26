@@ -9,7 +9,7 @@ import {
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
-import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
+import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
@@ -372,7 +372,8 @@ export class ToolGroupComponent extends Container {
 		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
-		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
+		const hintText = this._expanded ? collapseHintText() : showMoreHintText();
+		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
 		const lines = [
 			"",
 			truncateToWidth(

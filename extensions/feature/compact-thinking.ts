@@ -323,7 +323,7 @@ function hiddenPreviewHint(
 
 const expandedThinking = new Set<number>();
 
-/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、双击整块收起，对齐工具卡。 */
+/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、展开卡单击整块收起（拖动选择文本时不收起）。 */
 export class ThinkingPreviewBlock implements Component {
 	private heading: string;
 	private text: string;

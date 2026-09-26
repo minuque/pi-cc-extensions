@@ -1,13 +1,17 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
-import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
+import {
+	patchRegistry,
+	TOOL_GROUPING_PARENT_KEY,
+	TOOL_MOUSE_OWNER_KEY,
+} from "../../utils/patch-keys.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
+import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
 	getActiveIoViewFrame,
@@ -76,7 +80,7 @@ type FrameToolRender = {
 };
 
 type InteractionRegion = {
-	kind: "collapsed-hint" | "expanded-card" | "show-more" | "scroll-bottom";
+	kind: "collapsed-hint" | "collapse-hint" | "expanded-card" | "show-more" | "scroll-bottom";
 	row: number;
 	startCol: number;
 	endCol: number;
@@ -119,6 +123,7 @@ function interactionRegionAt(packet: SgrMousePacket): InteractionRegion | null {
 		matches.find((region) => region.kind === "show-more") ??
 		matches.find((region) => region.kind === "scroll-bottom") ??
 		matches.find((region) => region.kind === "collapsed-hint") ??
+		matches.find((region) => region.kind === "collapse-hint") ??
 		matches.find((region) => region.kind === "expanded-card") ??
 		null
 	);
@@ -146,7 +151,12 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	const scrollButtonChanged = setScrollButtonHovered(nextScrollButtonHovered);
 	const component = region?.component;
 	const nextToolCallId = region?.kind === "collapsed-hint" ? (component?.toolCallId ?? null) : null;
-	const nextGroup = component instanceof ToolGroupComponent ? component : null;
+	// group 只在提示文字上高亮（展开卡整行都是 expanded-card，不能算 hint）。
+	const nextGroup =
+		(region?.kind === "collapsed-hint" || region?.kind === "collapse-hint") &&
+		component instanceof ToolGroupComponent
+			? component
+			: null;
 	const nextIoView = region?.kind === "show-more" ? (region.view ?? null) : null;
 	const nextIoSection = region?.kind === "show-more" ? (region.section ?? null) : null;
 	const changed = nextToolCallId !== sharedToolHoverState().toolCallId;
@@ -160,75 +170,87 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 		tui.requestRender?.();
 }
 
-const EXPAND_PANEL_DOUBLE_CLICK_MS = 400;
-/** 松开后短时间内的重复按下视为同一次单击（终端会在 mouseup 后再打一次 press）。 */
-const EXPAND_PANEL_CLICK_ARM_MS = 50;
-let pendingExpandPress: { id: unknown } | null = null;
-let lastExpandClick: { id: unknown; at: number } | null = null;
-let armExpandClickTimer: ReturnType<typeof setTimeout> | null = null;
+/** 单击判定：按下与松开落在同一格（renderer 合成 click 的条件），位移与时限各留容差。 */
+const COLLAPSE_CLICK_MOVE_TOLERANCE = 1;
+const COLLAPSE_CLICK_MAX_MS = 600;
+/** 扩展收起自有卡后，官方 click 可能对同一次点击再 toggle 内部工具卡，短暂吞掉。 */
+const SUPPRESS_OFFICIAL_CARD_CLICK_MS = 300;
 
-function expandPanelIdentity(card: any): unknown {
-	return card instanceof ThinkingPreviewBlock
-		? `${card.messageTimestamp}:${card.runStartIndex}`
-		: card;
+let pendingCollapsePress: {
+	card: any;
+	/** 命中的最内层组件：官方工具卡由 MouseRegion 的 click 收起。 */
+	component: any;
+	col: number;
+	row: number;
+	at: number;
+} | null = null;
+let suppressOfficialCardClickUntil = 0;
+
+function clearPendingCollapsePress(): void {
+	pendingCollapsePress = null;
 }
 
-function isExpandPanelDoubleClick(card: any): boolean {
-	const now = Date.now();
-	const id = expandPanelIdentity(card);
-	const prev = lastExpandClick;
-	pendingExpandPress = { id };
-	if (prev && prev.id === id && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS) {
-		pendingExpandPress = null;
-		lastExpandClick = null;
-		return true;
+/** 带键拖动或滚轮：位置真的变了（超出抖动容差）就不再是单击。 */
+function clearPendingCollapsePressOnMove(packet: SgrMousePacket): void {
+	const press = pendingCollapsePress;
+	if (!press) return;
+	if ((packet.code & 64) !== 0) {
+		pendingCollapsePress = null;
+		return;
 	}
-	return false;
-}
-
-function completeExpandPanelClick(): void {
-	if (!pendingExpandPress) return;
-	const click = { id: pendingExpandPress.id, at: Date.now() };
-	pendingExpandPress = null;
-	if (armExpandClickTimer) clearTimeout(armExpandClickTimer);
-	armExpandClickTimer = setTimeout(() => {
-		armExpandClickTimer = null;
-		// 50ms 内又按下：仍是同一次单击，不能武装成双击。
-		if (pendingExpandPress) return;
-		lastExpandClick = click;
-	}, EXPAND_PANEL_CLICK_ARM_MS);
-	if (
-		typeof armExpandClickTimer === "object" &&
-		armExpandClickTimer &&
-		"unref" in armExpandClickTimer
-	) {
-		armExpandClickTimer.unref();
+	if (Math.abs(packet.col - press.col) <= COLLAPSE_CLICK_MOVE_TOLERANCE) {
+		if (Math.abs(packet.row - press.row) <= COLLAPSE_CLICK_MOVE_TOLERANCE) return;
 	}
+	pendingCollapsePress = null;
 }
 
-function clearExpandPanelDoubleClick(): void {
-	pendingExpandPress = null;
-	lastExpandClick = null;
-	if (armExpandClickTimer) {
-		clearTimeout(armExpandClickTimer);
-		armExpandClickTimer = null;
-	}
-}
-
-function collapseExpandedCard(tui: any, card: any): boolean {
-	// 单击也 consume，避免官方链再合成一次 press 把单击当成双击。
-	if (!isExpandPanelDoubleClick(card)) return true;
-	card.setExpanded(false);
+function clearHoverState(): void {
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);
 	setHoveredMessageDisplay(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
+}
+
+/** 收起一张展开卡（group 的 setExpanded 会传播到内部工具）。 */
+function collapseExpandedCard(tui: any, card: any): void {
+	card.setExpanded(false);
+	clearHoverState();
 	card.invalidate?.();
-	tui.requestRender?.();
-	clearExpandPanelDoubleClick();
-	return true;
+	tui?.requestRender?.();
+}
+
+function rememberCollapsePress(card: any, component: any, packet: SgrMousePacket): void {
+	pendingCollapsePress = { card, component, col: packet.col, row: packet.row, at: Date.now() };
+}
+
+/**
+ * 松手结算：只有"按下与松开在同一格"的完整单击才收起，拖动选择文本时保持展开。
+ * 官方工具卡（result 区的 MouseRegion）由 guard 在官方 click 里收起，这里必须跳过，
+ * 否则先收起会被官方 click 的 setExpanded(!expanded) 翻回来。
+ */
+function resolveCollapsePress(
+	tui: any,
+	packet: SgrMousePacket,
+	options: { skipOfficialCards: boolean },
+): void {
+	const press = pendingCollapsePress;
+	pendingCollapsePress = null;
+	if (!press || packet.final !== "m") return;
+	if (Math.abs(packet.col - press.col) > COLLAPSE_CLICK_MOVE_TOLERANCE) return;
+	if (Math.abs(packet.row - press.row) > COLLAPSE_CLICK_MOVE_TOLERANCE) return;
+	if (Date.now() - press.at > COLLAPSE_CLICK_MAX_MS) return;
+	if (options.skipOfficialCards && press.component instanceof ToolExecutionComponent) return;
+	const card = press.card;
+	if (
+		(card instanceof ToolGroupComponent || isCompactAssistantComponent(card)) &&
+		press.component !== card
+	) {
+		// 点击落在卡内工具行：官方 click 会对同一次点击再次 toggle，吞掉它。
+		suppressOfficialCardClickUntil = Date.now() + SUPPRESS_OFFICIAL_CARD_CLICK_MS;
+	}
+	collapseExpandedCard(tui, card);
 }
 
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
@@ -238,9 +260,13 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
 	const component = region.component;
 	if (!component) return false;
-	if (region.kind === "expanded-card") return collapseExpandedCard(tui, component);
+	if (region.kind === "expanded-card" || region.kind === "collapse-hint") {
+		// regular 模式没有官方 click 合成，按下先记账，松手结算是否收起。
+		rememberCollapsePress(component, component, packet);
+		return true;
+	}
 	component.setExpanded(true);
-	clearExpandPanelDoubleClick();
+	clearPendingCollapsePress();
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
@@ -339,9 +365,10 @@ function blocksOfficialCardToggle(component: any, event: any): boolean {
 
 /**
  * 官方 fullscreen 工具卡点击：collapsed hint 单击展开
- * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡双击收起，
- * 截断头 show-more 单击打开全量预览；回到底部按钮 scrollToBottom。
- * 滚动条列、含 OSC8 链接行、非工具区域、展开卡单击放行官方。
+ * （有且仅保持一个展开：展开前收起其他工具卡），expanded 卡放行官方 press，
+ * 位置不变的松手才收起（官方卡经 guard，思考/group/compact 自有卡由扩展结算），
+ * 拖动选择文本时不收起；截断头 show-more 单击打开全量预览；回到底部按钮 scrollToBottom。
+ * 滚动条列、含 OSC8 链接行、非工具区域、折叠卡正文放行官方。
  */
 function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const layout = tui.currentLayout;
@@ -391,7 +418,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 			}
 		}
 		component.setExpanded(true);
-		clearExpandPanelDoubleClick();
+		clearPendingCollapsePress();
 	} else {
 		// 普通工具截断头 show-more：打开全量预览（不收起）。
 		const view = isTool ? component.resultRendererComponent : null;
@@ -399,7 +426,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 			const plain = stripTerminalSequencesPreservingLayout(line);
 			const section = view.matchShowMoreLine(plain);
 			if (section) {
-				clearExpandPanelDoubleClick();
+				clearPendingCollapsePress();
 				const box = view.showMoreHitbox(plain);
 				return tryOpenToolIoShowMore({
 					kind: "show-more",
@@ -412,8 +439,10 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 				});
 			}
 		}
-		// 双击收起：内部工具仍归所属 group。单击放行官方（选择/链接）。
-		return collapseExpandedCard(tui, card);
+		// 其余放行官方：选区、OSC8 链接与 click 合成都交给 renderer。
+		// 完整单击的收起：官方卡由 guard 处理，自有卡在松手时结算。
+		rememberCollapsePress(card, component, packet);
+		return false;
 	}
 	// 点击后清 hover 高亮。
 	setHoveredToolCallId(null);
@@ -526,7 +555,10 @@ function patchFullscreenViewportInput(tui: any): void {
 			if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
 			if (packets && !tui.hasOverlay?.()) {
 				for (const packet of packets) {
-					if (isSgrLeftRelease(packet)) completeExpandPanelClick();
+					if (isSgrLeftRelease(packet))
+						resolveCollapsePress(tui, packet, { skipOfficialCards: true });
+					else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet))
+						clearPendingCollapsePressOnMove(packet);
 					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
 						return { consume: true };
 					}
@@ -639,6 +671,11 @@ function buildInteractionFrame(
 			if (placement.componentRow < cardStart) continue;
 			const finalRow = lineIndexToScreenRow(placement.lineIndex);
 			if (finalRow >= 1 && finalRow <= visibleRows) {
+				// 展开态的 ↑ Collapse 提示单独成区：hover 高亮 hint，点击仍收起整卡。
+				const hintBox = collapsedHintHitbox(placement.finalLine);
+				if (hintBox && isCollapseHintLine(stripTerminalSequences(placement.finalLine))) {
+					regions.push({ kind: "collapse-hint", row: finalRow, ...hintBox, component });
+				}
 				regions.push({
 					kind: "expanded-card",
 					row: finalRow,
@@ -868,8 +905,15 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	let consumed = false;
 	for (const packet of packets) {
 		updateToolSummaryHover(getToolMouseTui(), packet);
-		if (isSgrLeftRelease(packet)) completeExpandPanelClick();
-		if (!isSgrLeftPress(packet)) continue;
+		if (isSgrLeftRelease(packet)) {
+			resolveCollapsePress(getToolMouseTui(), packet, { skipOfficialCards: false });
+			continue;
+		}
+		if (!isSgrLeftPress(packet)) {
+			// 带键拖动或滚轮：位置变了就不再是单击。
+			if (!isSgrIdleMotion(packet)) clearPendingCollapsePressOnMove(packet);
+			continue;
+		}
 		if (toggleToolAtMouseClick(getToolMouseTui(), packet)) {
 			consumed = true;
 		}
@@ -899,7 +943,8 @@ export function teardownToolMouseInteraction(
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	releaseToolCardMouseGuard();
-	clearExpandPanelDoubleClick();
+	clearPendingCollapsePress();
+	suppressOfficialCardClickUntil = 0;
 	try {
 		if (isLazyProxyTui(getToolMouseTui())) releaseFullscreenToolMouseMotion(getToolMouseTui());
 		else getToolMouseTui()?.terminal?.write?.(TOOL_MOUSE_DISABLE);
@@ -947,6 +992,13 @@ type ToolCardMouseGuard = {
 	wrapper: (event: any) => any;
 };
 
+/** 官方 click 落在展开卡上：同一 group 的任意内部工具行都收起整个 group。 */
+function collapseExpandedCardFromOfficialClick(component: any): void {
+	if (typeof component?.setExpanded !== "function") return;
+	const group = component?.[TOOL_GROUPING_PARENT_KEY];
+	collapseExpandedCard(getToolMouseTui(), group instanceof ToolGroupComponent ? group : component);
+}
+
 function installToolCardMouseGuard(): void {
 	const prototype = (ToolExecutionComponent as any)?.prototype;
 	if (typeof prototype?.handleMouse !== "function") return;
@@ -956,6 +1008,19 @@ function installToolCardMouseGuard(): void {
 	// 每次取当前值作为下游，可能是别的扩展的包装。
 	const original = prototype.handleMouse;
 	const wrapper = function (this: any, event: any) {
+		if (event?.type === "click" && event.button === "left") {
+			// 扩展刚收起过自有卡：这次 click 属于同一次单击，吞掉避免内部工具被翻回展开。
+			if (suppressOfficialCardClickUntil && Date.now() <= suppressOfficialCardClickUntil) {
+				suppressOfficialCardClickUntil = 0;
+				if (this?.expanded) collapseExpandedCardFromOfficialClick(this);
+				return { handled: true };
+			}
+			// 展开卡整卡 click：接管官方 toggle，改为收起（group 内部工具行收起整个 group）。
+			if (this?.expanded && typeof this.setExpanded === "function") {
+				collapseExpandedCardFromOfficialClick(this);
+				return { handled: true };
+			}
+		}
 		if (blocksOfficialCardToggle(this, event)) return { handled: true };
 		return original.call(this, event);
 	};

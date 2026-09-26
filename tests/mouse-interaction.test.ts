@@ -22,11 +22,6 @@ import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 
-/** 与 interaction 里松开后 50ms 武装双击对齐。 */
-function armExpandDoubleClick() {
-	return new Promise((resolve) => setTimeout(resolve, 60));
-}
-
 test("tool groups expand from their hint and collapse from any expanded group row", async () => {
 	const grouping = installToolGrouping(() => true);
 	grouping.setTheme({
@@ -88,16 +83,39 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
 		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true);
+		assert.match(
+			group.render(100)[headerRow],
+			/collapse/,
+			"expanded group offers the collapse hint",
+		);
 
 		tui.doRender();
+		// 展开态提示同样可 hover 高亮（圆点保持 dim，只亮文字）。
+		const collapseCol = group.render(100)[1].indexOf("to collapse") + 1;
+		assert.ok(collapseCol > 0, "expanded group renders the collapse hint");
+		inputHandler?.(`\x1b[<35;${collapseCol};2M`);
+		assert.equal((group as any).hintHovered, true, "expanded collapse hint hovers");
+		assert.match(
+			group.render(100)[1],
+			/\x1b\[37m[^\x1b]*to collapse/,
+			"hover highlights the text only",
+		);
+		inputHandler?.(`\x1b[<35;1;2M`);
+		assert.equal(
+			(group as any).hintHovered,
+			false,
+			"moving outside clears the collapse hint hover",
+		);
 		const bottomPaddingRow = tui.previousLines.length - 1;
 		assert.equal(tui.previousLines[bottomPaddingRow].trim(), "");
+		// 按下只记账，松手位置不变才算单击；拖动（松手位置不同）保持展开。
 		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
-		assert.equal(group.expanded, true, "single click on expanded group does not collapse");
+		assert.equal(group.expanded, true, "press alone does not collapse");
+		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 4}m`);
+		assert.equal(group.expanded, true, "drag release keeps the group expanded");
+		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`);
 		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}m`);
-		await armExpandDoubleClick();
-		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
-		assert.equal(group.expanded, false);
+		assert.equal(group.expanded, false, "single click collapses the group");
 	} finally {
 		installToolMouseInteraction({});
 		grouping.shutdown();
@@ -485,11 +503,22 @@ test("collapsed diff card swallows card-wide clicks outside its remainder row", 
 		assert.deepEqual(delegated[0], { type: "click", button: "left", y: hintRow });
 
 		prototype.handleMouse.call(card, { type: "wheel", button: "none", y: bodyRow, width: 80 });
-		prototype.handleMouse.call(
-			{ ...card, expanded: true },
-			{ type: "click", button: "left", y: bodyRow, width: 80 },
-		);
-		assert.equal(delegated.length, 3, "非左键/展开态不拦");
+		const expandedCard: any = {
+			...card,
+			expanded: true,
+			setExpanded(value: boolean) {
+				this.expanded = value;
+			},
+			invalidate() {},
+		};
+		prototype.handleMouse.call(expandedCard, {
+			type: "click",
+			button: "left",
+			y: bodyRow,
+			width: 80,
+		});
+		assert.equal(delegated.length, 2, "wheel 仍走官方；展开卡 click 由扩展接管收起");
+		assert.equal(expandedCard.expanded, false, "展开卡单击收起");
 	} finally {
 		installToolMouseInteraction({});
 		prototype.handleMouse = originalHandleMouse;
@@ -855,17 +884,18 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 			const row = tui.previousLines.indexOf(hintLine) + 1;
 			const col = hintLine.indexOf("/ click") + 1;
 
-			// Baseline in on mode: click expands (frame rebuilds), double-click collapses,
-			// hover repaints.
+			// Baseline in on mode: press records, matching release collapses, hover repaints.
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, "tool-1");
 			tui.doRender();
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
-			assert.equal(expandedToolId, "tool-1", "single click on expanded card does not collapse");
-			tui.handleInput(`\x1b[<0;${col};${row}m`);
-			await armExpandDoubleClick();
+			assert.equal(expandedToolId, "tool-1", "press alone does not collapse");
+			// 松手位置不同视为拖动选择，保持展开。
+			tui.handleInput(`\x1b[<0;${col + 4};${row}m`);
+			assert.equal(expandedToolId, "tool-1", "drag release keeps the card expanded");
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
-			assert.equal(expandedToolId, null);
+			tui.handleInput(`\x1b[<0;${col};${row}m`);
+			assert.equal(expandedToolId, null, "single click collapses the expanded card");
 			tui.doRender();
 			const rendersBeforeHover = renderRequests;
 			tui.handleInput(`\x1b[<35;${col};${row}M`);

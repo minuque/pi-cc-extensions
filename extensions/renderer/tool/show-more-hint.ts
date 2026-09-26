@@ -36,3 +36,13 @@ export function expandShortcutText(): string {
 export function showMoreHintText(): string {
 	return isToolTuiFullscreen() ? "click to show more" : `${expandShortcutText()} to show more`;
 }
+
+/** 展开卡的收起提示，与折叠态 showMoreHintText 同一位置对称。 */
+export function collapseHintText(): string {
+	return isToolTuiFullscreen() ? "↑ Collapse" : `${expandShortcutText()} to collapse`;
+}
+
+/** 该行是否带展开态收起提示（用于展开卡的 hint hover 命中）。 */
+export function isCollapseHintLine(plainLine: string): boolean {
+	return plainLine.includes(collapseHintText());
+}

@@ -13,10 +13,13 @@ export type ComponentRowHit = {
 	group?: ToolGroupComponent;
 };
 
-/** 行内 [click to show more] 提示的命中列区间（1-based，含两端）。 */
+/** 行内 [click to show more] / [↑ Collapse] 提示的命中列区间（1-based，含两端）。 */
 export function collapsedHintHitbox(line: string): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);
-	const match = /(\([^()\n]* \/ click\)|click to show more|to show more)(?=\)?\s*$)/.exec(plain);
+	const match =
+		/(\([^()\n]* \/ click\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
+			plain,
+		);
 	if (!match?.[1]) return null;
 	const startCol = visibleWidth(plain.slice(0, match.index)) + 1;
 	return { startCol, endCol: startCol + visibleWidth(match[1]) - 1 };
