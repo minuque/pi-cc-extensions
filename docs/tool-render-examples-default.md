@@ -219,17 +219,7 @@ write 新建 / 覆盖：
  │   L7
  │   L8
  │   L9
- │   L10
- │   L11
- │   L12
- │   L13
- │   L14
- │   L15
- │   L16
- │   L17
- │   L18
- │   L19
- │   … +20 more lines • click to show more
+ │   … +30 more lines • click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
