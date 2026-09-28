@@ -30,6 +30,7 @@ export function setToolMouseTui(tui: any): void {
 type ScrollButtonState = {
 	visible: boolean;
 	hovered: boolean;
+	selectionActive: boolean;
 	widget: any;
 	/** 按钮可见期间新落的 transcript 块数（消息 + 工具卡）。 */
 	newCount: number;
@@ -38,9 +39,26 @@ function scrollButtonState(): ScrollButtonState {
 	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
 		visible: false,
 		hovered: false,
+		selectionActive: false,
 		widget: null,
 		newCount: 0,
 	}));
+}
+
+function fullscreenSelectionActive(tui: any): boolean {
+	if (scrollButtonState().selectionActive) return true;
+	try {
+		return tui?.hasActiveSelection?.() === true;
+	} catch {
+		return false;
+	}
+}
+
+export function setFullscreenSelectionActive(active: boolean, tui: any = getToolMouseTui()): void {
+	const state = scrollButtonState();
+	if (state.selectionActive === active) return;
+	state.selectionActive = active;
+	tui?.requestRender?.();
 }
 export function getScrollButtonVisible(): boolean {
 	return scrollButtonState().visible;
@@ -94,6 +112,7 @@ export function setScrollButtonWidget(widget: any): void {
 export function resetScrollButtonState(): void {
 	scrollButtonState().visible = false;
 	scrollButtonState().hovered = false;
+	scrollButtonState().selectionActive = false;
 	scrollButtonState().widget = null;
 	scrollButtonState().newCount = 0;
 	scrollButtonSyncScheduled = false;
@@ -203,6 +222,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 	if (
 		!fullscreenLazyTui(tui) ||
 		!toolMouseInteractionActive() ||
+		fullscreenSelectionActive(tui) ||
 		!isScrollNavigationInput(data) ||
 		scrollButtonSyncScheduled
 	)
@@ -212,6 +232,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 	const check = (attempt: number) => {
 		scrollButtonSyncScheduled = false;
 		if (getToolMouseTui() !== tui) return;
+		if (fullscreenSelectionActive(tui)) return;
 		// Pi renders on its own frame timer. Inspect the resulting viewport before
 		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
@@ -247,7 +268,9 @@ function scrollButtonText(): string {
 }
 
 export function renderScrollButton(width: number, theme: any): string[] {
-	if (!getScrollButtonVisible() || !fullscreenLazyTui(getToolMouseTui())) return [];
+	const tui = getToolMouseTui();
+	if (!getScrollButtonVisible() || !fullscreenLazyTui(tui) || fullscreenSelectionActive(tui))
+		return [];
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",
 		`[ ↓ ${scrollButtonText()} ]`,

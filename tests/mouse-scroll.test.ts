@@ -11,6 +11,7 @@ import {
 	resetScrollButtonState,
 	restoreOfficialScrollToEnd,
 	scheduleScrollButtonSync,
+	setFullscreenSelectionActive,
 	setToolMouseTui,
 	syncOfficialScrollToEnd,
 } from "../extensions/renderer/mouse/scroll.ts";
@@ -21,6 +22,10 @@ function lazyFullscreenTui() {
 	const tui: any = {
 		mode: "fullscreen",
 		isFollowingOutput: false, // 不在 transcript 底部 → 按钮应显示
+		activeSelection: false,
+		hasActiveSelection() {
+			return this.activeSelection;
+		},
 		previousLines: [],
 		get requestRender() {
 			return () => {
@@ -64,6 +69,26 @@ test("scroll button: schedule → immediate teardown → reinstall stays safe", 
 	);
 
 	// 3. 清理
+	resetScrollButtonState();
+	setToolMouseTui(null);
+});
+
+test("scroll button: stays hidden throughout fullscreen text selection", async () => {
+	const { tui } = lazyFullscreenTui();
+	setToolMouseTui(tui);
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.ok(renderScrollButton(80, fakeTheme()).length > 0);
+
+	setFullscreenSelectionActive(true, tui);
+	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "拖选时不显示回底按钮");
+
+	setFullscreenSelectionActive(false, tui);
+	tui.activeSelection = true;
+	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "松手后的活动选区仍隐藏按钮");
+
+	tui.activeSelection = false;
+	assert.ok(renderScrollButton(80, fakeTheme()).length > 0, "选区清除后恢复按钮");
 	resetScrollButtonState();
 	setToolMouseTui(null);
 });

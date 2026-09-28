@@ -1,7 +1,9 @@
+import { sliceByColumn } from "@earendil-works/pi-tui";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import {
+	FULLSCREEN_SELECTION_COPY_PATCH,
 	patchRegistry,
 	TOOL_GROUPING_PARENT_KEY,
 	TOOL_MOUSE_OWNER_KEY,
@@ -58,6 +60,7 @@ import {
 	setScrollButtonHovered,
 	setScrollButtonVisible,
 	setScrollButtonWidget,
+	setFullscreenSelectionActive,
 	setToolMouseTui,
 	getScrollButtonVisible,
 	getScrollButtonWidget,
@@ -114,6 +117,70 @@ let fullscreenMotionTerminal: any = null;
 let ownsFullscreenMotion = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
 let latestInteractionFrame: InteractionFrame = { regions: [] };
+let fullscreenFooterSelection: { tui: any; text: string } | null = null;
+let fullscreenFooterScreen: { tui: any; lines: string[] } | null = null;
+let fullscreenFooterSelectionFromAnchor = false;
+
+function clearFullscreenSelectionCapture(tui: any, discardFooter = false): void {
+	setFullscreenSelectionActive(false, tui);
+	fullscreenFooterScreen = null;
+	if (!discardFooter) return;
+	fullscreenFooterSelection = null;
+	fullscreenFooterSelectionFromAnchor = false;
+}
+
+function renderComponentLines(component: any, width: number): string[] {
+	try {
+		const rendered = component?.render?.(width);
+		return Array.isArray(rendered) ? rendered.map((line) => String(line)) : [];
+	} catch {
+		return [];
+	}
+}
+
+function componentLineRange(
+	component: any,
+	target: any,
+	width: number,
+	start = 0,
+): { start: number; count: number } | null {
+	if (component === target) return { start, count: renderComponentLines(component, width).length };
+	if (!Array.isArray(component?.children)) return null;
+	let offset = start;
+	for (const child of component.children) {
+		const match = componentLineRange(child, target, width, offset);
+		if (match) return match;
+		offset += renderComponentLines(child, width).length;
+	}
+	return null;
+}
+
+function snapshotFullscreenScreen(tui: any): { tui: any; lines: string[] } | null {
+	if (!Array.isArray(tui.previousScreen)) return null;
+	const lines = [...tui.previousScreen];
+	const widget = getScrollButtonWidget();
+	const root = tui.currentLayout?.root;
+	if (!widget || !root) return { tui, lines };
+	const visit = (box: any) => {
+		if (!box) return;
+		const isLeaf = !Array.isArray(box.children) || box.children.length === 0;
+		if (isLeaf && box.component && box.rect && box.clip) {
+			const range = componentLineRange(box.component, widget, Math.max(1, box.rect.width));
+			if (range && range.count > 0) {
+				const top = Math.max(0, box.clip.y, box.rect.y + range.start);
+				const bottom = Math.min(
+					lines.length - 1,
+					box.clip.y + box.clip.height - 1,
+					box.rect.y + range.start + range.count - 1,
+				);
+				for (let row = top; row <= bottom; row++) lines[row] = "";
+			}
+		}
+		for (const child of box.children ?? []) visit(child);
+	};
+	visit(root);
+	return { tui, lines };
+}
 
 /** Summary markers used by Pi and ccstyle; unlike the trailing hint, these survive truncation. */
 const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿|●|✓|✗|…)/;
@@ -303,6 +370,7 @@ function ensureFullscreenToolMouseMotion(tui: any): void {
 	setToolTuiFullscreen(fullscreenLazyTui(tui));
 	if (!fullscreenLazyTui(tui)) {
 		releaseFullscreenToolMouseMotion(tui);
+		clearFullscreenSelectionCapture(tui, true);
 		return;
 	}
 	// 面板改 scrollStepLines 后，下一帧渲染即同步（restore 仍按 original 恢复）。
@@ -346,6 +414,103 @@ function releaseFullscreenToolMouseMotion(tui?: any): void {
 
 const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
 const FULLSCREEN_WHEEL_SCROLL_ORIGINAL = Symbol("ccstyle.fullscreen-wheel-scroll-original");
+
+type FullscreenSelectionCopy = (this: any, ...args: any[]) => any;
+type FullscreenSelectionCopyMethod = "copyTextToClipboard" | "copySelectionToClipboard";
+type FullscreenSelectionCopyPatch = {
+	prototype: any;
+	method: FullscreenSelectionCopyMethod;
+	original: FullscreenSelectionCopy;
+	wrapper: FullscreenSelectionCopy;
+	owner: object;
+};
+
+function selectedFullscreenFooter(tui: any): string {
+	const selection = fullscreenFooterSelection;
+	if (config.mode === "off" || !selection || selection.tui !== tui) return "";
+	return tui.hasActiveSelection?.() === false ? "" : selection.text;
+}
+
+function formatFullscreenSelectionCopy(text: string, footer: string): string {
+	return footer ? `${text}\n${footer}` : text;
+}
+
+function appendFooterToOsc52(data: unknown, footer: string): unknown {
+	if (typeof data !== "string") return data;
+	const match = /^\x1b]52;c;([A-Za-z0-9+/=]*)\x07$/.exec(data);
+	if (!match) return data;
+	const text = Buffer.from(match[1] ?? "", "base64").toString("utf8");
+	const encoded = Buffer.from(formatFullscreenSelectionCopy(text, footer)).toString("base64");
+	return `\x1b]52;c;${encoded}\x07`;
+}
+
+function patchFullscreenSelectionCopy(tui: any): void {
+	const prototype = Object.getPrototypeOf(tui);
+	const method: FullscreenSelectionCopyMethod | undefined =
+		typeof prototype?.copyTextToClipboard === "function"
+			? "copyTextToClipboard"
+			: typeof prototype?.copySelectionToClipboard === "function"
+				? "copySelectionToClipboard"
+				: undefined;
+	if (!method) return;
+	const current = patchRegistry.get<FullscreenSelectionCopyPatch>(FULLSCREEN_SELECTION_COPY_PATCH);
+	if (
+		current &&
+		current.owner === (toolMouseInstallationOwner ?? DEFAULT_TOOL_MOUSE_OWNER) &&
+		current.prototype === prototype &&
+		current.method === method &&
+		prototype[method] === current.wrapper
+	)
+		return;
+	if (current && current.prototype?.[current.method] === current.wrapper) {
+		current.prototype[current.method] = current.original;
+	}
+	const original = prototype[method] as FullscreenSelectionCopy;
+	const wrapper: FullscreenSelectionCopy =
+		method === "copyTextToClipboard"
+			? function (this: any, text: string, ...args: any[]) {
+					const footer = selectedFullscreenFooter(this);
+					const content = formatFullscreenSelectionCopy(text, footer);
+					return Reflect.apply(original, this, [content, ...args]);
+				}
+			: function (this: any, ...args: any[]) {
+					const footer = selectedFullscreenFooter(this);
+					const terminal = this.terminal;
+					const write = terminal?.write;
+					if (typeof write !== "function") return Reflect.apply(original, this, args);
+					const wrappedWrite = function (this: any, data: unknown, ...writeArgs: any[]) {
+						return Reflect.apply(write, terminal, [
+							appendFooterToOsc52(data, footer),
+							...writeArgs,
+						]);
+					};
+					terminal.write = wrappedWrite;
+					try {
+						return Reflect.apply(original, this, args);
+					} finally {
+						if (terminal.write === wrappedWrite) terminal.write = write;
+					}
+				};
+	const patch: FullscreenSelectionCopyPatch = {
+		prototype,
+		method,
+		original,
+		wrapper,
+		owner: toolMouseInstallationOwner ?? DEFAULT_TOOL_MOUSE_OWNER,
+	};
+	patchRegistry.install(FULLSCREEN_SELECTION_COPY_PATCH, patch);
+	prototype[method] = wrapper;
+}
+
+function restoreFullscreenSelectionCopy(tui: any): void {
+	const patch = patchRegistry.get<FullscreenSelectionCopyPatch>(FULLSCREEN_SELECTION_COPY_PATCH);
+	if (!patch) return;
+	if (patch.owner !== (toolMouseInstallationOwner ?? DEFAULT_TOOL_MOUSE_OWNER)) return;
+	if (patch.prototype?.[patch.method] === patch.wrapper) {
+		patch.prototype[patch.method] = patch.original;
+	}
+	patchRegistry.dispose(FULLSCREEN_SELECTION_COPY_PATCH, patch);
+}
 
 /**
  * diff 结果组件自带 remainder 行：声明存在时只有那一行是展开入口（正文里的同名字样不算）；
@@ -551,6 +716,88 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	applyFullscreenHover(tui, target);
 }
 
+function isSgrLeftDrag(packet: SgrMousePacket): boolean {
+	return (
+		packet.final === "M" && (packet.code & 32) !== 0 && (packet.code & ~(4 | 8 | 16 | 32)) === 0
+	);
+}
+
+function captureFullscreenFooterSelection(
+	tui: any,
+	bottom: number,
+	endRow: number,
+	endCol: number,
+	fromAnchor: boolean,
+): void {
+	const snapshot = fullscreenFooterScreen;
+	const screen = snapshot && snapshot.tui === tui ? snapshot.lines : tui.previousScreen;
+	if (!Array.isArray(screen)) return;
+	const row = Math.min(endRow, screen.length - 1, Math.max(0, Number(tui.terminal?.rows) || 1) - 1);
+	if (row <= bottom) return;
+	const selected = screen
+		.slice(bottom + 1, row + 1)
+		.map((line: string) => stripTerminalSequencesPreservingLayout(line).trimEnd());
+	if (selected.length === 0) return;
+	const last = selected.length - 1;
+	selected[last] = sliceByColumn(selected[last] ?? "", 0, Math.max(0, endCol) + 1);
+	fullscreenFooterSelection = { tui, text: selected.join("\n") };
+	fullscreenFooterSelectionFromAnchor = fromAnchor;
+}
+
+function promoteFullscreenSelectionAnchor(tui: any, packet: SgrMousePacket): void {
+	const anchor = tui.selectionAnchor;
+	const layout = tui.currentLayout;
+	const primary = layout?.primaryScrollView;
+	if (!anchor || !layout?.root || !primary) return;
+
+	let scrollBox: any;
+	const visit = (box: any) => {
+		if (!box || scrollBox) return;
+		if (box.scrollView === primary) {
+			scrollBox = box;
+			return;
+		}
+		for (const child of box.children ?? []) visit(child);
+	};
+	visit(layout.root);
+	if (!scrollBox?.rect || !scrollBox?.clip) return;
+
+	const x = packet.col - 1;
+	const y = packet.row - 1;
+	const top = Math.max(0, scrollBox.rect.y, scrollBox.clip.y);
+	const bottom = Math.min(
+		Math.max(1, Number(tui.terminal?.rows) || 1) - 1,
+		scrollBox.rect.y + scrollBox.rect.height - 1,
+		scrollBox.clip.y + scrollBox.clip.height - 1,
+	);
+	if (anchor.scrollView) {
+		if (anchor.scrollView !== primary) return;
+		if (y > bottom) {
+			captureFullscreenFooterSelection(tui, bottom, y, x, false);
+		} else if (fullscreenFooterSelection?.tui === tui && !fullscreenFooterSelectionFromAnchor) {
+			fullscreenFooterSelection = null;
+		}
+		return;
+	}
+	if (x < scrollBox.clip.x || x >= scrollBox.clip.x + scrollBox.clip.width || y < top || y > bottom)
+		return;
+
+	const anchorRow = Number(anchor.row);
+	if (anchorRow >= top && anchorRow <= bottom) return;
+	const edgeRow = anchorRow > bottom ? bottom : top;
+	if (anchorRow > bottom) {
+		captureFullscreenFooterSelection(tui, bottom, anchorRow, Number(anchor.col) || 0, true);
+	}
+	tui.selectionAnchor = {
+		...anchor,
+		row: Math.max(0, Number(primary.scrollTop) || 0) + edgeRow - scrollBox.rect.y,
+		col: anchorRow > bottom ? scrollBox.rect.width - 1 : 0,
+		scrollView: primary,
+	};
+	tui.selectionGranularity = "character";
+	tui.selectionInitialRange = undefined;
+}
+
 /**
  * 实例级包装 TuiAltScreen.handleViewportInput（惰性 Proxy 安全）：
  * 原型方法取 original（绕开 proxy 函数包装），实例 own property 装 wrapper
@@ -558,7 +805,10 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
  * 工具卡左键点击，其余全部放行官方 selection/scrollbar/URL/键盘链。
  */
 function patchFullscreenViewportInput(tui: any): void {
-	if (tui[FULLSCREEN_VIEWPORT_PATCH] || !isLazyProxyTui(tui)) return;
+	if (!isLazyProxyTui(tui)) return;
+	patchFullscreenSelectionCopy(tui);
+	if (tui[FULLSCREEN_VIEWPORT_PATCH]) return;
+	clearFullscreenSelectionCapture(tui, true);
 	const proto = Object.getPrototypeOf(tui);
 	const original = proto?.handleViewportInput;
 	if (typeof original !== "function") return;
@@ -569,48 +819,65 @@ function patchFullscreenViewportInput(tui: any): void {
 	}
 	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
 	tui.handleViewportInput = function (this: any, data: string) {
-		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
-			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
-			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
-			scheduleScrollButtonSync(tui, data);
-			const packets = parseSgrMousePackets(data);
-			// 官方 fullscreen 会消费全部鼠标；文本预览 overlay 活动时放行给 focused
-			// custom component，使 [esc] 点击和滚轮可用。
-			if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
-			if (packets && !tui.hasOverlay?.()) {
-				for (const packet of packets) {
-					if (isSgrLeftRelease(packet)) {
-						// 只给 compact 面板清选区：自有面板收起会重排布局，官方选区锚点
-						// 还停在旧布局上，同一次 release 会结算出多行高亮。
-						if (
-							isCompactAssistantComponent(
-								resolveCollapsePress(tui, packet, { skipOfficialCards: true }),
-							)
-						) {
-							try {
-								Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
-							} catch {
-								/* 老版本没有选区状态 */
+		let releaseSelection = false;
+		const packets = parseSgrMousePackets(data);
+		const cancelSelection = data === FULLSCREEN_FOCUS_OUT || tui.mode !== "fullscreen";
+		try {
+			if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
+				// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
+				// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
+				scheduleScrollButtonSync(tui, data);
+				// 官方 fullscreen 会消费全部鼠标；文本预览 overlay 活动时放行给 focused
+				// custom component，使 [esc] 点击和滚轮可用。
+				if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
+				if (packets && !tui.hasOverlay?.()) {
+					for (const packet of packets) {
+						if (isSgrLeftRelease(packet)) {
+							releaseSelection = true;
+							// 只给 compact 面板清选区：自有面板收起会重排布局，官方选区锚点
+							// 还停在旧布局上，同一次 release 会结算出多行高亮。
+							if (
+								isCompactAssistantComponent(
+									resolveCollapsePress(tui, packet, { skipOfficialCards: true }),
+								)
+							) {
+								try {
+									Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
+								} catch {
+									/* 老版本没有选区状态 */
+								}
 							}
+						} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet)) {
+							clearPendingCollapsePressOnMove(packet);
 						}
-					} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet))
-						clearPendingCollapsePressOnMove(packet);
-					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
-						return { consume: true };
-					}
-					// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区，避免每像素命中+重绘。
-					if (isSgrIdleMotion(packet)) {
-						handleFullscreenToolHover(tui, packet);
+						if (isSgrLeftPress(packet)) {
+							if (handleFullscreenToolClick(tui, packet)) return { consume: true };
+							fullscreenFooterScreen = snapshotFullscreenScreen(this);
+							setFullscreenSelectionActive(true, tui);
+							fullscreenFooterSelection = null;
+							fullscreenFooterSelectionFromAnchor = false;
+						}
+						if (isSgrLeftDrag(packet)) promoteFullscreenSelectionAnchor(this, packet);
+						// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区。
+						if (isSgrIdleMotion(packet)) handleFullscreenToolHover(tui, packet);
 					}
 				}
 			}
+			return Reflect.apply(original, this, [data]);
+		} catch (error) {
+			clearFullscreenSelectionCapture(tui, true);
+			throw error;
+		} finally {
+			if (releaseSelection) clearFullscreenSelectionCapture(tui);
+			else if (cancelSelection) clearFullscreenSelectionCapture(tui, true);
 		}
-		return Reflect.apply(original, this, [data]);
 	};
 }
 
 function restoreFullscreenViewportInput(tui: any): void {
-	if (!tui || !tui[FULLSCREEN_VIEWPORT_PATCH]) return;
+	if (!tui) return;
+	restoreFullscreenSelectionCopy(tui);
+	if (!tui[FULLSCREEN_VIEWPORT_PATCH]) return;
 	const proto = Object.getPrototypeOf(tui);
 	if (typeof proto?.handleViewportInput === "function") {
 		tui.handleViewportInput = proto.handleViewportInput;
@@ -995,6 +1262,10 @@ export function teardownToolMouseInteraction(
 	restoreToolMouseRenderPatch();
 	restoreFullscreenViewportInput(getToolMouseTui());
 	restoreOfficialScrollToEnd(getToolMouseTui());
+	setFullscreenSelectionActive(false, getToolMouseTui());
+	fullscreenFooterSelection = null;
+	fullscreenFooterSelectionFromAnchor = false;
+	fullscreenFooterScreen = null;
 	resetScrollButtonState();
 	setToolMouseTui(null);
 	toolMouseUi = null;
@@ -1004,14 +1275,21 @@ export function teardownToolMouseInteraction(
 
 /** off 模式清理：清空 hover 与回到底部按钮状态（跨模块 rebind 统一经由此函数）。 */
 export function resetToolHoverState(): void {
+	const tui = getToolMouseTui();
+	try {
+		if (fullscreenLazyTui(tui)) tui.handleViewportInput?.(FULLSCREEN_FOCUS_OUT);
+	} catch {
+		// renderer 可能正在切换或终端已经关闭。
+	}
+	clearFullscreenSelectionCapture(tui, true);
 	setHoveredToolCallId(null);
 	setHoveredThinking(null);
 	setHoveredMessageDisplay(null);
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);
-	restoreOfficialScrollToEnd(getToolMouseTui());
-	releaseFullscreenToolMouseMotion(getToolMouseTui());
+	restoreOfficialScrollToEnd(tui);
+	releaseFullscreenToolMouseMotion(tui);
 }
 
 /**
@@ -1088,6 +1366,8 @@ export function installToolMouseInteraction(
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen
 	// 由官方 LayoutFrame 命中，并由扩展补齐 hover 所需的 all-motion 上报。
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
+		const previousTui = getToolMouseTui();
+		if (previousTui && previousTui !== tui) clearFullscreenSelectionCapture(previousTui, true);
 		setToolMouseTui(tui);
 		setToolTuiFullscreen(fullscreenLazyTui(tui));
 		if (isLazyProxyTui(tui)) {

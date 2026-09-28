@@ -9,13 +9,17 @@ import {
 	ToolExecutionComponent,
 	type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent";
+import { TuiAltScreen } from "@earendil-works/pi-tui";
+import { TuiAltScreen as TuiAltScreen087 } from "pi-tui-087";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
+import { resetToolHoverState } from "../extensions/renderer/mouse/interaction.ts";
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
+import { SCROLL_BUTTON_STATE_SLOT } from "../extensions/utils/patch-keys.ts";
 import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
@@ -322,7 +326,9 @@ class FullscreenRenderer {
 	wheelScrollLines = 1;
 	altScreenActive = true;
 	mouseEnabled = true;
+	activeSelection = false;
 
+	copySelection?: (text: string) => Promise<boolean>;
 	constructor(tool: any, widget: any, terminal: any) {
 		this.children = [tool];
 		this.terminal = terminal;
@@ -332,6 +338,7 @@ class FullscreenRenderer {
 	// 官方链：原型方法，实例包装后作为 original 放行目标。
 	handleViewportInput(data: string) {
 		this.officialInputs.push(data);
+		if (data === "\x1b[O") this.activeSelection = false;
 		return { consume: true };
 	}
 
@@ -345,6 +352,14 @@ class FullscreenRenderer {
 
 	hasOverlay() {
 		return false;
+	}
+
+	hasActiveSelection() {
+		return this.activeSelection;
+	}
+
+	async copyTextToClipboard(text: string) {
+		return this.copySelection?.(text) ?? false;
 	}
 
 	scrollToBottom() {
@@ -379,9 +394,30 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 			writes.some((value) => value.includes("?1003h")),
 			"hover motion is enabled after startup",
 		);
+		(tui as any).handleViewportInput("\x1b[<0;1;10M");
+		assert.equal(
+			(globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive,
+			true,
+			"fullscreen press marks the transient selection active",
+		);
+		renderer = new FullscreenRenderer(tool, null, terminal);
+		renderer.altScreenActive = true;
+		ui.widget.render();
+		assert.equal(
+			(globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive,
+			false,
+			"fullscreen renderer replacement clears a lost release",
+		);
+		(tui as any).handleViewportInput("\x1b[<0;1;10M");
+		assert.equal((globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive, true);
 		const disablesBeforeSwitch = writes.filter((value) => value.includes("?1003l")).length;
 		renderer = createRenderer("regular", [tool], terminal);
 		ui.widget.render();
+		assert.equal(
+			(globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive,
+			false,
+			"fullscreen to regular clears a lost release",
+		);
 		assert.equal(
 			writes.filter((value) => value.includes("?1003l")).length,
 			disablesBeforeSwitch + 1,
@@ -392,6 +428,380 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 		installToolMouseInteraction({});
 		if (previousTmux === undefined) delete process.env.TMUX;
 		else process.env.TMUX = previousTmux;
+	}
+});
+
+test("fullscreen press failure clears transient selection state", () => {
+	class ThrowingFullscreenRenderer extends FullscreenRenderer {
+		handleViewportInput(_data: string): never {
+			throw new Error("press failed");
+		}
+	}
+	const tool = createTool("selection-press-failure");
+	const { terminal } = createTerminalFixture();
+	const renderer = new ThrowingFullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		assert.throws(() => tui.handleViewportInput("\x1b[<0;1;10M"), /press failed/);
+		assert.equal(
+			(globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive,
+			false,
+			"official input failure clears the transient drag state",
+		);
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("ccstyle off clears incomplete fullscreen selection capture", async () => {
+	const tool = createTool("selection-off-cleanup");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	let copied = "";
+	renderer.copySelection = async (text: string) => {
+		copied = text;
+		return true;
+	};
+	(renderer as any).previousScreen = Array.from({ length: 24 }, () => "");
+	(renderer as any).previousScreen[20] = "stale footer";
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		tui.handleViewportInput("\x1b[<0;1;10M");
+		(renderer as any).selectionAnchor = {
+			row: 9,
+			col: 0,
+			scrollView: renderer.currentLayout.primaryScrollView,
+		};
+		tui.handleViewportInput("\x1b[<32;6;21M");
+		renderer.activeSelection = true;
+		resetToolHoverState();
+		assert.equal((globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive, false);
+		assert.equal(renderer.activeSelection, false, "off sends the official focus-out input");
+		renderer.activeSelection = true;
+		await renderer.copyTextToClipboard("body");
+		assert.equal(copied, "body", "off discards the previously captured footer");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("lazy-proxy tui: fullscreen copy preserves body text verbatim", async () => {
+	const tool = createTool("tool-copy");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	let copied = "";
+	(renderer as any).copySelection = async (text: string) => {
+		copied = text;
+		return true;
+	};
+	const originalCopyText = (renderer as any).copyTextToClipboard;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const text =
+			"  indented prose\n│literal rails│\n────────────\n[ ↓ Back to bottom · Ctrl+End ]\n```python\n  print('ok')\n```\n\n";
+		await renderer.copyTextToClipboard(text);
+		assert.equal(copied, text, "unknown body text must not be normalized");
+		tui.handleViewportInput("\x1b[<0;1;10M");
+		renderer.activeSelection = true;
+		const selected = [
+			"12345678901234567890",
+			"second logical line",
+			"abcdefghijklmnopqrst",
+			"uvwxyz",
+			"  legally indented  ",
+			"│ legal quote │",
+			"────────────────────",
+			"[ ↓ Back to bottom · Ctrl+End ]",
+			"```python",
+			"  print('ok')  ",
+			"```",
+			"",
+		].join("\n");
+		await renderer.copyTextToClipboard(selected);
+		assert.equal(
+			copied,
+			selected,
+			"active fullscreen selection preserves unknown body text exactly",
+		);
+		renderer.activeSelection = false;
+		tui.handleViewportInput("\x1b[<0;1;10m");
+	} finally {
+		installToolMouseInteraction({});
+		assert.equal(
+			(renderer as any).copyTextToClipboard,
+			originalCopyText,
+			"teardown restores official copy",
+		);
+	}
+});
+
+test("fullscreen copy patch changes owner across module reloads", async () => {
+	const tool = createTool("copy-reload");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	const original = FullscreenRenderer.prototype.copyTextToClipboard;
+	const first = await import(
+		new URL("../extensions/renderer/mouse/interaction.ts?copy-reload-first", import.meta.url).href
+	);
+	const second = await import(
+		new URL("../extensions/renderer/mouse/interaction.ts?copy-reload-second", import.meta.url).href
+	);
+	const ownerA = {};
+	const ownerB = {};
+	try {
+		first.installToolMouseInteraction(ui.ctx, ownerA);
+		const previous = FullscreenRenderer.prototype.copyTextToClipboard;
+		second.installToolMouseInteraction(ui.ctx, ownerB);
+		const replacement = FullscreenRenderer.prototype.copyTextToClipboard;
+		assert.notEqual(replacement, previous, "new module must replace old copy wrapper");
+		first.teardownToolMouseInteraction(ownerA);
+		assert.equal(
+			FullscreenRenderer.prototype.copyTextToClipboard,
+			replacement,
+			"stale shutdown leaves replacement intact",
+		);
+		second.teardownToolMouseInteraction(ownerB);
+		assert.equal(
+			FullscreenRenderer.prototype.copyTextToClipboard,
+			original,
+			"current shutdown restores original",
+		);
+	} finally {
+		second.teardownToolMouseInteraction(ownerB);
+		first.teardownToolMouseInteraction(ownerA);
+	}
+});
+
+test("real TuiAltScreen preserves cross-region selection through auto-scroll", async () => {
+	const tool = createTool("real-selection");
+	const { terminal, writes } = createTerminalFixture();
+	const renderer: any = new (TuiAltScreen as any)(terminal);
+	const clipboardTexts = () =>
+		writes
+			.filter((value) => value.startsWith("\x1b]52;c;"))
+			.map((value) => value.match(/^\x1b]52;c;([^\x07]+)\x07$/)?.[1])
+			.filter((value): value is string => value !== undefined)
+			.map((value) => Buffer.from(value, "base64").toString("utf8"));
+	const lines = Array.from({ length: 80 }, (_, index) => `line-${String(index).padStart(3, "0")}`);
+	lines[49] = "12345678901234567890";
+	lines[50] = "second logical line";
+	lines[51] = "│ legal quote │";
+	lines[52] = "────────────────────";
+	lines[53] = "  print('ok')";
+	lines[54] = "[ ↓ Back to bottom · Ctrl+End ]";
+	const layout = fullscreenLayout(tool, null);
+	const scroll = layout.primaryScrollView as any;
+	const scrollBox = layout.root.children[0] as any;
+	scrollBox.scrollContentLines = lines;
+	scroll.scrollTop = 40;
+	scroll.isFollowingEnd = false;
+	scroll.scrollBy = (delta: number) => {
+		const before = scroll.scrollTop;
+		const maximum = Math.max(0, lines.length - scrollBox.rect.height);
+		scroll.scrollTop = Math.max(0, Math.min(maximum, before + delta));
+		return delta - (scroll.scrollTop - before);
+	};
+	scroll.scrollTo = (top: number) => {
+		scroll.scrollTop = Math.max(0, Math.min(lines.length - scrollBox.rect.height, top));
+	};
+	(renderer as any).currentLayout = layout;
+	(renderer as any).previousScreen = Array.from({ length: 24 }, () => "");
+	(renderer as any).previousScreen[20] = "footer first";
+	(renderer as any).previousScreen[21] = "footer second";
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		(renderer as any).handleTerminalInput("\x1b[<0;1;22M");
+		(renderer as any).handleTerminalInput("\x1b[<32;1;1M");
+		await new Promise((resolve) => setTimeout(resolve, 70));
+		assert.ok(scroll.scrollTop < 40, "real auto-scroll advances while dragging");
+		(renderer as any).handleTerminalInput("\x1b[<0;1;1m");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const expected = `${lines.slice(scroll.scrollTop, 60).join("\n")}\nfooter first\nf`;
+		assert.equal(clipboardTexts()[0], expected, "copy-on-select keeps scrolled body and footer");
+		renderer.copySelectionToClipboard();
+		assert.equal(clipboardTexts()[1], expected, "manual copy keeps the same active selection");
+		(renderer as any).handleTerminalInput("\x1b[<0;1;10M");
+		(renderer as any).handleTerminalInput("\x1b[<32;1;22M");
+		(renderer as any).handleTerminalInput("\x1b[<0;1;22m");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const reverseStart = scroll.scrollTop + 9;
+		const reverseEnd = scroll.scrollTop + 19;
+		const reverseRows = lines.slice(reverseStart, reverseEnd + 1);
+		reverseRows[reverseRows.length - 1] = (reverseRows.at(-1) ?? "").slice(0, 1);
+		const reverseExpected = `${reverseRows.join("\n")}\nfooter first\nf`;
+		assert.equal(
+			clipboardTexts()[2],
+			reverseExpected,
+			"transcript-to-footer selection keeps both regions",
+		);
+		const terminalWrite = terminal.write;
+		terminal.write = (data: string) => {
+			if (data.startsWith("\x1b]52;c;")) throw new Error("terminal closed");
+			terminalWrite(data);
+		};
+		try {
+			(renderer as any).handleTerminalInput("\x1b[<0;1;22M");
+			(renderer as any).handleTerminalInput("\x1b[<32;1;10M");
+			assert.throws(
+				() => (renderer as any).handleTerminalInput("\x1b[<0;1;10m"),
+				/terminal closed/,
+			);
+			assert.equal(
+				(globalThis as any)[SCROLL_BUTTON_STATE_SLOT]?.selectionActive,
+				false,
+				"release cleanup runs when OSC 52 write throws",
+			);
+		} finally {
+			terminal.write = terminalWrite;
+		}
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("real pi-tui 0.87 copy paths preserve cross-region selection", async () => {
+	const tool = createTool("real-selection-087");
+	const { terminal } = createTerminalFixture();
+	const copied: string[] = [];
+	const renderer: any = new (TuiAltScreen087 as any)(terminal, false, undefined, {
+		copyOnSelect: true,
+		copySelection: async (text: string) => {
+			copied.push(text);
+			return true;
+		},
+	});
+	const lines = Array.from({ length: 80 }, (_, index) => `line-${String(index).padStart(3, "0")}`);
+	const layout = fullscreenLayout(tool, null);
+	const fillLayoutComponents = (box: any): void => {
+		if (box.component === null) box.component = {};
+		for (const child of box.children ?? []) fillLayoutComponents(child);
+	};
+	fillLayoutComponents(layout.root);
+	const scrollBox = layout.root.children[0] as any;
+	scrollBox.scrollContentLines = lines;
+	const scroll = layout.primaryScrollView as any;
+	scroll.scrollTop = 40;
+	scroll.isFollowingEnd = false;
+	(renderer as any).currentLayout = layout;
+	(renderer as any).previousScreen = Array.from({ length: 24 }, () => "");
+	(renderer as any).previousScreen[20] = "footer first";
+	(renderer as any).previousScreen[21] = "footer second";
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		(renderer as any).handleTerminalInput("\x1b[<0;1;22M");
+		(renderer as any).handleTerminalInput("\x1b[<32;1;10M");
+		(renderer as any).handleTerminalInput("\x1b[<0;1;10m");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const expected = `${lines.slice(49, 60).join("\n")}\nfooter first\nf`;
+		assert.equal(copied[0], expected, "0.87 copy-on-select uses the real async clipboard path");
+		assert.equal(await renderer.copyActiveSelectionToClipboard(), true);
+		assert.equal(copied[1], expected, "0.87 manual copy keeps the active cross-region selection");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("lazy-proxy tui: footer selection stays native while scroll button stays hidden", async () => {
+	const tool = createTool("tool-footer-selection");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
+		tui.handleViewportInput("\x1b[<65;1;1M");
+		await new Promise<void>((resolve) => process.nextTick(resolve));
+		assert.ok(ui.widget.render(80).some((line: string) => line.includes("Back to bottom")));
+		renderer.currentLayout = fullscreenLayout(tool, ui.widget);
+		renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
+		const widgetBox = renderer.currentLayout.root.children[1].children[0];
+		const siblingWidget = { render: () => ["sibling widget"], invalidate() {} };
+		widgetBox.component.children = [ui.widget, siblingWidget];
+		widgetBox.rect.height = 2;
+		widgetBox.lines = [...ui.widget.render(80), ...siblingWidget.render()];
+		renderer.officialInputs.length = 0;
+
+		(renderer as any).previousScreen = Array.from({ length: 24 }, () => "");
+		(renderer as any).previousScreen[20] = ui.widget.render(80)[0] ?? "";
+		(renderer as any).previousScreen[21] = "sibling widget";
+		tui.handleViewportInput("\x1b[<0;1;22M");
+		assert.deepEqual(renderer.officialInputs, ["\x1b[<0;1;22M"], "底栏按下仍由官方处理");
+		(renderer as any).selectionAnchor = { row: 21, col: 0 };
+		let copied = "";
+		renderer.copySelection = async (text: string) => {
+			copied = text;
+			return true;
+		};
+		renderer.currentLayout.primaryScrollView.scrollTop = 40;
+		(renderer as any).previousScreen[20] = "overwritten";
+		tui.handleViewportInput("\x1b[<32;1;23M");
+		assert.equal(
+			(renderer as any).selectionAnchor.scrollView,
+			undefined,
+			"底栏内部拖动保持原生屏幕选区",
+		);
+		assert.deepEqual(ui.widget.render(80), [], "拖选开始后回底提示立即隐藏");
+		tui.handleViewportInput("\x1b[<32;1;10M");
+		assert.deepEqual(renderer.officialInputs, [
+			"\x1b[<0;1;22M",
+			"\x1b[<32;1;23M",
+			"\x1b[<32;1;10M",
+		]);
+		assert.equal(
+			(renderer as any).selectionAnchor.scrollView,
+			renderer.currentLayout.primaryScrollView,
+			"拖入 transcript 后切换为滚动文档选区",
+		);
+		assert.equal((renderer as any).selectionAnchor.row, 59, "锚点映射为当前 scrollTop 下的文档行");
+		assert.equal((renderer as any).selectionAnchor.col, 79, "transcript 最后一行完整选取");
+		renderer.activeSelection = true;
+		await renderer.copyTextToClipboard("transcript older\ntranscript last");
+		assert.equal(
+			copied,
+			"transcript older\ntranscript last\n\ns",
+			"仅排除回底按钮，保留同容器 sibling",
+		);
+
+		renderer.activeSelection = true;
+		tui.handleViewportInput("\x1b[<0;1;10m");
+		await renderer.copyTextToClipboard("transcript older\ntranscript last");
+		assert.equal(copied, "transcript older\ntranscript last\n\ns", "手动复制仍保留 sibling 片段");
+		assert.deepEqual(ui.widget.render(80), [], "活动选区保留期间回底提示继续隐藏");
+		renderer.activeSelection = false;
+		assert.ok(ui.widget.render(80).length > 0, "选区清除后恢复回底提示");
+		for (const [content, col, expected] of [
+			["🙂next", 0, "🙂"],
+			["🙂next", 1, "🙂"],
+			["中文next", 0, "中"],
+			["中文next", 1, "中"],
+			["e\u0301next", 0, "e\u0301"],
+		] as const) {
+			(renderer as any).previousScreen[20] = "";
+			(renderer as any).previousScreen[21] = content;
+			tui.handleViewportInput("\x1b[<0;1;22M");
+			(renderer as any).selectionAnchor = { row: 21, col };
+			tui.handleViewportInput("\x1b[<32;1;10M");
+			renderer.activeSelection = true;
+			await renderer.copyTextToClipboard("transcript");
+			assert.equal(copied, `transcript\n\n${expected}`, `display-column slice: ${content}`);
+			tui.handleViewportInput("\x1b[<0;1;10m");
+			renderer.activeSelection = false;
+		}
+	} finally {
+		installToolMouseInteraction({});
 	}
 });
 

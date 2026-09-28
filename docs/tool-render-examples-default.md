@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.9.6 · mode=`on`。
+> 当前版本：ccstyle 0.9.7 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -219,7 +219,17 @@ write 新建 / 覆盖：
  │   L7
  │   L8
  │   L9
- │   … +30 more lines • click to show more
+ │   L10
+ │   L11
+ │   L12
+ │   L13
+ │   L14
+ │   L15
+ │   L16
+ │   L17
+ │   L18
+ │   L19
+ │   … +20 more lines • click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
