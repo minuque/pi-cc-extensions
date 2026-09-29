@@ -34,7 +34,7 @@ import {
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
 } from "../extensions/renderer/tool/diff/index.ts";
-import { config } from "../extensions/config/config.ts";
+import { config, DEFAULT_CONFIG, setConfig } from "../extensions/config/config.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -113,15 +113,15 @@ async function bootCcstyle(mode: "on" | "compact") {
 			events.set(name, list);
 		},
 	};
-	const previousMode = config.mode;
-	claudeCodeStyle(pi as any, { mode });
+	const previousConfig = { ...config };
+	claudeCodeStyle(pi as any, { ...DEFAULT_CONFIG, mode });
 	const ctx = { mode: "tui", hasUI: true, ui };
 	for (const handler of events.get("session_start") ?? []) await handler({}, ctx);
 	setMessageDisplayTheme(plainTheme);
 	return {
 		async shutdown() {
 			for (const handler of events.get("session_shutdown") ?? []) await handler({}, ctx);
-			config.mode = previousMode;
+			setConfig(previousConfig);
 		},
 	};
 }
