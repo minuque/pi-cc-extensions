@@ -2,6 +2,12 @@
 // Mid-market rates are indicative, not the exchange rate charged by a bank.
 type FetchRate = (url: string, init: RequestInit) => Promise<Response>;
 
+function formatCurrency(amount: number, currency: string): string {
+	// Preserve the existing USD display exactly for the default configuration.
+	if (currency === "USD") return `$${amount.toFixed(2)}`;
+	return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount);
+}
+
 export class FooterCurrencyConverter {
 	private readonly rates = new Map<string, number>();
 	private readonly requests = new Map<string, Promise<void>>();
@@ -11,15 +17,16 @@ export class FooterCurrencyConverter {
 		this.fetchRate = fetchRate;
 	}
 
-	/** Fetch once per currency per runtime; never block footer rendering. */
-	load(currency: string): Promise<void> {
-		if (currency === "USD") return Promise.resolve();
-		const previous = this.requests.get(currency);
+	/** Fetch each source-target rate once per runtime; never block footer rendering. */
+	load(sourceCurrency: string, targetCurrency: string): Promise<void> {
+		if (sourceCurrency === targetCurrency) return Promise.resolve();
+		const pair = `${sourceCurrency}:${targetCurrency}`;
+		const previous = this.requests.get(pair);
 		if (previous) return previous;
 		const request = (async (): Promise<boolean> => {
 			try {
 				const response = await this.fetchRate(
-					`https://api.frankfurter.dev/v2/rate/usd/${currency.toLowerCase()}`,
+					`https://api.frankfurter.dev/v2/rate/${sourceCurrency.toLowerCase()}/${targetCurrency.toLowerCase()}`,
 					{ signal: AbortSignal.timeout(5_000) },
 				);
 				if (!response.ok) return false;
@@ -27,30 +34,31 @@ export class FooterCurrencyConverter {
 				if (!data || typeof data !== "object") return false;
 				const { base, quote, rate } = data as Record<string, unknown>;
 				if (
-					base !== "USD" ||
-					quote !== currency ||
+					base !== sourceCurrency ||
+					quote !== targetCurrency ||
 					typeof rate !== "number" ||
 					!Number.isFinite(rate) ||
 					rate <= 0
 				)
 					return false;
-				this.rates.set(currency, rate);
+				this.rates.set(pair, rate);
 				return true;
 			} catch {
-				// No usable rate: keep the original USD display, not a mislabeled conversion.
+				// No usable rate: keep and label the original source-currency amount.
 				return false;
 			}
 		})().then((success) => {
 			// Cache successes, but allow a later footer initialization to retry failures.
-			if (!success) this.requests.delete(currency);
+			if (!success) this.requests.delete(pair);
 		});
-		this.requests.set(currency, request);
+		this.requests.set(pair, request);
 		return request;
 	}
 
-	format(costUsd: number, currency: string): string {
-		const rate = this.rates.get(currency);
-		if (currency === "USD" || rate === undefined) return `$${costUsd.toFixed(2)}`;
-		return `≈${new Intl.NumberFormat("en", { style: "currency", currency }).format(costUsd * rate)}`;
+	format(cost: number, sourceCurrency: string, targetCurrency: string): string {
+		if (sourceCurrency === targetCurrency) return formatCurrency(cost, sourceCurrency);
+		const rate = this.rates.get(`${sourceCurrency}:${targetCurrency}`);
+		if (rate === undefined) return formatCurrency(cost, sourceCurrency);
+		return `≈${formatCurrency(cost * rate, targetCurrency)}`;
 	}
 }

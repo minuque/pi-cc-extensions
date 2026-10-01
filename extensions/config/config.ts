@@ -71,8 +71,10 @@ export type Config = {
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
 	enableCustomFooter: boolean;
-	/** ISO 4217 target currency for the footer's USD cost estimate. */
+	/** ISO 4217 target currency for the footer cost display. */
 	footerCurrency: string;
+	/** ISO 4217 source currency used by the cost values. */
+	footerCurrencySource: string;
 	footerNerdIcons: boolean;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
@@ -159,6 +161,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableAliases: true,
 	enableCustomFooter: true,
 	footerCurrency: "USD",
+	footerCurrencySource: "USD",
 	footerNerdIcons: true,
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
@@ -184,6 +187,12 @@ export function pickInputClip(value: unknown): number {
 export function pickPositiveNumber(value: unknown, fallback: number, min = 1): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
 	return Number.isFinite(n) ? Math.max(min, n) : fallback;
+}
+
+function normalizeCurrency(value: unknown): string {
+	return typeof value === "string" && /^[A-Za-z]{3}$/.test(value.trim())
+		? value.trim().toUpperCase()
+		: "USD";
 }
 
 export function normalizeConfig(input: unknown): Config {
@@ -271,11 +280,8 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
-		footerCurrency:
-			typeof source.footerCurrency === "string" &&
-			/^[A-Za-z]{3}$/.test(source.footerCurrency.trim())
-				? source.footerCurrency.trim().toUpperCase()
-				: "USD",
+		footerCurrency: normalizeCurrency(source.footerCurrency),
+		footerCurrencySource: normalizeCurrency(source.footerCurrencySource),
 		footerNerdIcons: source.footerNerdIcons !== false,
 		...normalizeFooterChipLayout(source),
 	};
@@ -333,6 +339,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
 		`footerCurrency=${source.footerCurrency}`,
+		`footerCurrencySource=${source.footerCurrencySource}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		formatFooterChipSummary(source),
 	].join(" · ");
