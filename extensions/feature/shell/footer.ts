@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import { FooterCurrencyConverter } from "./footer-currency.ts";
 import {
 	PI_USAGE_KEY,
 	isSkippedFooterStatusKey,
@@ -179,6 +180,7 @@ function colorUsageChip(theme: any, text: string): string {
 	return theme.fg("dim", stripAnsi(text));
 }
 
+const currencyConverter = new FooterCurrencyConverter();
 let currentTui: any = undefined;
 let refreshCurrentGitStats: (() => void) | undefined;
 let refreshCurrentUsage: (() => void) | undefined;
@@ -419,8 +421,10 @@ const createCustomFooterFactory =
 				cachePct > 0 ? `${glyphs.cache ? `${glyphs.cache} ` : ""}${Math.floor(cachePct)}%` : "";
 			const costChip =
 				cost || usingSubscription
-					? theme.fg("dim", `$${cost.toFixed(2)}`) +
-						(usingSubscription ? theme.fg("warning", " sub") : "")
+					? theme.fg(
+							"dim",
+							currencyConverter.format(cost, config.footerCurrencySource, config.footerCurrency),
+						) + (usingSubscription ? theme.fg("warning", " sub") : "")
 					: "";
 			const line1 = joinChips([
 				theme.fg("accent", modelLabel),
@@ -488,6 +492,10 @@ export function applyCustomFooter(ctx: ExtensionContext): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setFooter !== "function" || !config.enableCustomFooter) return;
 	try {
 		ctx.ui.setFooter(createCustomFooterFactory(ctx));
+		// Fetch once when enabled; rerender after the rate arrives without blocking startup.
+		void currencyConverter
+			.load(config.footerCurrencySource, config.footerCurrency)
+			.then(() => currentTui?.requestRender());
 	} catch (err) {
 		ctx.ui.notify(`footer error: ${err instanceof Error ? err.message : String(err)}`, "error");
 	}

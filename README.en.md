@@ -80,14 +80,19 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
   // footer
   "enableCustomFooter": true, // custom status bar
+  "footerCurrency": "USD", // ISO 4217 display currency for estimated footer cost
+  "footerCurrencySource": "USD", // ISO 4217 currency of the cost values; set e.g. EUR for EUR-denominated rates
   "footerNerdIcons": true, // Nerd Font glyphs for git/cache; false = plain text
   "footerHiddenKeys": [], // hidden plugin chip keys
   "footerLine1Keys": ["pi-usage"], // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
   "footerLine2Keys": [], // line2 plugin chip order (after cwd/git)
-  "footerLine3Keys": [], // line3 overflow slot; painted only when a chip is visible
+  "footerLine3Keys": [] // line3 overflow slot; painted only when a chip is visible
 }
 ```
 
+> [!NOTE]
+> **Footer currency**: `footerCurrency` selects the display currency; `footerCurrencySource` identifies the currency of the cost values. Both default to `"USD"`. For example, set `footerCurrency` to `"INR"` to convert USD costs, or set both values to `"EUR"` when the costs are already EUR-denominated. Matching currencies display directly with no network request. Different currencies fetch a mid-market rate once on startup from [Frankfurter](https://frankfurter.dev/) and show an approximate conversion. If a rate is unavailable or unsupported, the amount is shown in its source currency rather than mislabeled. Change the config and run `/reload` to apply it. Reference rates may differ from your bank's billing rate.
+>
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Click to collapse (dragging inside the card selects text).
 
