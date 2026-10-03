@@ -91,6 +91,42 @@ export function createCodeLineHighlighter(
 	};
 }
 
+/**
+ * 通用代码块着色（codemode 的 `code` 字段等）：先用 pi 的同步 highlightCode 打底，
+ * 首帧就有颜色；再用 shiki 异步升级（与 diff 共用缓存与主题解析），落地后回调
+ * invalidate 重画。返回行数组，按源行一一对应；语言不识或未就绪时给打底结果。
+ */
+export function createCodeBlockHighlighter(
+	code: string,
+	language: string | undefined,
+	theme: DiffTheme,
+	invalidate?: () => void,
+): () => string[] {
+	const cleanCode = sanitizeToolResultText(code).replace(/\r/g, "");
+	const cleanLines = cleanCode.split("\n").map(cleanCodeLine);
+	if (!language || !shouldHighlightCodeBlock(cleanCode)) {
+		return () => cleanLines.map(sanitizeAnsiForThemedOutput);
+	}
+	let fallback: string[];
+	try {
+		fallback = highlightCode(cleanCode, language).map(sanitizeAnsiForThemedOutput);
+	} catch {
+		fallback = cleanLines.map(sanitizeAnsiForThemedOutput);
+	}
+	const shikiTheme = resolveShikiTheme(theme);
+	let highlighted: string[] | undefined;
+	const resolve = () => {
+		if (highlighted) return;
+		const result = shikiHighlightCache.get(cleanCode, language, shikiTheme, fallback, invalidate);
+		if (result) highlighted = result.map(sanitizeAnsiForThemedOutput);
+	};
+	resolve();
+	return () => {
+		resolve();
+		return highlighted ?? fallback;
+	};
+}
+
 export function highlightDiffLine(
 	codeText: string,
 	entry: DiffLineEntry,

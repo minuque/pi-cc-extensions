@@ -1,6 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
 import { config } from "../../config/config.ts";
+import { createCodeBlockHighlighter } from "./diff/diff-highlight.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
@@ -231,7 +232,7 @@ export class ExpandedToolResultText {
 }
 
 /** 截断体末行 `… +N more lines` 旁的展开提示，点击打开全量预览。 */
-export const SHOW_MORE_LABEL = "• click to show more";
+export const SHOW_MORE_LABEL = "· click to show more";
 
 export type ToolIoSection = "input" | "output";
 
@@ -268,6 +269,17 @@ export class ExpandedToolIoView {
 	private truncated: { input: boolean; output: boolean } = { input: false, output: false };
 	/** 0-based header line indexes that carry show-more after last render. */
 	private showMoreHeaderRows: { input?: number; output?: number } = {};
+	/** Input 里的代码块（codemode 的 `code`）：着色行覆盖默认 dim/muted 样式。 */
+	private inputCode?:
+		| {
+				startLine: number;
+				language: string;
+				standalone: boolean;
+				code: string;
+				theme: unknown;
+				rows: () => string[];
+		  }
+		| undefined;
 
 	/** flushLeft：贴左渲染（mode=on 展开卡）；默认 false 保留前导空格（compact 等共用路径）。 */
 	private flushLeft: boolean;
@@ -325,6 +337,57 @@ export class ExpandedToolIoView {
 		return this.inputBody;
 	}
 
+	/**
+	 * 登记 Input 里的代码块：同步 cli-highlight 打底，shiki 异步升级，落地后
+	 * 经 invalidate 重画。同一份代码与主题只建一次（视图按宽度缓存行）。
+	 */
+	setInputCode(block: InputCodeBlock | undefined): void {
+		if (!block) {
+			if (this.inputCode) {
+				this.inputCode = undefined;
+				this.invalidate();
+			}
+			return;
+		}
+		if (this.inputCode?.code === block.code && this.inputCode.theme === this.theme) {
+			this.inputCode.startLine = block.startLine;
+			this.inputCode.standalone = block.standalone;
+			return;
+		}
+		this.inputCode = {
+			startLine: block.startLine,
+			language: block.language,
+			standalone: block.standalone,
+			code: block.code,
+			theme: this.theme,
+			rows: createCodeBlockHighlighter(block.code, block.language, this.theme, () => {
+				// 视图自己的行缓存 + 外层工具卡（清 paint 缓存并 requestRender）
+				this.invalidate();
+				invalidateIoView(this);
+			}),
+		};
+		this.invalidate();
+	}
+
+	/**
+	 * 整段 Input 就是代码块时给出语言与代码，供全量预览包一层围栏（弹框按 Markdown
+	 * 渲染，围栏代码块由 pi 的 highlightCode 着色）。混了别的字段时返回 undefined。
+	 */
+	getInputCodeFence(): { language: string; code: string } | undefined {
+		const block = this.inputCode;
+		return block?.standalone ? { language: block.language, code: block.code } : undefined;
+	}
+
+	/** 代码块里某一源行的着色内容（已剥掉行首缩进）；不在块内时为 undefined。 */
+	private inputCodeLine(sourceIndex: number): string | undefined {
+		const block = this.inputCode;
+		if (!block) return undefined;
+		const offset = sourceIndex - block.startLine;
+		if (offset < 0) return undefined;
+		const rows = block.rows();
+		return offset < rows.length ? rows[offset] : undefined;
+	}
+
 	getOutputBody(): string {
 		return this.outputBody.trim() ? this.outputBody : "Done";
 	}
@@ -342,7 +405,7 @@ export class ExpandedToolIoView {
 	/** True when the plain truncation footer carries show-more. Input 续行带 │，Output 不带。 */
 	matchShowMoreLine(plainLine: string): ToolIoSection | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
-		if (!line.includes(` • ${showMoreHintText()}`) || !/\+\d+ more lines/.test(line)) return null;
+		if (!line.includes(` · ${showMoreHintText()}`) || !/\+\d+ more lines/.test(line)) return null;
 		if (this.truncated.input && line.includes("│")) return "input";
 		if (this.truncated.output) return "output";
 		return null;
@@ -363,7 +426,7 @@ export class ExpandedToolIoView {
 	/** Column range (1-based, visible cells) of show-more on a rendered header, if present. */
 	showMoreHitbox(plainLine: string): { startCol: number; endCol: number } | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
-		const label = ` • ${showMoreHintText()}`;
+		const label = ` · ${showMoreHintText()}`;
 		const idx = line.lastIndexOf(label);
 		if (idx < 0) return null;
 		const before = line.slice(0, idx);
@@ -409,14 +472,6 @@ export class ExpandedToolIoView {
 			lines.push(truncateToWidth(theme.fg("dim", `${lead}│`), safeWidth, ""));
 		};
 
-		/** Style `key: value` input rows — dim keys, readable values. */
-		const styleInputLine = (rawLine: string): string => {
-			const match = rawLine.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
-			if (!match) return theme.fg("muted", rawLine);
-			const [, key, sep, rest] = match;
-			return theme.fg("dim", key + sep) + theme.fg("muted", rest ?? "");
-		};
-
 		const pushBody = (
 			body: string,
 			opts: { input?: boolean; limit: number; continued?: boolean; section: ToolIoSection },
@@ -428,8 +483,13 @@ export class ExpandedToolIoView {
 			}
 			const sourceLines = raw.split("\n");
 			const wrapped: string[] = [];
-			for (const source of sourceLines) {
-				const styled = opts.input ? styleInputLine(source) : theme.fg(bodyColor, source);
+			for (const [index, source] of sourceLines.entries()) {
+				if (opts.input) {
+					// 代码块的行用着色版本（已剥缩进），其余走默认 dim/muted
+					wrapped.push(...wrapInputLine(source, contentWidth, theme, this.inputCodeLine(index)));
+					continue;
+				}
+				const styled = theme.fg(bodyColor, source);
 				const parts = wrapTextWithAnsi(styled, contentWidth);
 				if (parts.length === 0) wrapped.push(styled);
 				else wrapped.push(...parts);
@@ -444,7 +504,7 @@ export class ExpandedToolIoView {
 				if (hidden > 0) {
 					// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
 					const more =
-						theme.fg("dim", " •") +
+						theme.fg("dim", " ·") +
 						theme.fg(
 							this.hoveredSection === opts.section ? "text" : "dim",
 							` ${showMoreHintText()}`,
@@ -462,7 +522,15 @@ export class ExpandedToolIoView {
 		// Decide show-more from the same truncation rules as pushBody.
 		const inputWouldTruncate =
 			hasInput &&
-			bodyExceedsLineLimit(this.inputBody, this.maxInputLines, contentWidth, true, theme);
+			bodyExceedsLineLimit(
+				this.inputBody,
+				this.maxInputLines,
+				contentWidth,
+				true,
+				theme,
+				bodyColor,
+				(inputIndex: number) => this.inputCodeLine(inputIndex),
+			);
 		const outputWouldTruncate = bodyExceedsLineLimit(
 			outputText,
 			this.maxOutputLines,
@@ -522,6 +590,40 @@ export function isExpandedToolIoView(value: unknown): value is ExpandedToolIoVie
 	);
 }
 
+/** Input 行着色：`key: value` 拆成 dim 键 + muted 值，其余整行 muted。 */
+function styleInputSourceLine(line: string, theme: any): string {
+	const match = line.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
+	if (!match) return theme.fg("muted", line);
+	const [, key, sep, rest] = match;
+	return theme.fg("dim", key + sep) + theme.fg("muted", rest ?? "");
+}
+
+/**
+ * 折一行 Input 源码。不带 styledBody 时与改动前完全一致（其他工具不受影响）；
+ * 代码块（styledBody = 已着色且已剥缩进的行）续行跟着源码前导缩进：顶到 rail
+ * 会被读成新的一行，所以缩进先剥掉、折行宽度相应扣减，再给每一行加回去。
+ * 行数判断（bodyExceedsLineLimit）与实际渲染共用这一套，展开提示才对得上。
+ */
+function wrapInputLine(
+	source: string,
+	contentWidth: number,
+	theme: any,
+	styledBody?: string,
+): string[] {
+	if (styledBody === undefined) {
+		const styled = styleInputSourceLine(source, theme);
+		const parts = wrapTextWithAnsi(styled, contentWidth);
+		return parts.length ? parts : [styled];
+	}
+	const lead = /^[ \t]*/.exec(source)?.[0] ?? "";
+	const leadWidth = visibleWidth(lead);
+	const parts = wrapTextWithAnsi(styledBody, Math.max(1, contentWidth - leadWidth));
+	const rows = parts.length ? parts : [styledBody];
+	if (!leadWidth) return rows;
+	const prefix = theme.fg("muted", lead);
+	return rows.map((row) => prefix + row);
+}
+
 /** True when body needs truncation at the given line limit (source lines or wrapped rows). */
 function bodyExceedsLineLimit(
 	body: string,
@@ -530,23 +632,18 @@ function bodyExceedsLineLimit(
 	asInput: boolean,
 	theme: any,
 	bodyColor = "toolOutput",
+	/** 代码块的源行取着色内容，行数判断与实际渲染保持同一套规则。 */
+	codeLine?: (sourceIndex: number) => string | undefined,
 ): boolean {
 	const raw = body.replace(/\t/g, "   ").replace(/\n+$/, "");
 	if (!raw.trim()) return false;
 	const sourceLines = raw.split("\n");
 	if (sourceLines.length > limit) return true;
 	let total = 0;
-	for (const source of sourceLines) {
-		let styled: string;
-		if (asInput) {
-			const match = source.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
-			styled = match
-				? theme.fg("dim", match[1] + match[2]) + theme.fg("muted", match[3] ?? "")
-				: theme.fg("muted", source);
-		} else {
-			styled = theme.fg(bodyColor, source);
-		}
-		const parts = wrapTextWithAnsi(styled, contentWidth);
+	for (const [index, source] of sourceLines.entries()) {
+		const parts = asInput
+			? wrapInputLine(source, contentWidth, theme, codeLine?.(index))
+			: wrapTextWithAnsi(theme.fg(bodyColor, source), contentWidth);
 		total += Math.max(1, parts.length);
 		if (total > limit) return true;
 	}
@@ -603,26 +700,42 @@ export function middleTruncateToWidth(text: string, width: number): string {
 	return `${left}…${right}`;
 }
 
+/**
+ * 展开卡 Input 的代码块：源行起始下标（相对 text）+ 语言 + 剥掉行首缩进的代码。
+ * standalone = 整段 Input 就是这块代码（没有 `code:` 标签），全量预览可以整段包围栏。
+ */
+export type InputCodeBlock = {
+	startLine: number;
+	language: string;
+	code: string;
+	standalone: boolean;
+};
+
+export type ToolInputBody = { text: string; codeBlock?: InputCodeBlock };
+
+/** 按字段名判定可着色的入参：codemode / mcpscript 的 `code` 都是 JS 脚本。 */
+const INPUT_CODE_LANGUAGES: Record<string, string> = { code: "javascript" };
+
 /** Pretty-print tool call args for the expanded Input section. */
-export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
-	if (args === undefined || args === null) return "";
+export function formatToolInputBody(args: unknown, maxChars = 8_000): ToolInputBody {
+	if (args === undefined || args === null) return { text: "" };
 	if (typeof args !== "object") {
 		const text = sanitizeToolResultText(String(args));
-		return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+		return { text: text.length > maxChars ? `${text.slice(0, maxChars)}…` : text };
 	}
 	if (Array.isArray(args)) {
 		try {
 			const json = JSON.stringify(args, null, 2);
-			return json.length > maxChars ? `${json.slice(0, maxChars)}…` : json;
+			return { text: json.length > maxChars ? `${json.slice(0, maxChars)}…` : json };
 		} catch {
-			return sanitizeToolResultText(String(args));
+			return { text: sanitizeToolResultText(String(args)) };
 		}
 	}
 
 	const entries = Object.entries(args as Record<string, unknown>).filter(
 		([, value]) => value !== undefined,
 	);
-	if (entries.length === 0) return "";
+	if (entries.length === 0) return { text: "" };
 
 	// Stable, human-first field order for common tools.
 	const preferred = [
@@ -648,13 +761,30 @@ export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
 	});
 
 	const lines: string[] = [];
+	let codeBlock: InputCodeBlock | undefined;
 	for (const [rawKey, value] of entries) {
 		const key = sanitizeToolResultText(rawKey);
 		if (typeof value === "string") {
 			const safeValue = sanitizeToolResultText(value);
 			if (safeValue.includes("\n")) {
-				lines.push(`${key}:`);
-				for (const line of safeValue.replace(/\t/g, "   ").split("\n")) {
+				const expanded = safeValue.replace(/\t/g, "   ");
+				const language = INPUT_CODE_LANGUAGES[key];
+				// 只有一个 code 字段时（codemode 等）整块 Input 就是脚本，`code:` 标签是噪音
+				const standaloneCode = Boolean(language) && entries.length === 1;
+				if (!standaloneCode) lines.push(`${key}:`);
+				if (language) {
+					// 缩进由 wrapInputLine 负责，着色只喂剥掉行首缩进的正文
+					codeBlock = {
+						startLine: lines.length,
+						language,
+						code: expanded
+							.split("\n")
+							.map((line) => line.replace(/^[ \t]*/, ""))
+							.join("\n"),
+						standalone: standaloneCode,
+					};
+				}
+				for (const line of expanded.split("\n")) {
 					lines.push(`  ${line}`);
 				}
 			} else {
@@ -679,7 +809,13 @@ export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
 		}
 	}
 	const text = lines.join("\n");
-	return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+	// 截断后的行号与着色行不再对齐，这时只给纯文本
+	if (text.length > maxChars) return { text: `${text.slice(0, maxChars)}…` };
+	return codeBlock ? { text, codeBlock } : { text };
+}
+
+export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
+	return formatToolInputBody(args, maxChars).text;
 }
 
 export function hasExpandableDetail(outputText: string, args: unknown): boolean {
@@ -697,7 +833,7 @@ export function renderExpandedToolResult(
 	/** mode=on 展开卡贴左；compact 等保持默认前导空格 */
 	flushLeft = false,
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
-	const inputBody = formatToolInputArgs(args);
+	const { text: inputBody, codeBlock } = formatToolInputBody(args);
 	const outputBody = body;
 	const maxOutputLines = config.expandedOutputMaxLines;
 	const maxInputLines = config.expandedInputMaxLines;
@@ -726,6 +862,7 @@ export function renderExpandedToolResult(
 				flushLeft,
 			);
 		}
+		view.setInputCode(codeBlock);
 		if (context) rememberIoView(context, view);
 		return view;
 	}

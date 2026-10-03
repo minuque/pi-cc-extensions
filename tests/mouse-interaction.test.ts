@@ -18,7 +18,7 @@ import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 } from "../extensions/renderer/tool/diff/index.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { insetComponent } from "../extensions/renderer/tool/result.ts";
+import { formatToolInputBody, insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 
@@ -79,8 +79,8 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		const hintColumn = tui.previousLines[headerRow].indexOf("to show more") + 1;
 		inputHandler?.(`\x1b[<35;${hintColumn};${headerRow + 1}M`);
 		const hoveredHeader = group.render(100)[headerRow];
-		assert.match(hoveredHeader, /• \x1b\[37m[^\x1b]*to show more\x1b\[39m/);
-		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
+		assert.match(hoveredHeader, /· \x1b\[37m[^\x1b]*to show more\x1b\[39m/);
+		assert.doesNotMatch(hoveredHeader, /\x1b\[37m·/);
 		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true);
 		assert.match(
@@ -189,7 +189,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 	installToolMouseInteraction({});
 });
 
-test("parenthesized rich diff hint highlights and expands on click", async () => {
+test("rich diff hint highlights and expands on click", async () => {
 	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	let renderRequests = 0;
 	const tool = {
@@ -200,7 +200,7 @@ test("parenthesized rich diff hint highlights and expands on click", async () =>
 		},
 		invalidate() {},
 		render() {
-			return ["✓ Edit sample.ts", " … (29 more diff lines • click to show more)"];
+			return ["✓ Edit sample.ts", " … 29 more diff lines · click to show more"];
 		},
 	};
 	const tui = {
@@ -437,6 +437,111 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 	}
 });
 
+test("codemode Input show-more 预览带 js 围栏（弹框按 Markdown 着色）", () => {
+	const grouping = installToolGrouping(() => true);
+	grouping.setTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	});
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	const opened: string[] = [];
+	try {
+		const theme = {
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+			bg: (_slot: string, text: string) => text,
+		};
+		const ui = {
+			theme,
+			requestRender() {},
+			notify() {},
+			async custom(factory: any) {
+				const host = { requestRender() {}, terminal: { rows: 40, columns: 100 } };
+				const view = factory?.(host, theme, {}, () => {});
+				if (view && typeof view.render === "function") {
+					opened.push(view.render(100).join("\n"));
+				}
+				return undefined;
+			},
+		} as any;
+		const parent = new Container() as any;
+		for (const [name, id] of [
+			["read", "fence-a"],
+			["bash", "fence-b"],
+		] as const) {
+			const component = new ToolExecutionComponent(
+				name,
+				id,
+				{},
+				{},
+				undefined,
+				ui,
+				process.cwd(),
+			) as any;
+			component.updateResult({ content: [{ type: "text", text: "out" }], isError: false });
+			parent.addChild(component);
+		}
+		const group = parent.children[0] as any;
+		assert.ok(group instanceof ToolGroupComponent);
+		group.setExpanded(true);
+
+		// 第一段 Input 就是 codemode 脚本（无 code: 标签），行数限制调小让 Input 出现 show-more
+		const { text, codeBlock } = formatToolInputBody({
+			code: 'const a = await tools.bash({ command: "ls" })\nconsole.log(a)',
+		});
+		const ioView = new ExpandedToolIoView(theme, text, "out", false, 5, 1);
+		ioView.setInputCode(codeBlock);
+		const childTool = group.children[0] as Component & {
+			setExpanded: (value: boolean) => void;
+			expanded: boolean;
+		};
+		childTool.render = (width: number) => ["✓ Codemode", ...ioView.render(Math.max(1, width - 2))];
+		childTool.setExpanded = () => {};
+		childTool.expanded = true;
+
+		const tui = {
+			terminal: { columns: 100, write() {} },
+			children: [parent],
+			previousLines: [] as string[],
+			previousViewportTop: 0,
+			requestRender() {},
+			doRender() {
+				this.previousLines = group.render(100);
+			},
+		};
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				...ui,
+				setWidget(_key: string, factory: any) {
+					factory?.(tui, theme);
+				},
+				onTerminalInput(handler: typeof inputHandler) {
+					inputHandler = handler;
+					return () => undefined;
+				},
+			},
+		});
+		tui.doRender();
+		const showMoreRow = tui.previousLines.findIndex(
+			(line: string) => line.includes("more lines") && line.includes("to show more"),
+		);
+		assert.ok(showMoreRow >= 0, "Input 截断后应有 show-more 入口");
+		const col = tui.previousLines[showMoreRow].indexOf("to show more") + 1;
+		assert.equal(inputHandler?.(`\x1b[<0;${col};${showMoreRow + 1}M`)?.consume, true);
+		// pi 的 Markdown 用完整语言名渲染围栏，并用 highlightCode 给代码行上色
+		const fenced = opened.find((body) => body.includes("```javascript"));
+		assert.ok(fenced, `Input 预览应带 javascript 围栏，实际: ${JSON.stringify(opened)}`);
+		assert.match(fenced!, /\x1b\[38;2;\d+;\d+;\d+mconst\x1b\[39m a =/, "围栏内代码着语法色");
+		assert.ok(!fenced!.includes("code:"), "预览正文不带 code: 标签");
+	} finally {
+		installToolMouseInteraction({});
+		grouping.shutdown();
+	}
+});
+
 test("collapsed diff card swallows card-wide clicks outside its remainder row", () => {
 	// 伪造 pi 0.87 的结果区 MouseRegion：左键 click 整卡 setExpanded。
 	const prototype = (ToolExecutionComponent as any).prototype;
@@ -453,7 +558,7 @@ test("collapsed diff card swallows card-wide clicks outside its remainder row", 
 	};
 	const diff = ["@@ -1,6 +1,6 @@"];
 	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
-	diff.push("+   ↳ 2 lines returned • click to show more");
+	diff.push("+   ↳ 2 lines returned · click to show more");
 	for (let index = 2; index <= 6; index++) diff.push(`+code line ${index}`);
 	const inner: any = renderRichToolResult(
 		"edit",

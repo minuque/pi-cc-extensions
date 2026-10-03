@@ -144,7 +144,10 @@ function tryOpenToolIoShowMore(region: InteractionRegion): boolean {
 	}
 	const title = section === "input" ? "Tool Input" : "Tool Output";
 	const content = section === "input" ? ioView.getInputBody() : ioView.getOutputBody();
-	void showTextPreview({ ui }, title, content || "(empty)");
+	// 整段就是代码时包一层围栏：弹框按 Markdown 渲染，围栏代码块才会着色
+	const fence = section === "input" ? ioView.getInputCodeFence() : undefined;
+	const preview = fence ? `\`\`\`${fence.language}\n${fence.code}\n\`\`\`` : content;
+	void showTextPreview({ ui }, title, preview || "(empty)");
 	return true;
 }
 
