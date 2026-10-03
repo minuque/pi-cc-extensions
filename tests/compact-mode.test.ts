@@ -491,16 +491,19 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			cardLines.every((line: string) => line === "" || visibleWidth(line) === 80),
 			"expanded round is wrapped by one width-safe tool card",
 		);
-		assert.deepEqual([...new Set(backgroundSlots)], ["userMessageBg"]);
+		// 面板铺的就是当前配置的槽位（默认 userMessageBg 由 normalizeConfig 用例守）
+		assert.deepEqual([...new Set(backgroundSlots)], [config.expandedCardBackground]);
 		// issue 46：展开面板背景槽位可配，改配置后重新渲染要跟着换。
+		// 当前值可能已被本机配置设成 toolPendingBg，换个槽位验证跟随。
 		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 		try {
 			backgroundSlots.length = 0;
-			config.expandedCardBackground = "toolPendingBg";
+			config.expandedCardBackground = targetSlot;
 			assistant1.render(80);
 			assert.deepEqual(
 				[...new Set(backgroundSlots)],
-				["toolPendingBg"],
+				[targetSlot],
 				"expanded round card follows the configured slot",
 			);
 		} finally {
@@ -603,8 +606,9 @@ test("expanded round panel repaints when the card background slot changes", () =
 				},
 			}),
 		);
+		const initialSlot = config.expandedCardBackground;
 		anchor.render(120);
-		assert.ok(backgroundSlots.includes("userMessageBg"), "panel starts on the default slot");
+		assert.ok(backgroundSlots.includes(initialSlot), "panel starts on the configured slot");
 
 		backgroundSlots.length = 0;
 		anchor.render(120);
@@ -612,12 +616,13 @@ test("expanded round panel repaints when the card background slot changes", () =
 
 		// issue 46：改槽位后已展开的回合面板必须重画，不能命中旧底色的缓存。
 		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 		try {
-			config.expandedCardBackground = "toolPendingBg";
+			config.expandedCardBackground = targetSlot;
 			anchor.render(120);
 			assert.deepEqual(
 				[...new Set(backgroundSlots)],
-				["toolPendingBg"],
+				[targetSlot],
 				"panel follows the configured slot",
 			);
 		} finally {
@@ -2028,13 +2033,14 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.ok(backgroundSlots.includes("userMessageBg"));
 		// issue 46：edit/write 展开卡单独一条取槽位路径，同样跟随配置。
 		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 		try {
 			backgroundSlots.length = 0;
-			config.expandedCardBackground = "toolPendingBg";
+			config.expandedCardBackground = targetSlot;
 			edit.render(120);
 			assert.deepEqual(
 				[...new Set(backgroundSlots)],
-				["toolPendingBg"],
+				[targetSlot],
 				"expanded edit card follows the configured slot",
 			);
 		} finally {

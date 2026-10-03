@@ -69,9 +69,14 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		},
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
-	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40
-	const cardBgAnsi = (slot: string) =>
-		slot === "toolPendingBg" ? "\x1b[48;2;40;40;40m" : "\x1b[48;2;52;53;65m";
+	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40。
+	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走。
+	const CARD_BG_ANSI: Record<string, string> = {
+		userMessageBg: "\x1b[48;2;52;53;65m",
+		toolPendingBg: "\x1b[48;2;40;40;40m",
+		customMessageBg: "\x1b[48;2;60;50;70m",
+	};
+	const cardBgAnsi = (slot: string) => CARD_BG_ANSI[slot] ?? "\x1b[48;2;90;90;90m";
 	const ui = {
 		theme: {
 			fg: (_color: string, text: string) => text,
@@ -138,8 +143,9 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
 
 		const cardLines = component.render(60);
-		// 展开面板背景统一为 user message 背景色（userMsgBg #343541），不再按状态区分。
-		assert.ok(cardLines.some((line: string) => line.includes("\x1b[48;2;52;53;65m")));
+		// 展开面板背景取配置的槽位（默认 userMsgBg #343541），不再按状态区分。
+		const panelAnsi = cardBgAnsi(config.expandedCardBackground);
+		assert.ok(cardLines.some((line: string) => line.includes(panelAnsi)));
 		assert.ok(
 			cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
 			"no toolSuccessBg remains in the expanded panel",
@@ -160,16 +166,17 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		// issue 46：展开卡背景槽位可配，渲染时现读配置。
 		// 单卡 paint 缓存不含主题/槽位，靠面板的 refresh 走 invalidate 重画。
 		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 		try {
-			config.expandedCardBackground = "toolPendingBg";
+			config.expandedCardBackground = targetSlot;
 			component.invalidate();
 			const repainted = component.render(60);
 			assert.ok(
-				repainted.some((line: string) => line.includes("\x1b[48;2;40;40;40m")),
+				repainted.some((line: string) => line.includes(cardBgAnsi(targetSlot))),
 				"expanded card uses the configured background slot",
 			);
 			assert.ok(
-				repainted.every((line: string) => !line.includes("\x1b[48;2;52;53;65m")),
+				repainted.every((line: string) => !line.includes(cardBgAnsi(previousSlot))),
 				"the previous slot leaves no expanded row behind",
 			);
 		} finally {
@@ -350,7 +357,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		});
 		assert.match(
 			taskList.render(120).join("\n"),
-			/3 tasks • 1 in progress • 1 pending • 1 completed/,
+			/3 tasks · 1 in progress · 1 pending · 1 completed/,
 		);
 		taskList.setExpanded(true);
 		assert.match(
