@@ -254,7 +254,7 @@ async function generateDefault() {
 		);
 		const longHint =
 			renderLines(longCollapsed).find((l) => l.includes("more")) ??
-			"… (more diff lines • click to show more)";
+			"… (more diff lines · click to show more)";
 
 		store.set("w-create", { fileExistedBeforeWrite: false });
 		const writeCreate = renderRichToolResult(
@@ -482,7 +482,7 @@ return g + f`,
 					...renderLines(running),
 					...renderLines(done),
 					...renderLines(expanded),
-				])}\n\n内置 codemode 的调用行只放首行有效代码（跳过 \`// @options:\`）；折叠态把子调用按工具组的树摊开，子调用全用 \`├\`、最后一行用 \`└\` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 \`result.details.calls\`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 \`Script completed / Wall time / Output:\` 头的结果与全量输出路径。`,
+				])}\n\n内置 codemode 的调用行只报工具名（脚本在展开后的 Input 里看）；折叠态把子调用按工具组的树摊开，子调用全用 \`├\`、最后一行用 \`└\` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 \`result.details.calls\`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 \`Script completed / Wall time / Output:\` 头的结果与全量输出路径。`,
 			),
 		);
 	}
@@ -672,7 +672,7 @@ async function generateCompact() {
 					[
 						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：",
 						fence([...activeLines, ...doneLines]),
-						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进 userMessageBg 面板：",
+						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：",
 						fence(expandedLines),
 						[
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",

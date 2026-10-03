@@ -11,10 +11,10 @@
  ⠋ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 
  ✗ Read missing.ts
-   ↳ ENOENT: no such…en 'missing.ts' • click to show more
+   ↳ ENOENT: no such…en 'missing.ts' · click to show more
 ```
 
 - 运行中：call 行使用 Braille 转轮。
@@ -25,7 +25,7 @@
 
 ```text
  ✓ Read extensions/index.ts (offset=10, limit=50)
-   ↳ 40 lines loaded • click to show more
+   ↳ 40 lines loaded · click to show more
 ```
 
 ## 3. 单工具展开（Input/Output 树）
@@ -47,7 +47,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 
 ```text
  ✓ Edit sample.ts
-   ↳ diff • +2 • -1 • unified [━━━━━━━━]
+   ↳ diff · +2 · -1 · unified [━━━━━━━━]
  ─────────────────────────────────────────────
  @@ -1,3 +1,4 @@
     1 │ import { run } from "./runner";
@@ -61,7 +61,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 长 diff 提示：
 
 ```text
-… (79 more diff lines • click to show more)
+… 79 more diff lines · click to show more
 ```
 
 - hover `click to show more` 时由 muted 切换为白色 text。
@@ -87,8 +87,8 @@ write 新建 / 覆盖：
 
 ```text
  ✓ Task List task list
-   ↳ 3 tasks • 1 … 1 completed • click to show more
- ↳ 3 tasks • 1 in progress • 1 pending • 1 completed
+   ↳ 3 tasks · 1 … 1 completed · click to show more
+ ↳ 3 tasks · 1 in progress · 1 pending · 1 completed
    #1 in_progress 重构 renderer
    #2 pending 补充测试
    #3 completed 发布 0.8.29
@@ -106,10 +106,10 @@ write 新建 / 覆盖：
  ↳ Stopped Task #1
 
  ✓ Task Get 3
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 
  ✓ Task Output 1
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 ```
 
 ## 6. Agent 家族
@@ -126,32 +126,32 @@ write 新建 / 覆盖：
  Agent ID: 7d535698-4ad6-47a
 
  ✓ Get Subagent Result 7d535698-4ad6-47a
-   ↳ 4 lines returned • click to show more
+   ↳ 4 lines returned · click to show more
 
  ✓ Steer Subagent 7d535698-4ad6-47a
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ Agents 并行调研
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 ```
 
 ## 7. 外部工具
 
 ```text
  ✓ Skill ponytail
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ Enter Plan Mode enable read-only planning
    ↳ 1 line returned
 
  ✓ Exit Plan Mode present plan
-   ↳ 3 lines returned • click to show more
+   ↳ 3 lines returned · click to show more
 
  ✓ Web Search pi coding agent extension
-   ↳ 3 lines returned • click to show more
+   ↳ 3 lines returned · click to show more
 
  ✓ Fetch Content https://example.com
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 ```
 
 - Enter Plan Mode 短结果可能无 `click to show more`。
@@ -160,22 +160,22 @@ write 新建 / 覆盖：
 
 ```text
  ✓ MCP call github_search_code {"query":"pi"}
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ MCP list chrome-devtools
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ MCP search screenshot (regex)
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ MCP Script emit(1)
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ mcp__github_search_code pi
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ Custom Translate {"text":"hi"}
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 ```
 
 网关的标题沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格（`list` / `search` / `describe` / `call` / `connect` / `status`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（`regex` / `includeSchemas`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 `mcp__github_search_code`），入参先走字段链（`query` / `url` / `command` / `path` …），字段链认不出的键（命名空间代理的 `tool`+`args`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：`MCP` / `MCP Script`。超过卡片宽度与 Input clip 的部分尾部截断。
@@ -183,25 +183,25 @@ write 新建 / 覆盖：
 ## 9. codemode（内置）
 
 ```text
- ⠋ Codemode const [g, f] = await Promise.all([ …
+ ⠋ Codemode
    ├ ⠋ Ffgrep "mcp" in src/
    ├ ⠋ Fffind "mcp"
    └ 2 calls running
 
- ✓ Codemode const [g, f] = await Promise.all([ …
+ ✓ Codemode
    ├ ✓ Ffgrep "mcp" in src/ 31ms
    ├ ✓ Fffind "mcp" 12ms
    ├ ✗ mcp__chrome_devtools__list_pages 240ms
-   └ 3 calls · 1 failed • click to show more
+   └ 3 calls · 1 failed · click to show more
 
- ✓ Codemode const [g, f] = await Promise.all([ …
+ ✓ Codemode
  ├ Input
- │ code:
  │   // @options: {"max_output_tokens": 1000}
  │   const [g, f] = await Promise.all([
  │     tools.ffgrep({ pattern: "mcp", path: "src/" }),
  │     tools.fffind({ pattern: "mcp" }),
- │ … +2 more lines • click to show more
+ │   ])
+ │ … +1 more lines · click to show more
  │
  └ Output
    ffgrep {"pattern":"mcp","path":"src/"} 31ms
@@ -216,14 +216,14 @@ write 新建 / 覆盖：
    Full output: C:\tmp\pi-codemode-out.txt
 ```
 
-内置 codemode 的调用行只放首行有效代码（跳过 `// @options:`）；折叠态把子调用按工具组的树摊开，子调用全用 `├`、最后一行用 `└` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 `result.details.calls`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 `Script completed / Wall time / Output:` 头的结果与全量输出路径。
+内置 codemode 的调用行只报工具名（脚本在展开后的 Input 里看）；折叠态把子调用按工具组的树摊开，子调用全用 `├`、最后一行用 `└` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 `result.details.calls`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 `Script completed / Wall time / Output:` 头的结果与全量输出路径。
 
 ## 10. 工具组（tool-grouping）
 
 ### 收起：运行中
 
 ```text
- ● Multiple Tools: 3 running • read, bash, ffgrep • clic…
+ ● Multiple Tools: 3 running · read, bash, ffgrep · clic…
  ├ ⠋ Read extensions/index.ts
  ├ ⠋ Bash npm test
  └ ⠋ Ffgrep "renderCall" in extensions/
@@ -232,7 +232,7 @@ write 新建 / 覆盖：
 ### 收起：完成/失败
 
 ```text
- ● Multiple Tools: 2 done • 1 failed • read, bash, ffgre…
+ ● Multiple Tools: 2 done · 1 failed · read, bash, ffgre…
  ├ ✓ Read extensions/index.ts
  ├ ✓ Bash npm test
  └ ✗ Ffgrep "renderCall" in extensions/
@@ -241,7 +241,7 @@ write 新建 / 覆盖：
 ### 展开：完整背景卡片
 
 ```text
- ● Multiple Tools: 2 done • 1 failed • read, bash, ffgre…
+ ● Multiple Tools: 2 done · 1 failed · read, bash, ffgre…
  ├ ✓ Read extensions/index.ts
  │ ├ Input
  │ │ path: extensions/index.ts
@@ -257,7 +257,7 @@ write 新建 / 覆盖：
  │   L7
  │   L8
  │   L9
- │   … +30 more lines • click to show more
+ │   … +30 more lines · click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test

@@ -10,10 +10,10 @@
 含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：
 
 ```text
- Running... · 9s, bash×1, read×2, grep×1 • click to show more
+ Running... · 9s, bash×1, read×2, grep×1 · click to show more
 ```
 
-展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进 userMessageBg 面板：
+展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：
 
 ```text
  checking the diff
@@ -21,10 +21,10 @@
   Thinking...
 
   ✓ Bash npm test
-    ↳ 1 line returned • click to show more
+    ↳ 1 line returned · click to show more
 
   ✓ Read a.ts
-    ↳ 2 lines loaded • click to show more
+    ↳ 2 lines loaded · click to show more
 ```
 
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
@@ -61,7 +61,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 
 ```text
  ✓ edit sample.ts (+1 -1)
-   ↳ diff • +1 • -1 • unified [━━━━━━━━]
+   ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1
@@ -69,7 +69,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
  ───────────────────────────────────────────────────────────────────────
 
  ✓ write out.ts (+1 -0)
-   ↳ created • click to show more
+   ↳ created · click to show more
 ```
 
 挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：
@@ -77,13 +77,13 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 ```text
  updated sample.ts
  ✓ edit sample.ts (+1 -1)
-   ↳ diff • +1 • -1 • unified [━━━━━━━━]
+   ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1
  ▌  1 │ const x = 2
  ───────────────────────────────────────────────────────────────────────
- Ran for 1s • click to show more
+ Ran for 1s · click to show more
  task done
 ```
 
@@ -91,7 +91,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 
 ```text
  ✓ edit sample.ts (+1 -1)
- ↳ diff • +1 • -1 • unified [━━━━━━━━]
+ ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1
