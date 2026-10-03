@@ -723,7 +723,7 @@ test("lazy-proxy tui: collapsed diff body text is not an expand entry", () => {
 	};
 	const diff = ["@@ -1,6 +1,6 @@"];
 	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
-	diff.push("+   ↳ 2 lines returned • click to show more");
+	diff.push("+   ↳ 2 lines returned · click to show more");
 	for (let index = 2; index <= 6; index++) diff.push(`+code line ${index}`);
 	const inner: any = renderRichToolResult(
 		"edit",
@@ -819,8 +819,14 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 		installToolMouseInteraction(ui.ctx);
 		ui.widget.render();
 		assistant.setExpanded(true);
-		renderer.currentLayout = fullscreenLayout(assistant, null);
-		const rendered = assistant.render(80);
+		// 展开回合的面板挂在摘要行（anchor 的兄弟组件）上，不在 anchor 内部，
+		// 视口行必须按 transcript 整段渲染定位。
+		const viewport = () => {
+			const children = (renderer as any).children as any[];
+			renderer.currentLayout = fullscreenLayout(children, null);
+			return (renderer as any).render(80) as string[];
+		};
+		const rendered = viewport();
 		const hintRow = rendered.findIndex((line: string) => line.includes("to show more"));
 		const plain = (rendered[hintRow] ?? "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		const hintCol = plain.indexOf("to show more") + 1;
@@ -833,16 +839,15 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 				if (hit) return hit;
 			}
 		};
-		const block = findThinking(assistant);
+		const block = findThinking({ children: (renderer as any).children });
 		assert.ok(block, "expanded round keeps the thinking block in the tree");
 
 		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
 		assert.equal(block!.expanded, true, "thinking hint click expands the preview");
 		assert.equal(assistant.expanded, true, "round stays open");
-		renderer.currentLayout = fullscreenLayout(assistant, null);
-		const expandedRow = assistant
-			.render(80)
-			.findIndex((line: string) => line.includes("plan the click path"));
+		const expandedRow = viewport().findIndex((line: string) =>
+			line.includes("plan the click path"),
+		);
 		assert.ok(expandedRow >= 0, "expanded thinking body is visible");
 		tui.handleViewportInput(`\x1b[<0;4;${expandedRow + 1}M`);
 		assert.equal(block!.expanded, true, "press alone keeps nested thinking expanded");
@@ -890,8 +895,14 @@ test("lazy-proxy tui: fullscreen compact expanded round tool hint expands in pla
 		installToolMouseInteraction(ui.ctx);
 		ui.widget.render();
 		assistant.setExpanded(true);
-		renderer.currentLayout = fullscreenLayout(assistant, null);
-		const rendered = assistant.render(80);
+		// 展开回合的面板挂在摘要行（anchor 的兄弟组件）上，不在 anchor 内部，
+		// 视口行必须按 transcript 整段渲染定位。
+		const viewport = () => {
+			const children = (renderer as any).children as any[];
+			renderer.currentLayout = fullscreenLayout(children, null);
+			return (renderer as any).render(80) as string[];
+		};
+		const rendered = viewport();
 		const hintRow = rendered.findIndex((line: string) => line.includes("to show more"));
 		const plain = (rendered[hintRow] ?? "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		const hintCol = plain.indexOf("to show more") + 1;
@@ -902,10 +913,9 @@ test("lazy-proxy tui: fullscreen compact expanded round tool hint expands in pla
 		assert.equal(assistant.expanded, true, "round stays open when a nested tool expands");
 
 		// 面板内非提示区（工具卡标题行）单击：收起整块面板。
-		renderer.currentLayout = fullscreenLayout(assistant, null);
-		const titleRow = assistant
-			.render(80)
-			.findIndex((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").includes("Bash"));
+		const titleRow = viewport().findIndex((line: string) =>
+			line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").includes("Bash"),
+		);
 		assert.ok(titleRow >= 0, "expanded tool keeps its title row");
 		tui.handleViewportInput(`\x1b[<0;4;${titleRow + 1}M`);
 		assert.equal(assistant.expanded, true, "press alone keeps the panel open");
@@ -1285,7 +1295,7 @@ test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights
 
 		const after = group.render(80)[row];
 		assert.notEqual(after, before);
-		assert.match(after, /\x1b\[90m •\x1b\[39m\x1b\[97m click to show more\x1b\[39m/);
+		assert.match(after, /\x1b\[90m ·\x1b\[39m\x1b\[97m click to show more\x1b\[39m/);
 
 		tui.handleViewportInput(`\x1b[<0;${col};${row + 1}M`);
 		assert.equal(ui.notifications.length, 1, "child show-more click opens preview");

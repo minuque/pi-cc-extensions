@@ -41,6 +41,7 @@ export function stripBackgroundAnsi(line: string): string {
 /** 剥离行首状态图标（展开组内工具首行复用）。 */
 export function stripLeadingStatusIcon(line: string): string {
 	return line.replace(
+		// 行首图标：ccstyle 用 `·`，pi 原生输出里还有 `•`，两种都要剥
 		/^((?:\x1b\[[0-9;]*m|[ \t]|[├└│─])*)(?:\x1b\[[0-9;]*m)*(?:[✓✗●○■⬤•·])(?:\x1b\[[0-9;]*m)*\s+/,
 		"$1",
 	);

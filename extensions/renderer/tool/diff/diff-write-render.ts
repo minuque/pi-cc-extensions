@@ -290,7 +290,7 @@ function renderWriteOverwriteGuardRows(
 	return renderSingleDiffRow(buildWriteOverwriteGuardText(guard, width), "warning", width, theme);
 }
 
-/** Folded write with `writeDiffCollapsedLines: 0`: `↳ created • click to show more`. */
+/** Folded write with `writeDiffCollapsedLines: 0`: `↳ created · click to show more`. */
 function renderWriteCollapsedHintLine(
 	wasOverwrite: boolean,
 	width: number,
@@ -304,7 +304,7 @@ function renderWriteCollapsedHintLine(
 	}
 	const actionLabel = headerLabel?.trim() || (wasOverwrite ? "overwritten" : "created");
 	const clickLabel = showMoreHintText();
-	const candidates = [`↳ ${actionLabel} • ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
+	const candidates = [`↳ ${actionLabel} · ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
 	let text = candidates[candidates.length - 1] ?? "…";
 	for (const candidate of candidates) {
 		if (visibleWidth(candidate) <= safeWidth) {

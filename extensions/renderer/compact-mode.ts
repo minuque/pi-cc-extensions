@@ -704,7 +704,7 @@ function compactEditWriteLine(
 	const iconPart = `${options.flushLeft ? "" : " "}${theme.fg(iconColor, icon)} `;
 	const namePart = theme.fg("toolTitle", name);
 	const hintText =
-		options.hint !== false && component.expanded !== true ? ` • ${showMoreHintText()}` : "";
+		options.hint !== false && component.expanded !== true ? ` · ${showMoreHintText()}` : "";
 	const fixedWidth =
 		visibleWidth(iconPart) +
 		visibleWidth(namePart) +
@@ -912,7 +912,7 @@ function compactAssistantLineComponent(
 			const pad = Math.max(0, options.pad ?? (Number(self.outputPad) || 0));
 			const available = Math.max(0, width - pad);
 			const hint = options.hint !== false;
-			const hintText = hint ? ` • ${showMoreHintText()}` : "";
+			const hintText = hint ? ` · ${showMoreHintText()}` : "";
 			const summaryWidth = Math.max(0, available - visibleWidth(hintText));
 			const resolved = typeof summary === "function" ? summary() : summary;
 			const runningActive = resolved.startsWith("Running...");
@@ -986,7 +986,7 @@ function compactStopStatusLine(status: string, pad = 0): any {
 
 /**
  * 槽位卡内的展开入口：卡里是只读围观，展开走摘要行自己的 hint，卡内不再重复提示。
- * 提示有两处来源——我们的 showMoreHintText（`… +N more lines • click to show more`）与
+ * 提示有两处来源——我们的 showMoreHintText（`… +N more lines · click to show more`）与
  * pi 原生工具卡（`… (N earlier lines, ctrl+o to expand)`），所以按渲染结果收尾裁剪。
  * 只去掉动作词，`(N more lines)` 这类计数保留。
  */
@@ -998,7 +998,8 @@ const SLOT_HINT_PATTERNS: RegExp[] = [
 	// 只去掉动作词，收尾括号与计数保留。
 	new RegExp(String.raw`,\s*[^()]*?${EXPAND_ACTION}(?=\))`),
 	// 直接挂在行尾：整段去掉。
-	new RegExp(String.raw`\s*(?:•\s*)?${EXPAND_ACTION}\s*$`),
+	// 尾部分隔点：ccstyle 统一 `·`，同时兼容旧帧与 pi 原生的 `•`
+	new RegExp(String.raw`\s*(?:[•·]\s*)?${EXPAND_ACTION}\s*$`),
 ];
 
 function stripSlotHint(line: string): string {

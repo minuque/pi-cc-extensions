@@ -81,7 +81,7 @@ export function renderHeaderRows(
 
 	const summaryPieces = [...buildDiffSummaryBasePieces(stats, theme), theme.fg("muted", mode)];
 
-	const summary = summaryPieces.join(mode === "split" ? " " : theme.fg("muted", " • "));
+	const summary = summaryPieces.join(mode === "split" ? " " : theme.fg("muted", " · "));
 	const meter = renderDiffStatBar(stats, width, theme);
 	if (!meter) {
 		return [{ text: stabilizeBackgroundResets(truncateToWidth(summary, width)), hunkIndex: null }];

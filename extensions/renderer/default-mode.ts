@@ -162,7 +162,7 @@ function taskListSummary(tasks: ParsedTask[]): string {
 		counts.completed ? `${counts.completed} completed` : "",
 	]
 		.filter(Boolean)
-		.join(" • ");
+		.join(" · ");
 }
 
 function renderExpandedTaskResult(
@@ -386,7 +386,7 @@ function createCcstyleTool(
 						: "Done";
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
 			const hintText = showMoreHintText();
-			const hintPrefix = expandable ? theme.fg("dim", " • ") : "";
+			const hintPrefix = expandable ? theme.fg("dim", " · ") : "";
 			const hint = expandable ? hintPrefix + theme.fg("dim", hintText) : "";
 			const hoveredHint = expandable ? hintPrefix + theme.fg("text", hintText) : "";
 			if (expanded) {

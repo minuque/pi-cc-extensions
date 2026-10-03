@@ -78,7 +78,7 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 	const title = theme.fg("toolTitle", kind.title(component));
 	if (!component.expanded) {
 		const hovered = component.hintHovered === true;
-		const hint = `${theme.fg("dim", " • ")}${theme.fg(hovered ? "text" : "dim", showMoreHintText())}`;
+		const hint = `${theme.fg("dim", " · ")}${theme.fg(hovered ? "text" : "dim", showMoreHintText())}`;
 		component.addChild(new Text(`${icon} ${title}${hint}`, 0, 0));
 		return;
 	}

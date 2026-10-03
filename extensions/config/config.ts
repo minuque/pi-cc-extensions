@@ -19,7 +19,7 @@ export interface ToolDisplayConfig {
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
 	editDiffCollapsedLines: number;
-	/** Write-only collapsed body lines. 0 = `↳ created • click to show more`. */
+	/** Write-only collapsed body lines. 0 = `↳ created · click to show more`. */
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
@@ -33,7 +33,7 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	editDiffCollapsedLines: 24,
 	/**
 	 * Write create/overwrite collapsed body.
-	 * 0 = `↳ created • click to show more` (stats stay on the title).
+	 * 0 = `↳ created · click to show more` (stats stay on the title).
 	 */
 	writeDiffCollapsedLines: 0,
 	diffWordWrap: true,

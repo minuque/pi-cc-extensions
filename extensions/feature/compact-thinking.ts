@@ -311,14 +311,15 @@ function hiddenPreviewHint(
 	const action = thinkingExpandAction() ?? "";
 	if (hiddenLines > 0) {
 		const noun = hiddenLines === 1 ? "line" : "lines";
+		// 与其它提示同一套写法：小圆点连接，不用逗号和括号
 		return {
-			prefix: ` • (${hiddenLines} more ${noun}${action ? ", " : ""}`,
+			prefix: ` · ${hiddenLines} more ${noun}${action ? " · " : ""}`,
 			action,
-			suffix: ")",
+			suffix: "",
 		};
 	}
 	if (forceExpandHint && isToolTuiFullscreen()) {
-		return { prefix: " • ", action: "click to show more", suffix: "" };
+		return { prefix: " · ", action: "click to show more", suffix: "" };
 	}
 	return undefined;
 }

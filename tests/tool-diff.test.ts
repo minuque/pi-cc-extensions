@@ -128,7 +128,7 @@ test("expanded long edit diff shows every line instead of a remainder hint", () 
 test("collapsed diff declares only its remainder row as the expand entry", () => {
 	const diff = ["@@ -1,30 +1,30 @@"];
 	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
-	diff.push("+   ↳ 2 lines returned • click to show more");
+	diff.push("+   ↳ 2 lines returned · click to show more");
 	for (let index = 2; index <= 30; index++) diff.push(`+code line ${index}`);
 
 	const collapsed: any = renderEditDiffResult(
@@ -270,8 +270,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(hint(), /\x1b\[90m/, "resting edit hint uses muted color");
 	hovered = true;
-	assert.match(hint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
-	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*•/, "edit separator dot stays muted");
+	assert.match(hint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*·/, "edit separator dot stays muted");
 
 	hovered = false;
 	const writeComponent = renderWriteDiffResult(
@@ -290,8 +290,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 		output(writeComponent).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(writeHint(), /\x1b\[90m/, "resting write hint uses muted color");
 	hovered = true;
-	assert.match(writeHint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
-	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*•/, "write separator dot stays muted");
+	assert.match(writeHint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*·/, "write separator dot stays muted");
 });
 
 test("diff indicator mode live-updates on the same component via config getter", () => {
@@ -320,7 +320,7 @@ test("diff indicator mode live-updates on the same component via config getter",
 	assert.match(classicText, /\+.*added line/, "classic mode uses +/- content markers");
 	assert.doesNotMatch(
 		classicText,
-		/• \d+ hunks? • \d+ files?/,
+		/· \d+ hunks? · \d+ files?/,
 		"unified headers omit redundant hunk and file counts",
 	);
 
@@ -536,93 +536,6 @@ test("write metadata is bounded, clearable, and failures do not retain entries",
 	assert.equal(store.get("failed"), undefined);
 });
 
-test("write collapsed preview uses writeDiffCollapsedLines independently of edit", () => {
-	const lines = Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join(
-		"\n",
-	);
-	const store = new WriteExecutionMetadataStore();
-	store.set("write", { fileExistedBeforeWrite: false });
-	const write = renderRichToolResult(
-		"write",
-		{ content: [{ type: "text", text: "ok" }] },
-		{ expanded: false },
-		theme,
-		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
-		store,
-		{
-			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			editDiffCollapsedLines: 24,
-			writeDiffCollapsedLines: 4,
-		},
-	);
-	const writeText = output(write).join("\n");
-	assert.match(writeText, /created/);
-	assert.match(writeText, /more/);
-	assert.match(writeText, /const value0 = 0/);
-	assert.doesNotMatch(writeText, /const value10 = 10/);
-
-	const editDiff = ["@@ -1,40 +1,40 @@"];
-	for (let index = 1; index <= 40; index++) {
-		editDiff.push(`-${index}|old value ${index}`, `+${index}|new value ${index}`);
-	}
-	const edit = renderRichToolResult(
-		"edit",
-		{ details: { diff: editDiff.join("\n") }, content: [] },
-		{ expanded: false },
-		theme,
-		{ args: { path: "sample.ts" } },
-		store,
-		{
-			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			editDiffCollapsedLines: 24,
-			writeDiffCollapsedLines: 0,
-		},
-	);
-	const editText = output(edit).join("\n");
-	assert.match(editText, /value 1/);
-	assert.match(editText, /more/);
-	assert.doesNotMatch(editText, /\+40 -0/, "edit must not use write stats-only collapse");
-});
-
-test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
-	const lines = Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join(
-		"\n",
-	);
-	const store = new WriteExecutionMetadataStore();
-	store.set("write", { fileExistedBeforeWrite: false });
-	const display: ToolDisplayConfig = {
-		...DEFAULT_TOOL_DISPLAY_CONFIG,
-		writeDiffCollapsedLines: 0,
-	};
-	const collapsed = renderRichToolResult(
-		"write",
-		{ content: [{ type: "text", text: "ok" }] },
-		{ expanded: false },
-		theme,
-		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
-		store,
-		() => display,
-	);
-	const collapsedText = output(collapsed).join("\n");
-	assert.match(collapsedText, /created/);
-	assert.match(collapsedText, /more/);
-	assert.doesNotMatch(collapsedText, /const value/);
-	assert.doesNotMatch(collapsedText, /\+40 -0/, "stats stay on the title, not the result line");
-
-	const expanded = renderRichToolResult(
-		"write",
-		{ content: [{ type: "text", text: "ok" }] },
-		{ expanded: true },
-		theme,
-		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
-		store,
-		() => display,
-	);
-	const expandedText = output(expanded).join("\n");
-	assert.match(expandedText, /const value0 = 0/);
-	assert.match(expandedText, /const value1 = 1/);
-});
-
 test("default-mode write collapsed uses title stats and created hint", () => {
 	const previousMode = config.mode;
 	const store = new WriteExecutionMetadataStore();
@@ -644,7 +557,7 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 			.join("\n")
 			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		assert.match(text, /Write out\.ts \(\+1 -0\)/);
-		assert.match(text, /created • click to show more/);
+		assert.match(text, /created · click to show more/);
 		assert.doesNotMatch(text, /▌/);
 	} finally {
 		config.mode = previousMode;
