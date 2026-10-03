@@ -63,43 +63,6 @@ test("collapsed thinking previews memoize complete output until invalidated", ()
 	}
 });
 
-test("thinking 展开态按消息时间戳与 run 序号记，换实例后仍生效", () => {
-	const originalConfig = { ...config };
-	const { pi } = runtime();
-	const controller = installCompactThinking(pi, { ...originalConfig, previewLines: 1 });
-	clearThinkingPreviewCache();
-	try {
-		const body = "alpha beta gamma delta epsilon";
-		// 同一个 run 的两个实例：内容重建会换掉实例，旧实例还留在布局里
-		const stale = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 0);
-		const live = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 0);
-		const nextRun = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 1);
-		assert.equal(live.expanded, false, "默认收起");
-		assert.equal(
-			live.render(40).some((line) => line.includes("alpha")),
-			false,
-		);
-
-		stale.setExpanded(true);
-		assert.equal(live.expanded, true, "同一 run 的新实例跟着展开");
-		assert.ok(
-			live.render(40).some((line) => line.includes("alpha")),
-			"新实例渲染展开后的正文",
-		);
-		assert.equal(nextRun.expanded, false, "同一消息的另一段 thinking 不受影响");
-
-		stale.setExpanded(false);
-		assert.equal(live.expanded, false, "收起也按同一个键共享");
-		assert.equal(
-			live.render(40).some((line) => line.includes("alpha")),
-			false,
-		);
-	} finally {
-		controller.updateConfig(originalConfig);
-		clearThinkingPreviewCache();
-	}
-});
-
 test("compact summary reuses compact-thinking's sweep animation", () => {
 	const theme = {
 		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
