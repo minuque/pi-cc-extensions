@@ -100,7 +100,9 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 ```bash
 npm test
 npm run typecheck
-./test.bat # or pi -e .
+./test.sh # macOS/Linux: load the local checkout for one run, then restore
+test.bat  # Windows: same
+# one-off run without touching settings: pi -e .
 ```
 
 ## Compatibility

@@ -100,7 +100,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 ```bash
 npm test
 npm run typecheck
-./test.bat # or pi -e .
+./test.sh # macOS/Linux：临时加载本地检出，退出后还原
+test.bat  # Windows：同上
+# 只想跑一次、不改配置：pi -e .
 ```
 
 ## 兼容性
