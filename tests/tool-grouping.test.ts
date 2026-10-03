@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
+import { config } from "../extensions/config/config.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
@@ -184,6 +185,59 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 		assert.match(expanded, /^ │ │ path: sample\.ts\s*$/m);
 		assert.match(expanded, /^ │   ok\s*$/m, "output content retains its relative indent");
 	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("expanded group rows repaint when the card background slot changes", () => {
+	const hooks = installToolGrouping(() => true);
+	const bgAnsiOf = (slot: string) =>
+		slot === "toolPendingBg" ? "\x1b[48;2;40;40;40m" : "\x1b[48;2;10;20;30m";
+	hooks.setTheme({
+		fg: (_color: string, text: string) => text,
+		bg: (slot: string, text: string) => `${bgAnsiOf(slot)}${text}\x1b[49m`,
+		getBgAnsi: bgAnsiOf,
+	});
+	const previousSlot = config.expandedCardBackground;
+	try {
+		const parent = new Container() as any;
+		const read = started("read", "bg-read");
+		const bash = started("bash", "bg-bash");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		// 固定引用：子工具 paint 命中缓存时，分组展开缓存才会复用整卡行。
+		let readPaints: string[] | undefined;
+		let bashPaints: string[] | undefined;
+		read.render = () => (readPaints ??= [" ✓ Read a.ts", " ok"]);
+		bash.render = () => (bashPaints ??= [" ✓ Bash ls", " done"]);
+		group.setExpanded(true);
+
+		const first = group.render(80);
+		assert.ok(
+			first.some((line: string) => line.includes(bgAnsiOf("userMessageBg"))),
+			"expanded panel rows use the default slot",
+		);
+		assert.ok(
+			first.every((line: string) => !line.includes(bgAnsiOf("toolPendingBg"))),
+			"default slot leaves no other background behind",
+		);
+		assert.strictEqual(group.render(80), first, "identical frame reuses the cached expanded rows");
+
+		// issue 46：改槽位后已展开的分组必须重画，不能命中旧底色的缓存行。
+		config.expandedCardBackground = "toolPendingBg";
+		const repainted = group.render(80);
+		assert.notStrictEqual(repainted, first, "slot switch drops the stale expanded rows");
+		assert.ok(
+			repainted.some((line: string) => line.includes(bgAnsiOf("toolPendingBg"))),
+			"expanded panel rows use the configured slot",
+		);
+		assert.ok(
+			repainted.every((line: string) => !line.includes(bgAnsiOf("userMessageBg"))),
+			"slot switch repaints every panel row",
+		);
+	} finally {
+		config.expandedCardBackground = previousSlot;
 		hooks.shutdown();
 	}
 });

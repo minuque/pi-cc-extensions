@@ -78,6 +78,16 @@ test("message-display: ccstyle on 时三个组件渲染为工具调用风格", (
 	assert.match(skillExpanded, /✓ Skill ponytail/);
 	assert.match(skillExpanded, /lazy/);
 	assert.ok(backgroundSlots.includes("userMessageBg"));
+	// issue 46：展开卡背景槽位可切，渲染时现读配置。
+	const previousSlot = config.expandedCardBackground;
+	try {
+		backgroundSlots.length = 0;
+		config.expandedCardBackground = "toolPendingBg";
+		skill.render(120);
+		assert.deepEqual([...new Set(backgroundSlots)], ["toolPendingBg"]);
+	} finally {
+		config.expandedCardBackground = previousSlot;
+	}
 	assert.ok(skill.render(120).length > 3, "展开卡应有上下内边距");
 	skill.setExpanded(false);
 	assert.equal(skill.render(120).length, 1, "收起后恢复单行");

@@ -711,7 +711,11 @@ test("thinking preview expands the full body and keeps that state across updateC
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const { emit, pi } = runtime();
 	const ctx = themeCtx();
-	(ctx.ui.theme as any).bg = (_slot: string, text: string) => `<bg>${text}</bg>`;
+	const bgSlots: string[] = [];
+	(ctx.ui.theme as any).bg = (slot: string, text: string) => {
+		bgSlots.push(slot);
+		return `<bg>${text}</bg>`;
+	};
 	const previewLines = 3;
 	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
 	try {
@@ -751,6 +755,19 @@ test("thinking preview expands the full body and keeps that state across updateC
 			expanded.filter((line) => /line-\d+/.test(line)).length > previewLines,
 			"expanded body shows more than the preview window",
 		);
+		assert.ok(bgSlots.includes("userMessageBg"), "expanded thinking card uses the default slot");
+
+		// issue 46：展开卡背景槽位可配，渲染时现读配置。
+		const previousSlot = ccstyleConfig.expandedCardBackground;
+		try {
+			bgSlots.length = 0;
+			ccstyleConfig.expandedCardBackground = "toolPendingBg";
+			component.render(120);
+			assert.ok(bgSlots.includes("toolPendingBg"), "thinking card follows the configured slot");
+			assert.ok(!bgSlots.includes("userMessageBg"), "the previous slot leaves no card behind");
+		} finally {
+			ccstyleConfig.expandedCardBackground = previousSlot;
+		}
 
 		component.updateContent(msg);
 		assert.equal(thinkingBlockOf(component).expanded, true);

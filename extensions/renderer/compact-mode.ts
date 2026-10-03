@@ -338,16 +338,18 @@ function toolCardBgRow(
 	const inset = (n: number) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
 	return `${inset(leftInset)}${bgAnsi}${stable}\x1b[49m${inset(rightInset)}`;
 }
-/** edit/write 展开卡：保持原样式（userMessageBg Box），不应用工具卡深色/间距改动。 */
+/** edit/write 展开卡：保持原样式（展开卡背景 Box），不应用工具卡深色/间距改动。 */
 function editWriteExpandedCard(theme: any): any {
 	return new Box(
 		1,
 		1,
-		typeof theme.bg === "function" ? (text: string) => theme.bg("userMessageBg", text) : undefined,
+		typeof theme.bg === "function"
+			? (text: string) => theme.bg(config.expandedCardBackground, text)
+			: undefined,
 	);
 }
 
-/** compact 展开面板：外卡片保持 userMessageBg；展开的 thinking 另包一层更深的
+/** compact 展开面板：外卡片保持展开卡背景；展开的 thinking 另包一层更深的
  *  内卡（自身 Box 背景与外卡同色，不区分会糊在一起），工具卡直接铺在外卡背景上。
  *  每个子卡前面补 1 行分隔（上一条已经是空行时不再补），子卡自带的首尾空行会被裁掉，
  *  避免与外卡/内卡 padding 叠出双空行。
@@ -364,7 +366,7 @@ function layoutExpandedToolCard(
 	toolHits = false,
 	live = false,
 ): { lines: string[]; hits: Array<{ child: any; start: number; end: number }> } {
-	const slot = "userMessageBg";
+	const slot = config.expandedCardBackground;
 	const toolBgAnsi = darkenBgAnsi(theme, slot);
 	/** live 每行前面的标记宽度（首行 `↳ `，其余对齐空格）。 */
 	const markerWidth = live ? 2 : 0;
@@ -471,6 +473,8 @@ function compactRoundCard(
 		| {
 				width: number;
 				theme: unknown;
+				/** 背景槽位也是面板行的输入：改配置后不能复用旧底色的整卡。 */
+				bgSlot: string;
 				paints: unknown[];
 				lines: string[];
 				hits: Array<{ child: any; start: number; end: number }>;
@@ -478,6 +482,7 @@ function compactRoundCard(
 		| undefined;
 	const layout = (width: number) => {
 		const theme = themeOf();
+		const bgSlot = config.expandedCardBackground;
 		const innerWidth = contentWidth(width);
 		const paints = children.map((child) => {
 			const lines = child.render?.(innerWidth);
@@ -487,6 +492,7 @@ function compactRoundCard(
 			paint &&
 			paint.width === width &&
 			paint.theme === theme &&
+			paint.bgSlot === bgSlot &&
 			paint.paints.length === paints.length &&
 			paint.paints.every((item, index) => item === paints[index])
 		) {
@@ -496,6 +502,7 @@ function compactRoundCard(
 		paint = {
 			width,
 			theme,
+			bgSlot,
 			paints,
 			lines: laid.lines,
 			hits: laid.hits,
@@ -719,6 +726,8 @@ const compactRichDiffCache = new WeakMap<
 type CompactEditPaintHit = {
 	width: number;
 	theme: unknown;
+	/** 展开卡的背景槽位同样参与命中判断。 */
+	bgSlot: string;
 	expanded: boolean;
 	result: unknown;
 	isPartial: boolean;
@@ -756,6 +765,7 @@ function compactEditWriteLines(
 			hit &&
 			hit.width === width &&
 			hit.theme === theme &&
+			hit.bgSlot === config.expandedCardBackground &&
 			hit.expanded === expanded &&
 			hit.result === component.result &&
 			hit.isPartial === isPartial &&
@@ -771,6 +781,7 @@ function compactEditWriteLines(
 		compactEditPaintCache.set(component, {
 			width,
 			theme,
+			bgSlot: config.expandedCardBackground,
 			expanded,
 			result: component.result,
 			isPartial,

@@ -69,11 +69,13 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		},
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
+	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40
+	const cardBgAnsi = (slot: string) =>
+		slot === "toolPendingBg" ? "\x1b[48;2;40;40;40m" : "\x1b[48;2;52;53;65m";
 	const ui = {
 		theme: {
 			fg: (_color: string, text: string) => text,
-			// userMsgBg #343541 → 48;2;52;53;65；toolSuccessBg #283228 → 48;2;40;50;40
-			bg: (_color: string, text: string) => `\x1b[48;2;52;53;65m${text}\x1b[49m`,
+			bg: (slot: string, text: string) => `${cardBgAnsi(slot)}${text}\x1b[49m`,
 		},
 		setStatus() {},
 		requestRender() {},
@@ -154,6 +156,25 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.match(plainCallLine, /✓ Bash .*…$/);
 		assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
+
+		// issue 46：展开卡背景槽位可配，渲染时现读配置。
+		// 单卡 paint 缓存不含主题/槽位，靠面板的 refresh 走 invalidate 重画。
+		const previousSlot = config.expandedCardBackground;
+		try {
+			config.expandedCardBackground = "toolPendingBg";
+			component.invalidate();
+			const repainted = component.render(60);
+			assert.ok(
+				repainted.some((line: string) => line.includes("\x1b[48;2;40;40;40m")),
+				"expanded card uses the configured background slot",
+			);
+			assert.ok(
+				repainted.every((line: string) => !line.includes("\x1b[48;2;52;53;65m")),
+				"the previous slot leaves no expanded row behind",
+			);
+		} finally {
+			config.expandedCardBackground = previousSlot;
+		}
 		component.setExpanded(false);
 		assert.equal(component.children.includes(component.selfRenderContainer), true);
 

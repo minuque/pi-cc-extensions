@@ -60,6 +60,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
   "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
+  "expandedCardBackground": "userMessageBg", // 展开卡背景槽位；userMessageBg 与用户消息同色，toolPendingBg 为中性灰
   "inputClip": 0,                          // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "scrollStepLines": 3,                    // fullscreen 滚轮步进

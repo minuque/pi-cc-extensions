@@ -699,7 +699,9 @@ export function installToolExpandedBackground(): () => void {
 			if (box) {
 				box.paddingX = 1;
 				box.paddingY = 1;
-				if (box.setBgFn) box.setBgFn((text: string) => theme.bg("userMessageBg", text));
+				if (box.setBgFn) {
+					box.setBgFn((text: string) => theme.bg(config.expandedCardBackground, text));
+				}
 			}
 		},
 		original,

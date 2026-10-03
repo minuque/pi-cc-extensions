@@ -82,11 +82,11 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 		component.addChild(new Text(`${icon} ${title}${hint}`, 0, 0));
 		return;
 	}
-	// 展开卡与 tool 一致：userMessageBg + 上下左右 1 格
+	// 展开卡与 tool 一致：同一个展开卡背景 + 上下左右 1 格
 	component.paddingX = 1;
 	component.paddingY = 1;
 	if (typeof theme.bg === "function" && typeof component.setBgFn === "function") {
-		component.setBgFn((text: string) => theme.bg("userMessageBg", text));
+		component.setBgFn((text: string) => theme.bg(config.expandedCardBackground, text));
 	}
 	component.addChild(new Text(`${icon} ${title}`, 0, 0));
 	component.addChild(new Spacer(1));

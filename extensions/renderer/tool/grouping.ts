@@ -6,6 +6,7 @@ import {
 	visibleWidth,
 	type Component,
 } from "@earendil-works/pi-tui";
+import { config } from "../../config/config.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
@@ -216,6 +217,8 @@ type ExpandedGroupCache = {
 	hover: boolean;
 	theme: unknown;
 	fullscreen: boolean;
+	/** 背景槽位参与命中判断：改配置后已展开的分组不能继续用旧底色。 */
+	bgSlot: string;
 	paints: readonly unknown[];
 	lines: string[];
 };
@@ -395,6 +398,7 @@ export class ToolGroupComponent extends Container {
 				expandedHit.hover === this.hintHovered &&
 				expandedHit.theme === this.patch.theme &&
 				expandedHit.fullscreen === isToolTuiFullscreen() &&
+				expandedHit.bgSlot === config.expandedCardBackground &&
 				expandedHit.paints.length === childPaints.length &&
 				expandedHit.paints.every((paint, index) => paint === childPaints[index])
 			) {
@@ -443,8 +447,8 @@ export class ToolGroupComponent extends Container {
 			}
 		}
 		if (this._expanded) {
-			// 展开面板统一用 user message 背景色（ccstyle 约定），不按状态区分。
-			const backgroundSlot = "userMessageBg";
+			// 展开面板统一一个背景槽位（ccstyle 约定），不按状态区分。
+			const backgroundSlot = config.expandedCardBackground;
 			for (const line of expandedLines) {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}
@@ -454,6 +458,7 @@ export class ToolGroupComponent extends Container {
 				hover: this.hintHovered,
 				theme: this.patch.theme,
 				fullscreen: isToolTuiFullscreen(),
+				bgSlot: backgroundSlot,
 				paints: childPaints ?? [],
 				lines,
 			};
