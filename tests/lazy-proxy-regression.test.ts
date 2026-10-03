@@ -845,6 +845,24 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
 		assert.equal(block!.expanded, true, "thinking hint click expands the preview");
 		assert.equal(assistant.expanded, true, "round stays open");
+
+		// 提示行里靠右的列解析到布局里的另一份实例：两种列都要展开，且不收起面板
+		block!.setExpanded(false);
+		assistant.setExpanded(true);
+		const moreCol = plain.indexOf("more", hintCol - 1) + 1;
+		tui.handleViewportInput(`\x1b[<0;${moreCol};${hintRow + 1}M`);
+		tui.handleViewportInput(`\x1b[<0;${moreCol};${hintRow + 1}m`);
+		assert.equal(block!.expanded, true, "提示区右侧的列也展开 thinking");
+		assert.equal(assistant.expanded, true, "面板保持展开");
+
+		// 提示行左侧（标题、隐藏行计数）也是 thinking 的点击区：这里不能收起整块面板
+		block!.setExpanded(false);
+		assistant.setExpanded(true);
+		tui.handleViewportInput(`\x1b[<0;4;${hintRow + 1}M`);
+		tui.handleViewportInput(`\x1b[<0;4;${hintRow + 1}m`);
+		assert.equal(block!.expanded, true, "提示行左侧也展开 thinking");
+		assert.equal(assistant.expanded, true, "面板保持展开");
+
 		const expandedRow = viewport().findIndex((line: string) =>
 			line.includes("plan the click path"),
 		);
