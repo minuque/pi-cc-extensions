@@ -76,7 +76,7 @@ test("异常数据不崩：calls 非数组、元素为 null、args 非字符串"
 	assert.deepEqual(codemodeCalls(messy), []);
 	assert.deepEqual(
 		codemodeCollapsedLines({ result: messy, theme, running: false, isError: false, width: 100 }),
-		["   Done • click to show more"],
+		["   Done · click to show more"],
 	);
 
 	const withNulls = result({}, [null, { name: "read" }, call({ args: 42 })]);
@@ -91,7 +91,7 @@ test("异常数据不崩：calls 非数组、元素为 null、args 非字符串"
 	assert.match(lines[0]!, /^ {3}├ \S Tool$/);
 	assert.match(lines[1]!, /^ {3}├ \S Read$/);
 	assert.match(lines[2]!, /^ {3}├ \S Ffgrep 31ms$/);
-	assert.equal(lines[3], "   └ 3 calls · 2 lines output • click to show more");
+	assert.equal(lines[3], "   └ 3 calls · 2 lines output · click to show more");
 });
 
 test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
@@ -104,7 +104,7 @@ test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
 	});
 	assert.deepEqual(lines, [
 		'   ├ ✓ Ffgrep "mcp" in src/ 31ms',
-		"   └ 1 call · 2 lines output • click to show more",
+		"   └ 1 call · 2 lines output · click to show more",
 	]);
 });
 
@@ -143,7 +143,7 @@ test("折叠态：子调用过多时只列最近 8 条", () => {
 	assert.equal(lines[0], "   ├ … 3 earlier calls");
 	assert.equal(lines.length, 10);
 	assert.match(lines[1]!, /^ {3}├ ✓ Read src\/f4\.ts 8ms$/);
-	assert.equal(lines[9], "   └ 11 calls · 2 lines output • click to show more");
+	assert.equal(lines[9], "   └ 11 calls · 2 lines output · click to show more");
 });
 
 test("折叠态：没有子调用时不画衔接符", () => {
@@ -154,18 +154,64 @@ test("折叠态：没有子调用时不画衔接符", () => {
 		isError: true,
 		width: 100,
 	});
-	assert.deepEqual(lines, ["   2 lines output • click to show more"]);
+	assert.deepEqual(lines, ["   2 lines output · click to show more"]);
 });
 
-test("折叠态：认不出的参数（pi 截断过）原样当载荷", () => {
+/** 与 pi 的 previewArgs 同口径：超 200 字符的紧凑 JSON 从尾部切掉，补 "..."。 */
+const previewArgs = (args: unknown) => {
+	const json = JSON.stringify(args) ?? "";
+	return json.length > 200 ? `${json.slice(0, 197)}...` : json;
+};
+
+test("折叠态：截断的子调用参数仍能取到 path（issue 46 截图里的 edit 行）", () => {
+	const raw = previewArgs({
+		path: "README.en.md",
+		edits: [
+			{
+				oldText: "./test.bat # or pi -e .",
+				newText:
+					"./test.sh # macOS/Linux: load the local checkout, then restore\ntest.bat  # Windows: same\n# one-off run without touching settings: pi -e .",
+			},
+		],
+	});
+	assert.ok(raw.length === 200 && raw.endsWith("..."), "precondition: pi 截断过");
+	assert.throws(() => JSON.parse(raw), "precondition: 截断串本身解析不了");
 	const lines = codemodeCollapsedLines({
-		result: result({}, [call({ args: '{"pattern":"mcp","p…' })]),
+		result: result({}, [call({ name: "edit", args: raw })]),
 		theme,
 		running: false,
 		isError: false,
 		width: 120,
 	});
-	assert.match(lines[0]!, /^ {3}├ ✓ Ffgrep \{"pattern":"mcp","p… 31ms$/);
+	assert.match(lines[0]!, /^ {3}├ ✓ Edit README\.en\.md 31ms$/);
+});
+
+test("折叠态：截断的检索参数恢复出 pattern，路径范围照旧", () => {
+	const raw = previewArgs({
+		pattern: "mcp",
+		path: "src/",
+		glob: "**/*.ts",
+		extra: "x".repeat(200),
+	});
+	const lines = codemodeCollapsedLines({
+		result: result({}, [call({ args: raw })]),
+		theme,
+		running: false,
+		isError: false,
+		width: 120,
+	});
+	assert.match(lines[0]!, /^ {3}├ ✓ Ffgrep "mcp" in src\/ 31ms$/);
+});
+
+test("折叠态：截断后也认不出的参数原样当载荷", () => {
+	const lines = codemodeCollapsedLines({
+		result: result({}, [call({ args: '["mcp","src/…' })]),
+		theme,
+		running: false,
+		isError: false,
+		width: 120,
+	});
+	assert.match(lines[0]!, /^ {3}├ ✓ Ffgrep \["mcp","src\/… 31ms$/);
 });
 
 test("汇总片段：宽度不够时从尾部丢，不断词", () => {
@@ -176,7 +222,7 @@ test("汇总片段：宽度不够时从尾部丢，不断词", () => {
 		isError: true,
 		width: 60,
 	});
-	assert.equal(lines.at(-1), "   └ 2 calls · 1 failed • click to show more");
+	assert.equal(lines.at(-1), "   └ 2 calls · 1 failed · click to show more");
 });
 
 test("展开正文：全部子调用（含错误）+ 去头输出 + 全量输出路径", () => {
@@ -245,7 +291,7 @@ test("折叠组件：只有汇总行是展开入口，运行中不可展开", ()
 		isError: false,
 	});
 	assert.equal(
-		running.isCollapsedHintLine("   └ 1 call · 2 lines output • click to show more"),
+		running.isCollapsedHintLine("   └ 1 call · 2 lines output · click to show more"),
 		false,
 	);
 
@@ -255,11 +301,11 @@ test("折叠组件：只有汇总行是展开入口，运行中不可展开", ()
 		running: false,
 		isError: false,
 	});
-	assert.equal(done.isCollapsedHintLine("   └ 1 call · 2 lines output • click to show more"), true);
+	assert.equal(done.isCollapsedHintLine("   └ 1 call · 2 lines output · click to show more"), true);
 	assert.equal(done.isCollapsedHintLine('   ├ ✓ Ffgrep "mcp" in src/ 31ms'), false);
 	assert.deepEqual(done.render(100), [
 		'   ├ ✓ Ffgrep "mcp" in src/ 31ms',
-		"   └ 1 call · 2 lines output • click to show more",
+		"   └ 1 call · 2 lines output · click to show more",
 	]);
 });
 
@@ -268,10 +314,10 @@ test("折叠态：hover 时展开提示用 text 色（与其它折叠卡一致�
 	// 带标签的 theme 桩里标签算可见宽度，给足宽度免得被截断
 	const base = { result: result(), theme: tagged, running: false, isError: false, width: 140 };
 	// truncateToWidth 会在行尾补 ANSI reset，断言不锚尾
-	assert.match(codemodeCollapsedLines(base).at(-1)!, /<dim>• click to show more/);
+	assert.match(codemodeCollapsedLines(base).at(-1)!, /<dim>· click to show more/);
 	assert.match(
 		codemodeCollapsedLines({ ...base, hovered: true }).at(-1)!,
-		/<text>• click to show more/,
+		/<text>· click to show more/,
 	);
 
 	// 组件在 render() 内取 hover，跟着鼠标 motion 的 requestRender 走
@@ -283,9 +329,9 @@ test("折叠态：hover 时展开提示用 text 色（与其它折叠卡一致�
 		isError: false,
 		isHovered: () => hovered,
 	});
-	assert.match(component.render(100).at(-1)!, /<dim>• click/);
+	assert.match(component.render(100).at(-1)!, /<dim>· click/);
 	hovered = true;
-	assert.match(component.render(100).at(-1)!, /<text>• click/);
+	assert.match(component.render(100).at(-1)!, /<text>· click/);
 });
 
 test("折叠态：耗时/费用沿用官方格式（空格相连）", () => {
@@ -308,22 +354,18 @@ test("折叠态：耗时/费用沿用官方格式（空格相连）", () => {
 	assert.equal(seconds[0], '   ├ ✓ Ffgrep "mcp" in src/ 1.2s');
 });
 
-test("调用行：跳过 // @options 取首行代码，后面还有内容时补省略号", () => {
-	assert.deepEqual(
-		toolCallSummary("codemode", {
-			code: '// @options: {"max_output_tokens": 1000}\nconst a = await tools.read({ path: "a.ts" })\nreturn a',
-		}),
-		{ main: "Codemode", detail: "", payload: 'const a = await tools.read({ path: "a.ts" }) …' },
-	);
-	// 只有一行：不加省略号
-	assert.deepEqual(toolCallSummary("codemode", { code: "return 1" }), {
-		main: "Codemode",
-		detail: "",
-		payload: "return 1",
-	});
-	// 空脚本：只剩标题
-	assert.deepEqual(toolCallSummary("codemode", { code: "// @options: {}\n" }), {
-		main: "Codemode",
-		detail: "",
-	});
+test("调用行：codemode 只报工具名，代码不进标题（其他工具不受影响）", () => {
+	// 多行、单行、空脚本都只剩标题：脚本在展开后的 Input 里看
+	const multiline =
+		'// @options: {"max_output_tokens": 1000}\nconst a = await tools.read({ path: "a.ts" })\nreturn a';
+	for (const args of [{ code: multiline }, { code: "return 1" }, { code: "// @options: {}\n" }]) {
+		assert.deepEqual(toolCallSummary("codemode", args), { main: "Codemode", detail: "" });
+	}
+
+	// 同类工具不受影响：mcpscript 仍把代码当载荷，bash/read 仍走字段链
+	assert.equal(toolCallSummary("mcpscript", { code: "return 1" }).payload, "return 1");
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).main, "Bash ls -a");
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, undefined);
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read a.ts");
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).payload, undefined);
 });

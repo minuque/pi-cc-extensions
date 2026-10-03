@@ -191,14 +191,20 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 
 test("expanded group rows repaint when the card background slot changes", () => {
 	const hooks = installToolGrouping(() => true);
-	const bgAnsiOf = (slot: string) =>
-		slot === "toolPendingBg" ? "\x1b[48;2;40;40;40m" : "\x1b[48;2;10;20;30m";
+	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走
+	const ANSI_BY_SLOT: Record<string, string> = {
+		userMessageBg: "\x1b[48;2;10;20;30m",
+		toolPendingBg: "\x1b[48;2;40;40;40m",
+		customMessageBg: "\x1b[48;2;50;60;70m",
+	};
+	const bgAnsiOf = (slot: string) => ANSI_BY_SLOT[slot] ?? "\x1b[48;2;90;90;90m";
 	hooks.setTheme({
 		fg: (_color: string, text: string) => text,
 		bg: (slot: string, text: string) => `${bgAnsiOf(slot)}${text}\x1b[49m`,
 		getBgAnsi: bgAnsiOf,
 	});
 	const previousSlot = config.expandedCardBackground;
+	const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 	try {
 		const parent = new Container() as any;
 		const read = started("read", "bg-read");
@@ -215,25 +221,25 @@ test("expanded group rows repaint when the card background slot changes", () => 
 
 		const first = group.render(80);
 		assert.ok(
-			first.some((line: string) => line.includes(bgAnsiOf("userMessageBg"))),
-			"expanded panel rows use the default slot",
+			first.some((line: string) => line.includes(bgAnsiOf(previousSlot))),
+			"expanded panel rows use the configured slot",
 		);
 		assert.ok(
-			first.every((line: string) => !line.includes(bgAnsiOf("toolPendingBg"))),
-			"default slot leaves no other background behind",
+			first.every((line: string) => !line.includes(bgAnsiOf(targetSlot))),
+			"configured slot leaves no other background behind",
 		);
 		assert.strictEqual(group.render(80), first, "identical frame reuses the cached expanded rows");
 
 		// issue 46：改槽位后已展开的分组必须重画，不能命中旧底色的缓存行。
-		config.expandedCardBackground = "toolPendingBg";
+		config.expandedCardBackground = targetSlot;
 		const repainted = group.render(80);
 		assert.notStrictEqual(repainted, first, "slot switch drops the stale expanded rows");
 		assert.ok(
-			repainted.some((line: string) => line.includes(bgAnsiOf("toolPendingBg"))),
+			repainted.some((line: string) => line.includes(bgAnsiOf(targetSlot))),
 			"expanded panel rows use the configured slot",
 		);
 		assert.ok(
-			repainted.every((line: string) => !line.includes(bgAnsiOf("userMessageBg"))),
+			repainted.every((line: string) => !line.includes(bgAnsiOf(previousSlot))),
 			"slot switch repaints every panel row",
 		);
 	} finally {
@@ -269,7 +275,7 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 			.filter((line: string) => line.trim());
 		assert.match(
 			agentLines[0],
-			/^ ● Multiple Tools: 2 done • Agent, get_subagent_result • click to show more$/,
+			/^ ● Multiple Tools: 2 done · Agent, get_subagent_result · click to show more$/,
 		);
 		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
 		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462-95d0-40b");
@@ -301,10 +307,10 @@ test("group status and tool labels use the injected active theme", () => {
 		const hovered = group.render(200).join("\n");
 		assert.match(
 			hovered,
-			/<dim>•<\/dim> <text>click to show more<\/text>/,
+			/<dim>·<\/dim> <text>click to show more<\/text>/,
 			"hover highlights text without highlighting the dot",
 		);
-		assert.doesNotMatch(hovered, /<text>•/);
+		assert.doesNotMatch(hovered, /<text>·/);
 		group.setExpanded(true);
 		const expanded = group.render(200).join("\n");
 		assert.equal(expanded.match(/✓/g)?.length, 2, "expanded children keep one check each");
@@ -514,6 +520,46 @@ test("default 与 grouping 共用同一份摘要取值链", () => {
 				`${name} / ${variant}`,
 			);
 		}
+	}
+});
+
+test("折叠分组行：codemode 报结果统计，没结果时退回代码预览", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const code = 'const r = await tools.bash({ command: "ls" })';
+		const blocks = (output: string) => [
+			{ type: "text", text: "Script completed\nWall time 1.02 seconds\nOutput:\n" },
+			{ type: "text", text: output },
+		];
+		const settled = (id: string, calls: unknown[], output: string) => {
+			const component = started("codemode", id, { code });
+			component.updateResult({ content: blocks(output), details: { calls }, isError: false });
+			return component;
+		};
+		const one = { id: "c/1", name: "bash", args: '{"command":"ls"}', status: "ok", durationMs: 11 };
+		const another = {
+			id: "c/2",
+			name: "read",
+			args: '{"path":"a.ts"}',
+			status: "ok",
+			durationMs: 3,
+		};
+
+		const parent = new Container() as any;
+		parent.addChild(settled("cd-1", [one], "one"));
+		parent.addChild(settled("cd-2", [one, another], "two\nthree"));
+		parent.addChild(started("codemode", "cd-3", { code }));
+		const rows = parent.children[0]
+			.render(120)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trimEnd());
+
+		assert.match(rows[1]!, /^ ● Codemode: 1 running · 2 done/);
+		assert.equal(rows[2], " ├ ✓ Codemode 1 call · 1 line output");
+		assert.equal(rows[3], " ├ ✓ Codemode 2 calls · 2 lines output");
+		// 还没结果：退回参数摘要，同样不带 code 预览
+		assert.match(rows[4]!, /^ └ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Codemode$/);
+	} finally {
+		hooks.shutdown();
 	}
 });
 

@@ -115,23 +115,59 @@ function callMeta(call: CodemodeNestedCall): string[] {
 	return out;
 }
 
-/** 子调用参数：能解析就复用字段链摘要，解析不了（pi 截断过）就贴原文。 */
+/** 截断的紧凑 JSON 里能恢复出的对象；complete 标记是否原本就完整。 */
+type ParsedCallArgs = { args: Record<string, unknown>; complete: boolean };
+
+/** 截断串尾部补闭合符号的候选：先试收字符串，再收数组与对象。 */
+const REPAIR_CLOSERS = ['"}', '"}]}', '"}}', "}", "]}"];
+
+/**
+ * 子调用参数：先直接解析；pi 从尾部截断过（超 200 字符）的串再补救一次——
+ * 逐字回退补上缺少的闭合符号，取最长能解析出的对象。截断保留的是开头字段，
+ * path/command/pattern 这类先出现的取得到；被切掉的尾部值本就无从恢复。
+ */
+function parseCallArgs(raw: string): ParsedCallArgs | undefined {
+	try {
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return { args: parsed, complete: true };
+		}
+		return undefined;
+	} catch {
+		// 截断串：走补救
+	}
+	const body = raw.endsWith("...") ? raw.slice(0, -3) : raw;
+	if (!body.startsWith("{")) return undefined;
+	for (let end = body.length; end > 0; end--) {
+		for (const closer of REPAIR_CLOSERS) {
+			try {
+				const parsed = JSON.parse(body.slice(0, end) + closer);
+				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+				// 空对象等于没恢复出字段，再短也只会更空
+				if (Object.keys(parsed).length === 0) return undefined;
+				return { args: parsed, complete: false };
+			} catch {
+				// 试下一个闭合符号 / 下一个长度
+			}
+		}
+	}
+	return undefined;
+}
+
+/** 子调用参数：能解析就复用字段链摘要，认不出（截断后也不成形）就贴原文。 */
 function callSummary(call: CodemodeNestedCall): ToolCallSummary {
 	const name = String(call?.name ?? "tool");
 	const title = mcpToolTitle({ toolName: name }) ?? humanizeToolLabel(name);
 	const raw = typeof call?.args === "string" ? call.args : "";
-	if (raw) {
-		try {
-			const parsed = JSON.parse(raw);
-			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-				return toolCallSummary(name, parsed, { title, variant: "default" });
-			}
-		} catch {
-			// 截断过的参数：原样当载荷显示
-		}
-		return { main: title, detail: "", payload: raw };
+	if (!raw) return { main: title, detail: "" };
+	const parsed = parseCallArgs(raw);
+	if (parsed) {
+		const summary = toolCallSummary(name, parsed.args, { title, variant: "default" });
+		// 截断串只恢复出部分字段：字段链认出来了才用，认不出仍旧贴原文，
+		// 免得把不完整的 JSON 当成完整入参摊开。
+		if (parsed.complete || summary.payload === undefined) return summary;
 	}
-	return { main: title, detail: "" };
+	return { main: title, detail: "", payload: raw };
 }
 
 function statusIcon(status: unknown, theme: any): string {
@@ -199,7 +235,7 @@ export function codemodeCollapsedLines(options: {
 	const summary = codemodeSummaryParts(calls, codemodeOutputLineCount(result), running);
 	// 没有子调用时不画衔接符，避免孤零零一个 └
 	const prefix = shown.length > 0 ? `${INDENT}${fg("dim", "└")} ` : INDENT;
-	const hint = running ? "" : ` ${fg(options.hovered ? "text" : "dim", `• ${showMoreHintText()}`)}`;
+	const hint = running ? "" : ` ${fg(options.hovered ? "text" : "dim", `· ${showMoreHintText()}`)}`;
 	const bodyWidth = Math.max(1, rowWidth - visibleWidth(prefix) - visibleWidth(hint));
 	const body = fg(isError ? "error" : "muted", fitSummaryParts(summary, bodyWidth));
 	lines.push(truncateToWidth(`${prefix}${body}${hint}`, rowWidth, ""));

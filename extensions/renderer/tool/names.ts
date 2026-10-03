@@ -255,11 +255,9 @@ export function toolCallSummary(
 		const code = typeof args.code === "string" && args.code ? clip(args.code) : "";
 		return code ? { main: title, detail: "", payload: code } : { main: title, detail: "" };
 	}
-	// 内置 codemode：折叠行只放首行有效代码，后面还有内容就给个省略号
-	if (name === "codemode") {
-		const code = codemodeCodePreview(args);
-		return code ? { main: title, detail: "", payload: code } : { main: title, detail: "" };
-	}
+	// 内置 codemode：标题只报工具名。脚本很长，塞进行首既挤又读不出重点；
+	// 要看代码展开 Input，要看跑了什么看子调用行。
+	if (name === "codemode") return { main: title, detail: "" };
 
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
@@ -393,26 +391,6 @@ function mcpGatewaySummary(title: string, args: any): ToolCallSummary | undefine
 	if (action) return { main: `${title} ${action}`, detail: "" };
 	if (Object.keys(args).length === 0) return { main: `${title} status`, detail: "" };
 	return undefined;
-}
-
-/**
- * codemode 脚本的折叠预览：跳过 `// @options:` 行取第一行有效代码，
- * 后面还有内容时补一个省略号（展开后由工具卡显示完整脚本）。
- */
-function codemodeCodePreview(args: any): string {
-	const source: string = typeof args?.code === "string" ? args.code : "";
-	const code = source.replace(/\r/g, "");
-	if (!code.trim()) return "";
-	const lines = code.split("\n");
-	let index = 0;
-	while (index < lines.length) {
-		const line = lines[index]!.trim();
-		if (line !== "" && !/^\/\/\s*@options\b/.test(line)) break;
-		index += 1;
-	}
-	const first = (lines[index] ?? "").trim();
-	if (!first) return "";
-	return lines.slice(index + 1).some((line) => line.trim() !== "") ? `${first} …` : first;
 }
 
 /** 网关 call 的内层工具入参：对象转单行 JSON；网关允许传 JSON 字符串，就原样取用不再转义。 */
