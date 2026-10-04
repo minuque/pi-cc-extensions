@@ -84,12 +84,15 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerCurrency": "USD", // display currency for the footer cost
   "footerCurrencyRate": null, // display units per 1 cost unit; null keeps the original amount
   "footerNerdIcons": true, // Nerd Font glyphs for git/cache; false = plain text
+  "footerGitStatsMode": "working", // working (default): uncommitted; branch: cumulative net changes
   "footerHiddenKeys": [], // hidden plugin chip keys
   "footerLine1Keys": ["pi-usage"], // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
   "footerLine2Keys": [], // line2 plugin chip order (after cwd/git)
   "footerLine3Keys": [], // line3 overflow slot; painted only when a chip is visible
 }
 ```
+
+**Git change statistics**: switch modes in `/ccstyle → Footer → Git changes`; changes apply immediately. `working` compares HEAD with the working tree, including staged and unstaged edits. `branch` compares the merge base with the working tree, including committed and uncommitted net changes—not the sum of per-commit line counts. The base is selected in order: `origin/HEAD`, local `main`, local `master` (not the current branch's upstream). Only existing local refs are used; no automatic fetch. Both modes exclude untracked files (stage them with `git add` to include them) and binary line counts. Statistics are hidden if the base/merge base is unavailable or the query fails.
 
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse (dragging inside the card selects text).

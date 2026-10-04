@@ -14,7 +14,6 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +28,10 @@ import {
 	visibleFooterPluginTexts,
 	type FooterChipLayout,
 } from "./footer-layout.ts";
+import { createGitStatsRefresher, readGitStats, type GitStats } from "./git-stats.ts";
 import { MCP_STATUS_KEY, buildMcpChip } from "./mcp-chip.ts";
+
+export { parseGitStats } from "./git-stats.ts";
 
 const GIT_REFRESH_INTERVAL_MS = 10_000;
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -49,8 +51,6 @@ export function footerGlyphs(nerdIcons: boolean): { git: string; cache: string; 
 		: { git: "", cache: "", mcp: "" };
 }
 
-type GitStats = { add: number; del: number };
-
 type XaiFooterReport = {
 	buckets?: Array<{
 		id?: string;
@@ -61,19 +61,6 @@ type XaiFooterReport = {
 	}>;
 	metrics?: Array<{ id?: string; value?: unknown }>;
 };
-
-export function parseGitStats(stdout: string): GitStats {
-	let add = 0;
-	let del = 0;
-	for (const line of stdout.split("\n")) {
-		const match = line.match(/^(\d+)\s+(\d+)/);
-		if (match) {
-			add += Number(match[1]);
-			del += Number(match[2]);
-		}
-	}
-	return { add, del };
-}
 
 export function formatXaiFooterChip(report: XaiFooterReport): string | undefined {
 	const included = report.buckets?.find((b) => b.id === "included-allowance");
@@ -181,7 +168,12 @@ function colorUsageChip(theme: any, text: string): string {
 }
 
 let currentTui: any = undefined;
-let refreshCurrentGitStats: (() => void) | undefined;
+let refreshCurrentGitStats: ((reset?: boolean) => void) | undefined;
+
+/** Apply a /ccstyle Git mode change immediately, without recreating the footer. */
+export function refreshFooterGitStats(): void {
+	refreshCurrentGitStats?.(true);
+}
 let refreshCurrentUsage: (() => void) | undefined;
 let refreshCurrentMcpChip: (() => void) | undefined;
 /** 工具/命令列表在 pi API 上，而 footer 工厂只拿得到 ctx，加载时记下来。 */
@@ -193,33 +185,23 @@ const createCustomFooterFactory =
 		const sep = theme.fg("muted", " · ");
 		const joinChips = (parts: string[]) => parts.filter(Boolean).join(sep);
 		let gitStats: GitStats | undefined;
-		let gitRefreshRunning = false;
 		let localUsageChip = "";
 		let usageGeneration = 0;
 		let usageAbort: AbortController | undefined;
 		let disposed = false;
 
-		// 查询在 render 外执行，保留旧值；仅统计结果真正变化时重绘，避免周期性清零抖动。
-		const refreshGitStats = () => {
-			if (gitRefreshRunning || disposed) return;
-			gitRefreshRunning = true;
-			execFile(
-				"git",
-				["diff", "--numstat", "HEAD"],
-				{ cwd: ctx.cwd, timeout: 2000 },
-				(err, stdout) => {
-					gitRefreshRunning = false;
-					if (err || disposed) return;
-					const next = parseGitStats(stdout);
-					if (gitStats?.add === next.add && gitStats.del === next.del) return;
-					gitStats = next;
-					tui.requestRender();
-				},
-			);
-		};
-		refreshCurrentGitStats = refreshGitStats;
-		refreshGitStats();
-		const gitRefreshTimer = setInterval(refreshGitStats, GIT_REFRESH_INTERVAL_MS);
+		// 查询在 render 外执行；模式/分支变化清旧值，普通轮询只在统计变化时重绘。
+		const gitRefresher = createGitStatsRefresher({
+			getMode: () => config.footerGitStatsMode,
+			query: (mode) => readGitStats(ctx.cwd, mode),
+			onChange: (next) => {
+				gitStats = next;
+				tui.requestRender();
+			},
+		});
+		refreshCurrentGitStats = gitRefresher.refresh;
+		gitRefresher.refresh();
+		const gitRefreshTimer = setInterval(() => gitRefresher.refresh(), GIT_REFRESH_INTERVAL_MS);
 		gitRefreshTimer.unref?.();
 
 		const refreshUsage = () => {
@@ -315,9 +297,9 @@ const createCustomFooterFactory =
 		const mcpRefreshTimer = setInterval(refreshMcp, MCP_REFRESH_INTERVAL_MS);
 		mcpRefreshTimer.unref?.();
 
-		// 分支变化时同步更新分支名和相对 HEAD 的统计。
+		// 分支变化时重新选择基准，并拒绝旧分支的异步查询结果。
 		const unsubBranch = footerData.onBranchChange(() => {
-			refreshGitStats();
+			gitRefresher.refresh(true);
 			tui.requestRender();
 		});
 
@@ -470,6 +452,7 @@ const createCustomFooterFactory =
 			},
 			dispose(): void {
 				disposed = true;
+				gitRefresher.dispose();
 				usageAbort?.abort();
 				usageAbort = undefined;
 				clearInterval(gitRefreshTimer);

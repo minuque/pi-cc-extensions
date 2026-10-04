@@ -46,6 +46,20 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 	);
 });
 
+test("footerGitStatsMode defaults to working and accepts only known modes", () => {
+	assert.equal(normalizeConfig({}).footerGitStatsMode, "working");
+	assert.equal(normalizeConfig({ footerGitStatsMode: "working" }).footerGitStatsMode, "working");
+	assert.equal(normalizeConfig({ footerGitStatsMode: "branch" }).footerGitStatsMode, "branch");
+	for (const value of ["invalid", "", true, 42, null]) {
+		assert.equal(normalizeConfig({ footerGitStatsMode: value }).footerGitStatsMode, "working");
+	}
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerGitStats=working/);
+	assert.match(
+		formatConfigStatus(normalizeConfig({ footerGitStatsMode: "branch" })),
+		/footerGitStats=branch/,
+	);
+});
+
 test("footerGlyphs drops Nerd Font icons when disabled", () => {
 	assert.deepEqual(footerGlyphs(true), {
 		git: FOOTER_NERD_ICON_GIT,
@@ -251,4 +265,8 @@ test("formatXaiFooterChip prefers included percent then prepaid dollars", () => 
 test("parseGitStats sums numstat add/delete columns", () => {
 	assert.deepEqual(parseGitStats("10\t2\ta.ts\n3\t1\tb.ts\n"), { add: 13, del: 3 });
 	assert.deepEqual(parseGitStats(""), { add: 0, del: 0 });
+	assert.deepEqual(parseGitStats("-\t-\timage.png\n15\t9\tsource.ts\n60\t0\tnew-test.ts\n"), {
+		add: 75,
+		del: 9,
+	});
 });

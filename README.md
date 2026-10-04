@@ -84,12 +84,15 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerCurrency": "USD",                 // 底栏费用的显示币种
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 表示不换算
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
+  "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
   "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
   "footerLine2Keys": [],                   // line2 插件芯片顺序（接在 cwd/git 后）
   "footerLine3Keys": []                    // line3 备用槽，有可见芯片才占行
 }
 ```
+
+**Git 改动统计**：在 `/ccstyle → Footer → Git changes` 切换，立即生效。`working` 统计相对 HEAD 的已暂存和未暂存净改动；`branch` 统计基准分支共同祖先到当前工作区的累计净改动，包含已提交和未提交修改，不是各 commit 行数相加。基准按 `origin/HEAD → 本地 main → 本地 master` 自动选择（不是当前分支的 upstream），仅使用本地已有 refs，不会自动 fetch。两种模式都不计未跟踪文件（`git add` 后计入）和二进制文件行数；无法确定基准/共同祖先或查询失败时隐藏统计。
 
 > [!TIP]
 > **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起（卡内拖动为选中文本）。

@@ -11,6 +11,7 @@ import {
 	applyCustomFooter,
 	clearCustomFooter,
 	getFooterStatusSnapshot,
+	refreshFooterGitStats,
 } from "../feature/shell/footer.ts";
 import {
 	footerChipDescription,
@@ -37,6 +38,7 @@ import {
 	EXPANDED_INPUT_MAX_LINES_VALUES,
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
+	FOOTER_GIT_STATS_MODES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
 	pickInputClip,
@@ -52,6 +54,7 @@ import {
 	type Config,
 	type DiffIndicatorMode,
 	type DiffViewMode,
+	type FooterGitStatsMode,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -79,6 +82,12 @@ function excludeRenderersDescription(names: readonly string[]): string {
 function customFooterDescription(enabled: boolean): string {
 	if (!enabled) return "Pi native footer restored. Chip layout below still applies when turned on.";
 	return "Custom status bar with model, context, cache, cost, git, and plugin chips.";
+}
+
+function footerGitStatsDescription(mode: FooterGitStatsMode): string {
+	return mode === "branch"
+		? "Net changes since the merge base, including uncommitted edits. Base: origin/HEAD, then local main/master. Untracked files excluded; unavailable stats hidden."
+		: "Uncommitted net changes relative to HEAD (default). Includes staged and unstaged edits; excludes untracked files.";
 }
 
 function pluginChipsDescription(): string {
@@ -713,6 +722,13 @@ export async function showCcstylePanel(
 			currentValue: config.enableCustomFooter ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const footerGitStatsSetting = {
+			id: "footerGitStatsMode",
+			label: "Git changes",
+			description: footerGitStatsDescription(config.footerGitStatsMode),
+			currentValue: config.footerGitStatsMode,
+			values: FOOTER_GIT_STATS_MODES,
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Plugin chips",
@@ -768,6 +784,14 @@ export async function showCcstylePanel(
 				footerCurrencyRateSetting.currentValue = footerCurrencyRateLabel(config.footerCurrencyRate);
 				if (config.enableCustomFooter) applyCustomFooter(ctx);
 				ctx.ui.notify(`Updated ${id}: ${footerCurrencyRateSetting.currentValue}`, "info");
+				return;
+			}
+			if (id === "footerGitStatsMode") {
+				updateConfig({ footerGitStatsMode: value as FooterGitStatsMode });
+				footerGitStatsSetting.currentValue = config.footerGitStatsMode;
+				footerGitStatsSetting.description = footerGitStatsDescription(config.footerGitStatsMode);
+				refreshFooterGitStats();
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
 			if (id === "footerNerdIcons") {
@@ -992,6 +1016,7 @@ export async function showCcstylePanel(
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,
+					footerGitStatsSetting,
 					pluginChipsSetting,
 				],
 			},
