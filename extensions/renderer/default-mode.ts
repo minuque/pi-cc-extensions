@@ -86,7 +86,7 @@ type GlobalToolRenderPatch = {
 	active: boolean;
 	mode: () => CompactStyleMode;
 	wrap: (tool: any) => any;
-	byDefinition: WeakMap<object, any>;
+	byDefinition: WeakMap<object, Map<string, any>>;
 	byName: Map<string, any>;
 	downstream: ToolRenderMethods;
 	installed: ToolRenderMethods;
@@ -459,16 +459,22 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 
 function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): any {
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
+	const name = String(component.toolName || definition?.name || "tool");
 	if (definition && typeof definition === "object") {
-		let wrapped = patch.byDefinition.get(definition);
+		let byName = patch.byDefinition.get(definition);
+		if (!byName) {
+			byName = new Map();
+			patch.byDefinition.set(definition, byName);
+		}
+		let wrapped = byName.get(name);
 		if (!wrapped) {
-			wrapped = patch.wrap(definition);
-			patch.byDefinition.set(definition, wrapped);
+			// Pi may supply ToolRenderers without the tool's name/label.
+			wrapped = patch.wrap({ ...definition, name });
+			byName.set(name, wrapped);
 		}
 		return wrapped;
 	}
 
-	const name = String(component.toolName || "tool");
 	let wrapped = patch.byName.get(name);
 	if (!wrapped) {
 		wrapped = patch.wrap({ name, label: name });
