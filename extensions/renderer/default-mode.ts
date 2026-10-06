@@ -85,7 +85,7 @@ type GlobalToolRenderPatch = {
 	prototype: any;
 	active: boolean;
 	mode: () => CompactStyleMode;
-	wrap: (tool: any) => any;
+	wrap: (tool: any, toolName: string) => any;
 	byDefinition: WeakMap<object, Map<string, any>>;
 	byName: Map<string, any>;
 	downstream: ToolRenderMethods;
@@ -217,8 +217,8 @@ function renderExpandedTaskResult(
 function createCcstyleTool(
 	originalTool: any,
 	writeExecutionMetadata: WriteExecutionMetadataStore,
+	toolName: string,
 ): any {
-	const toolName = originalTool.name;
 	const label = originalTool.label || toolName;
 	const defaultTitle = label === toolName ? humanizeToolLabel(label) : label;
 	// MCP 工具直接用 adapter 暴露的真实工具名，不做人性化
@@ -468,8 +468,7 @@ function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): an
 		}
 		let wrapped = byName.get(name);
 		if (!wrapped) {
-			// Pi may supply ToolRenderers without the tool's name/label.
-			wrapped = patch.wrap({ ...definition, name });
+			wrapped = patch.wrap(definition, name);
 			byName.set(name, wrapped);
 		}
 		return wrapped;
@@ -477,7 +476,7 @@ function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): an
 
 	let wrapped = patch.byName.get(name);
 	if (!wrapped) {
-		wrapped = patch.wrap({ name, label: name });
+		wrapped = patch.wrap({ name, label: name }, name);
 		patch.byName.set(name, wrapped);
 	}
 	return wrapped;
@@ -574,7 +573,8 @@ function installGlobalToolRendering(
 		prototype,
 		active: true,
 		mode: () => config.mode,
-		wrap: (tool: any) => createCcstyleTool(tool, writeExecutionMetadata),
+		wrap: (tool: any, toolName: string) =>
+			createCcstyleTool(tool, writeExecutionMetadata, toolName),
 		byDefinition: new WeakMap(),
 		byName: new Map(),
 		downstream,
