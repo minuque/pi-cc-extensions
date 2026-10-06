@@ -437,12 +437,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 			if (other !== component && other.expanded) {
 				// 展开 round 卡内 thinking/工具时，外层 compact 卡是它的容器，不能收起。
 				// 面板挂在摘要行时，anchor 与摘要行是同一张外层卡，点内部工具不能收起它。
-				if (
-					(isThinking || isTool) &&
-					isCompactAssistantComponent(other) &&
-					(other === target.owner || other === target.owner?.roundAnchor)
-				)
-					continue;
+				// 同一回合的摘要行、anchor 和其他消息都是外层面板，收起任一个都会关掉整块。
+				if ((isThinking || isTool) && isSameExpandedRound(other, target.owner)) continue;
 				other.setExpanded(false);
 				other.invalidate?.();
 			}
@@ -489,6 +485,13 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	(target.group ?? component).invalidate?.();
 	tui.requestRender?.();
 	return true;
+}
+
+/** 点到的组件和外层卡是否属于同一张 compact 回合面板。 */
+function isSameExpandedRound(other: any, owner: any): boolean {
+	if (!owner || !isCompactAssistantComponent(other)) return false;
+	const anchor = owner.roundAnchor ?? owner;
+	return other === owner || other === anchor || other.roundAnchor === anchor;
 }
 
 /**

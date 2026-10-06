@@ -535,6 +535,12 @@ function isToolComponent(value: any): boolean {
 	return value instanceof ToolExecutionComponent;
 }
 
+/** 成员离开回合后不再算外层面板，避免点别的卡时被跳过收起。 */
+function clearRoundAnchor(component: any): void {
+	if (!component || Object.getOwnPropertyDescriptor(component, "roundAnchor")?.get) return;
+	delete component.roundAnchor;
+}
+
 function detachAssistantExpansion(component: any): void {
 	if (
 		typeof component?.[ASSISTANT_SET_EXPANDED_KEY] !== "function" ||
@@ -546,6 +552,7 @@ function detachAssistantExpansion(component: any): void {
 	delete component[ASSISTANT_SET_EXPANDED_KEY];
 	delete component[ASSISTANT_TOGGLE_ROUND_KEY];
 	delete component[ASSISTANT_REENTRY_KEY];
+	clearRoundAnchor(component);
 }
 
 /** 供 mouse-interaction 识别可点击的 compact assistant 行（仅 compact 模式下生效）。 */
@@ -1698,6 +1705,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		for (const [component, message] of round.messages) {
 			component.lastMessage = message;
 			ensureAssistantSetExpanded(component);
+			// 尾行用 getter 指向 anchor；成员用同名属性，点内部工具时能认出同一回合。
+			if (!Object.getOwnPropertyDescriptor(component, "roundAnchor")?.get) {
+				component.roundAnchor = round.anchor;
+			}
 			component[ASSISTANT_TOGGLE_ROUND_KEY] = (expanded: boolean) => {
 				const wasExpanded = round.anchor.expanded === true;
 				if (expanded && !wasExpanded) capturePanelViewport(round.anchor);
@@ -1949,7 +1960,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (hasToolCalls) {
 			let round = roundByComponent.get(this);
 			if (hasText && (!round || round.anchor !== this)) {
-				if (round) round.messages.delete(this);
+				if (round) {
+					round.messages.delete(this);
+					clearRoundAnchor(this);
+				}
 				if (activeRound) finishRound(activeRound);
 				round = createRound(this, message);
 				roundByComponent.set(this, round);
@@ -1969,6 +1983,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				// 最终回答开始后，当前组件恢复原生文本；它已完成的 thinking
 				// 留在上一轮摘要中，避免再次生成独立 Thought 行。
 				round.messages.delete(this);
+				clearRoundAnchor(this);
 				round.detachedMessages.push(previousMessage);
 				roundByComponent.delete(this);
 				finishRound(round);
@@ -1978,6 +1993,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				// 围观态下 anchor 还挂着槽位卡，必须重绘才能收回。
 				endRound(round, true);
 				roundByComponent.delete(this);
+				clearRoundAnchor(this);
 				return passThroughAssistant(this, message);
 			}
 			if (activeRound) finishRound(activeRound);

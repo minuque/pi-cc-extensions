@@ -962,6 +962,82 @@ test("lazy-proxy tui: fullscreen compact expanded round tool hint expands in pla
 	}
 });
 
+test("lazy-proxy tui: expanding a tool keeps every message of the same round open", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	setMessageDisplayTheme({ fg: (_color: string, text: string) => text } as any);
+	const compact = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const first = {
+		role: "assistant",
+		timestamp: 1,
+		content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo one" } }],
+	};
+	const second = {
+		role: "assistant",
+		timestamp: 2,
+		content: [
+			{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "cat settings.json" } },
+		],
+	};
+	const anchor = new AssistantMessageComponent(first as any, true) as any;
+	const later = new AssistantMessageComponent(second as any, true) as any;
+	const toolOf = (id: string, command: string) => {
+		const tool = new ToolExecutionComponent(
+			"bash",
+			id,
+			{ command },
+			{},
+			undefined,
+			{ theme: theme(), requestRender() {} } as any,
+			process.cwd(),
+		) as any;
+		tool.executionStarted = true;
+		tool.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		return tool;
+	};
+	const firstTool = toolOf("b1", "echo one");
+	const secondTool = toolOf("b2", "cat settings.json");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(anchor, null, terminal);
+	(renderer as any).children = [anchor, firstTool, later, secondTool];
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render();
+		anchor.updateContent(first);
+		later.updateContent(second);
+		anchor.setExpanded(true);
+		assert.equal(later.expanded, true, "second message joins the expanded round");
+		const viewport = () => {
+			renderer.currentLayout = fullscreenLayout((renderer as any).children, null);
+			return (renderer as any).render(80) as string[];
+		};
+		const rendered = viewport();
+		const hintRow = rendered.findIndex((line: string) => line.includes("cat settings.json"));
+		const row = rendered.findIndex(
+			(line: string, index: number) => index > hintRow && line.includes("to show more"),
+		);
+		const plain = (rendered[row] ?? "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const hintCol = plain.indexOf("to show more") + 1;
+		assert.ok(row >= 0 && hintCol > 0, `expected second tool hint, got: ${plain}`);
+		tui.handleViewportInput(`\x1b[<0;${hintCol};${row + 1}M`);
+		assert.equal(secondTool.expanded, true, "clicked tool expands");
+		assert.equal(anchor.expanded, true, "round anchor stays open");
+		assert.equal(later.expanded, true, "later message in the same round stays open");
+		assert.ok(
+			viewport().some((line: string) => line.includes("echo one")),
+			"outer panel still shows the other tool",
+		);
+	} finally {
+		installToolMouseInteraction({});
+		compact.shutdown();
+		config.mode = previousMode;
+		setMessageDisplayTheme(previousTheme);
+	}
+});
+
 test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", async () => {
 	const wrap = (label: string) => ({
 		render: (width: number) => (width === 80 ? [label] : [label, `${label}-2`]),
