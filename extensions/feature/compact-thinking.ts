@@ -324,7 +324,7 @@ function hiddenPreviewHint(
 	return undefined;
 }
 
-const expandedThinking = new Set<number>();
+const expandedThinking = new Set<string>();
 
 /** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、展开卡单击整块收起（拖动选择文本时不收起）。 */
 export class ThinkingPreviewBlock implements Component {
@@ -335,7 +335,6 @@ export class ThinkingPreviewBlock implements Component {
 	readonly runStartIndex: number;
 	private style: (text: string) => string;
 	private theme: Theme | undefined;
-	private _expanded: boolean;
 	private hintHovered = false;
 	private collapsedMemo:
 		| {
@@ -363,7 +362,6 @@ export class ThinkingPreviewBlock implements Component {
 		this.runStartIndex = runStartIndex;
 		this.style = style;
 		this.theme = theme;
-		this._expanded = expandedThinking.has(messageTimestamp);
 	}
 
 	private paint(color: string, text: string): string {
@@ -372,18 +370,20 @@ export class ThinkingPreviewBlock implements Component {
 			: text;
 	}
 
+	/** 展开态按消息时间戳 + run 序号共享：面板重排/内容重建换掉实例后，
+	 *  布局里的旧实例与 render 的新实例同键，点谁都能展开。 */
 	get expanded(): boolean {
-		return this._expanded;
+		return expandedThinking.has(`${this.messageTimestamp}:${this.runStartIndex}`);
 	}
 
 	setExpanded(expanded: boolean): void {
-		if (this._expanded !== expanded) this.collapsedMemo = undefined;
-		this._expanded = expanded;
-		if (expanded) expandedThinking.add(this.messageTimestamp);
+		const key = `${this.messageTimestamp}:${this.runStartIndex}`;
+		if (expanded) expandedThinking.add(key);
 		else {
-			expandedThinking.delete(this.messageTimestamp);
+			expandedThinking.delete(key);
 			evictExpandedWraps(this.messageTimestamp, this.runStartIndex);
 		}
+		this.collapsedMemo = undefined;
 	}
 
 	setHintHovered(hovered: boolean): void {
@@ -392,7 +392,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	private headingLines(width: number, hiddenLines: number, padding: number): string[] {
-		const hint = this._expanded
+		const hint = this.expanded
 			? undefined
 			: hiddenPreviewHint(hiddenLines, Boolean(this.text) && config.previewLines <= 0);
 		if (!hint) return new Text(this.heading, padding, 0).render(width);
@@ -412,10 +412,10 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	private bodyLines(width: number, padding: number): { lines: string[]; hiddenLines: number } {
-		if (!this.text || (config.previewLines <= 0 && !this._expanded)) {
+		if (!this.text || (config.previewLines <= 0 && !this.expanded)) {
 			return { lines: [], hiddenLines: 0 };
 		}
-		if (this._expanded) {
+		if (this.expanded) {
 			return {
 				lines: wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width),
 				hiddenLines: 0,
@@ -426,7 +426,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	render(width: number) {
-		if (this._expanded) {
+		if (this.expanded) {
 			const innerWidth = Math.max(1, width - 2);
 			const body = this.bodyLines(innerWidth, 0);
 			const heading = this.headingLines(innerWidth, 0, 0);

@@ -845,6 +845,20 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
 		assert.equal(block!.expanded, true, "thinking hint click expands the preview");
 		assert.equal(assistant.expanded, true, "round stays open");
+
+		// 标题列（非动作词）也是 thinking 的展开入口：完整单击不能收起整块面板。
+		block!.setExpanded(false);
+		const collapsedRow = viewport().findIndex((line: string) => line.includes("to show more"));
+		const officialBefore = renderer.officialInputs.length;
+		tui.handleViewportInput(`\x1b[<0;4;${collapsedRow + 1}M`);
+		tui.handleViewportInput(`\x1b[<0;4;${collapsedRow + 1}m`);
+		assert.equal(block!.expanded, true, "title column expands the thinking");
+		assert.equal(assistant.expanded, true, "round stays open after title click");
+		assert.equal(
+			renderer.officialInputs.slice(officialBefore).some((data) => data.includes("M")),
+			false,
+			"press is consumed by the extension",
+		);
 		const expandedRow = viewport().findIndex((line: string) =>
 			line.includes("plan the click path"),
 		);
