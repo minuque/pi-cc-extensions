@@ -949,8 +949,11 @@ function compactAssistantLineComponent(
 					text = `${styleCompactThinkingText(heading, theme)}${plain(tools)}`;
 				}
 			}
-			const hintColor = hover ? "text" : "dim";
-			const line = `${text}${hintText ? theme.fg(hintColor, hintText) : ""}`;
+			// 圆点保持 dim；hover 只高亮可点击文字。
+			const hintPart = hint
+				? `${theme.fg("dim", " · ")}${theme.fg(hover ? "text" : "dim", showMoreHintText())}`
+				: "";
+			const line = `${text}${hintPart}`;
 			const rendered = `${" ".repeat(pad)}${truncateToWidth(line, available, "")}`;
 			const lines = leadingBlank ? ["", rendered] : [rendered];
 			paint = {

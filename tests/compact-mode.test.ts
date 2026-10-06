@@ -25,6 +25,7 @@ import {
 	isCompactAssistantComponent,
 	markCompactRoundToolExpanded,
 	refreshCompactModeComponents,
+	setHoveredCompactAssistant,
 	styleCompactThinkingText,
 } from "../extensions/renderer/compact-mode.ts";
 import { componentAtLocalRow } from "../extensions/renderer/mouse/layout.ts";
@@ -334,6 +335,33 @@ test("Dim thinking text 开启时摘要行整行走 dim", () => {
 		assert.ok(!dim.includes("<muted>"), `开启时整行不该再有 muted: ${dim}`);
 	} finally {
 		config.dimThinkingText = previousDim;
+		config.mode = previousMode;
+		setMessageDisplayTheme(previousTheme);
+	}
+});
+
+test("摘要行 hover 只高亮展开文字，圆点保持 dim", () => {
+	const previousTheme = getMessageDisplayTheme();
+	const previousMode = config.mode;
+	setMessageDisplayTheme({
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	} as any);
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const msg = toolCallMessage(1);
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const summaryLine = () => {
+			assistant.invalidate?.();
+			return assistant.render(200).find((line: string) => line.includes("click to show more"));
+		};
+		assert.match(summaryLine() ?? "", /<dim> · <\/dim><dim>click to show more<\/dim>/);
+		setHoveredCompactAssistant(assistant);
+		assert.match(summaryLine() ?? "", /<dim> · <\/dim><text>click to show more<\/text>/);
+	} finally {
+		setHoveredCompactAssistant(null);
+		hooks.shutdown();
 		config.mode = previousMode;
 		setMessageDisplayTheme(previousTheme);
 	}

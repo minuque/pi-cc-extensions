@@ -17,6 +17,7 @@ import claudeCodeStyleExtension, {
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
 import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
+import { getScrollButtonVisible } from "../extensions/renderer/mouse/scroll.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
@@ -922,9 +923,23 @@ test("lazy-proxy tui: fullscreen compact expanded round tool hint expands in pla
 		const hintCol = plain.indexOf("to show more") + 1;
 		assert.ok(hintRow >= 0 && hintCol > 0, `expected tool hint in round card, got: ${plain}`);
 
+		// 跟随底部时展开：必须先关掉跟随，否则变高的内容把外层面板顶出视口。
+		const scrollCalls: Array<[number, any]> = [];
+		const view = renderer.currentLayout.primaryScrollView;
+		view.isFollowingEnd = true;
+		view.scrollTo = (top: number, options: any) => {
+			scrollCalls.push([top, options]);
+			if (options?.disableFollow) view.isFollowingEnd = false;
+		};
 		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
 		assert.equal(bash.expanded, true, "tool hint click expands the tool in place");
 		assert.equal(assistant.expanded, true, "round stays open when a nested tool expands");
+		assert.deepEqual(scrollCalls, [[0, { disableFollow: true }]], "expand pins the viewport");
+		assert.equal(
+			getScrollButtonVisible(),
+			true,
+			"back-to-bottom button shows after leaving follow",
+		);
 
 		// 面板内非提示区（工具卡标题行）单击：收起整块面板。
 		const titleRow = viewport().findIndex((line: string) =>

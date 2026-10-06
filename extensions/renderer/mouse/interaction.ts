@@ -449,6 +449,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 		}
 		// 展开 round 卡内工具时，让 compact 的强制折叠放行它（非 round 内工具为空操作）。
 		if (isTool) markCompactRoundToolExpanded(component);
+		// compact 摘要行自己记展开前的视口（收起时还原跟随），这里不动它。
+		if (!isAssistant) keepViewportOnExpand(tui);
 		component.setExpanded(true);
 		clearPendingCollapsePress();
 	} else {
@@ -487,6 +489,18 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	(target.group ?? component).invalidate?.();
 	tui.requestRender?.();
 	return true;
+}
+
+/**
+ * 原地展开时停在当前滚动位置：transcript 跟随底部时，内容变高会把视口拖到底，
+ * 点击的行和它上方的外层面板被顶出屏幕。展开前关掉跟随，点击行留在原位。
+ */
+function keepViewportOnExpand(tui: any): void {
+	const view = tui.getPrimaryScrollView?.();
+	if (typeof view?.scrollTo !== "function" || typeof view.scrollTop !== "number") return;
+	view.scrollTo(view.scrollTop, { disableFollow: true });
+	// 已脱离底部跟随：亮出回到底部按钮，新输出到来时仍有入口。
+	if (view.isFollowingEnd === false) setScrollButtonVisible(true);
 }
 
 /**

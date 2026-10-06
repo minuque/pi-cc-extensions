@@ -235,7 +235,10 @@ export function codemodeCollapsedLines(options: {
 	const summary = codemodeSummaryParts(calls, codemodeOutputLineCount(result), running);
 	// 没有子调用时不画衔接符，避免孤零零一个 └
 	const prefix = shown.length > 0 ? `${INDENT}${fg("dim", "└")} ` : INDENT;
-	const hint = running ? "" : ` ${fg(options.hovered ? "text" : "dim", `· ${showMoreHintText()}`)}`;
+	// 圆点保持 dim；hover 只高亮可点击文字。
+	const hint = running
+		? ""
+		: ` ${fg("dim", "·")} ${fg(options.hovered ? "text" : "dim", showMoreHintText())}`;
 	const bodyWidth = Math.max(1, rowWidth - visibleWidth(prefix) - visibleWidth(hint));
 	const body = fg(isError ? "error" : "muted", fitSummaryParts(summary, bodyWidth));
 	lines.push(truncateToWidth(`${prefix}${body}${hint}`, rowWidth, ""));

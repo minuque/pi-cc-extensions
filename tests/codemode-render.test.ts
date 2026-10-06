@@ -309,15 +309,18 @@ test("折叠组件：只有汇总行是展开入口，运行中不可展开", ()
 	]);
 });
 
-test("折叠态：hover 时展开提示用 text 色（与其它折叠卡一致）", () => {
+test("折叠态：hover 只高亮提示文字，圆点保持 dim（与其它折叠卡一致）", () => {
 	const tagged = { fg: (color: string, text: string) => `<${color}>${text}</${color}>` } as any;
 	// 带标签的 theme 桩里标签算可见宽度，给足宽度免得被截断
 	const base = { result: result(), theme: tagged, running: false, isError: false, width: 140 };
 	// truncateToWidth 会在行尾补 ANSI reset，断言不锚尾
-	assert.match(codemodeCollapsedLines(base).at(-1)!, /<dim>· click to show more/);
+	assert.match(
+		codemodeCollapsedLines(base).at(-1)!,
+		/<dim>·<\/dim> <dim>click to show more<\/dim>/,
+	);
 	assert.match(
 		codemodeCollapsedLines({ ...base, hovered: true }).at(-1)!,
-		/<text>· click to show more/,
+		/<dim>·<\/dim> <text>click to show more<\/text>/,
 	);
 
 	// 组件在 render() 内取 hover，跟着鼠标 motion 的 requestRender 走
@@ -329,9 +332,9 @@ test("折叠态：hover 时展开提示用 text 色（与其它折叠卡一致�
 		isError: false,
 		isHovered: () => hovered,
 	});
-	assert.match(component.render(100).at(-1)!, /<dim>· click/);
+	assert.match(component.render(100).at(-1)!, /<dim>·<\/dim> <dim>click/);
 	hovered = true;
-	assert.match(component.render(100).at(-1)!, /<text>· click/);
+	assert.match(component.render(100).at(-1)!, /<dim>·<\/dim> <text>click/);
 });
 
 test("折叠态：耗时/费用沿用官方格式（空格相连）", () => {
