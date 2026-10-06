@@ -193,7 +193,7 @@ const createCustomFooterFactory =
 		// 查询在 render 外执行；模式/分支变化清旧值，普通轮询只在统计变化时重绘。
 		const gitRefresher = createGitStatsRefresher({
 			getMode: () => config.footerGitStatsMode,
-			query: (mode) => readGitStats(ctx.cwd, mode),
+			query: (mode, signal) => readGitStats(ctx.cwd, mode, signal),
 			onChange: (next) => {
 				gitStats = next;
 				tui.requestRender();

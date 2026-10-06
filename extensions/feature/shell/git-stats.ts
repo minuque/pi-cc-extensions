@@ -24,9 +24,15 @@ export function parseGitStats(stdout: string): GitStats {
 export async function readGitStats(
 	cwd: string,
 	mode: FooterGitStatsMode,
+	signal?: AbortSignal,
 ): Promise<GitStats | undefined> {
 	const git = async (args: string[]) => {
-		const { stdout } = await execFileAsync("git", args, { cwd, timeout: 2000 });
+		const { stdout } = await execFileAsync("git", args, {
+			cwd,
+			timeout: 2000,
+			maxBuffer: 16 * 1024 * 1024,
+			signal,
+		});
 		return stdout.trim();
 	};
 	try {
@@ -38,6 +44,7 @@ export async function readGitStats(
 					baseCommit = await git(["rev-parse", "--verify", `${ref}^{commit}`]);
 					break;
 				} catch {
+					if (signal?.aborted) return undefined;
 					// Missing/dangling remote HEAD: try the local default branches.
 				}
 			}
@@ -56,7 +63,7 @@ export async function readGitStats(
 /** Coalesce overlapping refreshes and reject stale results after a mode/branch change. */
 export function createGitStatsRefresher(options: {
 	getMode: () => FooterGitStatsMode;
-	query: (mode: FooterGitStatsMode) => Promise<GitStats | undefined>;
+	query: (mode: FooterGitStatsMode, signal: AbortSignal) => Promise<GitStats | undefined>;
 	onChange: (stats: GitStats | undefined) => void;
 }): { refresh: (reset?: boolean) => void; dispose: () => void } {
 	let stats: GitStats | undefined;
@@ -65,6 +72,7 @@ export function createGitStatsRefresher(options: {
 	let running = false;
 	let pending = false;
 	let disposed = false;
+	let controller: AbortController | undefined;
 	const publish = (next: GitStats | undefined) => {
 		if (stats?.add === next?.add && stats?.del === next?.del) return;
 		stats = next;
@@ -81,15 +89,18 @@ export function createGitStatsRefresher(options: {
 			return;
 		}
 		running = true;
+		const queryController = new AbortController();
+		controller = queryController;
 		void (async () => {
 			let next: GitStats | undefined;
 			try {
-				next = await options.query(nextMode);
+				next = await options.query(nextMode, queryController.signal);
 			} catch {
 				// Failed queries clear the old numbers rather than leaving a stale chip.
 			} finally {
 				if (!disposed && request === generation && nextMode === options.getMode()) publish(next);
 				running = false;
+				controller = undefined;
 				if (pending && !disposed) {
 					pending = false;
 					refresh();
@@ -102,6 +113,7 @@ export function createGitStatsRefresher(options: {
 		dispose: () => {
 			disposed = true;
 			generation++;
+			controller?.abort();
 		},
 	};
 }

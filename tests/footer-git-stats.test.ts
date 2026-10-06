@@ -31,7 +31,7 @@ function repository(t: test.TestContext, initialBranch = "main") {
 	const write = (name: string, content: string) => writeFileSync(join(cwd, name), content);
 	const commit = () => {
 		git("add", ".");
-		git("commit", "-m", "fixture");
+		git("commit", "--quiet", "-m", "fixture");
 	};
 	write("source.txt", "one\ntwo\nthree\n");
 	commit();
@@ -52,6 +52,31 @@ test("working preserves HEAD-relative staged/unstaged net stats and excludes unt
 	// Staged changes undone in the worktree must not be counted twice.
 	write("source.txt", "one\ntwo\nthree\n");
 	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 0 });
+});
+
+test("branch statistics accept numstat output larger than 1 MiB", async (t) => {
+	const { cwd, git, write, commit } = repository(t);
+	git("switch", "-c", "feature");
+	const count = 8000;
+	for (let i = 0; i < count; i++)
+		write(`${String(i).padStart(5, "0")}-${"x".repeat(130)}.txt`, "new\n");
+	commit();
+	const output = execFileSync("git", ["diff", "--numstat", "main", "--"], {
+		cwd,
+		maxBuffer: 16 * 1024 * 1024,
+	});
+	assert.ok(output.length > 1024 * 1024);
+	assert.deepEqual(await readGitStats(cwd, "branch"), { add: count, del: 0 });
+});
+
+test("readGitStats cancels an in-flight git query", async (t) => {
+	const { cwd } = repository(t);
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 0, del: 0 });
+	const controller = new AbortController();
+	const query = readGitStats(cwd, "working", controller.signal);
+	controller.abort();
+	assert.equal(await query, undefined);
+	assert.equal(await readGitStats(cwd, "branch", controller.signal), undefined);
 });
 
 test("branch includes committed new files and uncommitted edits, and remains stable across commit", async (t) => {
@@ -238,12 +263,14 @@ const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 function refresherFixture(t: test.TestContext) {
 	let mode: FooterGitStatsMode = "working";
-	const requests: Array<ReturnType<typeof deferred> & { mode: FooterGitStatsMode }> = [];
+	const requests: Array<
+		ReturnType<typeof deferred> & { mode: FooterGitStatsMode; signal: AbortSignal }
+	> = [];
 	const updates: Array<GitStats | undefined> = [];
 	const refresher = createGitStatsRefresher({
 		getMode: () => mode,
-		query: (requestedMode) => {
-			const request = { ...deferred(), mode: requestedMode };
+		query: (requestedMode, signal) => {
+			const request = { ...deferred(), mode: requestedMode, signal };
 			requests.push(request);
 			return request.promise;
 		},
@@ -316,6 +343,7 @@ test("disposed footers neither publish nor start queued queries", async (t) => {
 	f.refresh();
 	f.refresh();
 	f.dispose();
+	assert.equal(f.requests[0].signal.aborted, true);
 	f.dispose();
 	f.requests[0].resolve({ add: 1, del: 0 });
 	await tick();
