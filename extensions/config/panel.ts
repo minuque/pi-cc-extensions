@@ -281,10 +281,24 @@ function buildExcludeRenderersSubmenu(
 	};
 }
 
-/** 数值项手动输入子面板：预填当前值，Space 循环预设，输入数字自定义，Enter 应用，Esc 取消。 */
-function buildNumberInputSubmenu(
+const FOOTER_CURRENCY_PRESETS = ["USD", "CNY", "EUR", "JPY", "GBP", "INR", "HKD"] as const;
+
+function footerCurrencyRateLabel(rate: number | null): string {
+	return rate === null ? "-" : String(rate);
+}
+
+/**
+ * 手动输入子面板。accept 返回字符串则提交，undefined 取消，null 用 invalid 提示。
+ */
+function buildValueInputSubmenu(
 	theme: any,
-	setting: { label: string; values: readonly string[]; currentValue: string },
+	options: {
+		prompt: string;
+		initial: string;
+		hint: string;
+		accept: (raw: string) => string | null | undefined;
+		invalid?: (raw: string) => string;
+	},
 	closeSubmenu: (selected?: string) => void,
 ): {
 	render: (width: number) => string[];
@@ -293,27 +307,28 @@ function buildNumberInputSubmenu(
 } {
 	const input = new Input();
 	let error = "";
-	input.setValue(setting.currentValue);
+	input.setValue(options.initial);
 	input.onSubmit = (value: string) => {
 		const raw = value.trim();
-		if (raw === "") {
-			closeSubmenu(); // 空输入 = 取消
+		const next = options.accept(raw);
+		if (next === undefined) {
+			closeSubmenu();
 			return;
 		}
-		if (!Number.isFinite(Number(raw))) {
-			error = `Invalid number: "${raw}"`;
+		if (next === null) {
+			error = options.invalid?.(raw) ?? "Invalid value";
 			return;
 		}
-		closeSubmenu(raw);
+		closeSubmenu(next);
 	};
 	input.onEscape = () => closeSubmenu();
 	return {
 		render: (width: number) => {
 			const safe = Math.max(0, Math.floor(width));
 			const lines = [
-				theme.fg("dim", `  ${setting.label} — custom value:`),
+				theme.fg("dim", options.prompt),
 				...input.render(safe),
-				truncateToWidth(theme.fg("dim", "  Enter to apply · Esc to go back"), safe),
+				truncateToWidth(theme.fg("dim", options.hint), safe),
 			];
 			if (error !== "") lines.push(theme.fg("dim", `  ${error}`));
 			return lines;
@@ -321,6 +336,25 @@ function buildNumberInputSubmenu(
 		invalidate: () => {},
 		handleInput: (data: string) => input.handleInput(data),
 	};
+}
+
+/** 数值项：预填当前值，空输入取消，非数字留下错误。 */
+function buildNumberInputSubmenu(
+	theme: any,
+	setting: { label: string; currentValue: string },
+	closeSubmenu: (selected?: string) => void,
+) {
+	return buildValueInputSubmenu(
+		theme,
+		{
+			prompt: `  ${setting.label} — custom value:`,
+			initial: setting.currentValue,
+			hint: "  Enter to apply · Esc to go back",
+			accept: (raw) => (raw === "" ? undefined : Number.isFinite(Number(raw)) ? raw : null),
+			invalid: (raw) => `Invalid number: "${raw}"`,
+		},
+		closeSubmenu,
+	);
 }
 
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
@@ -604,6 +638,65 @@ export async function showCcstylePanel(
 			"Aliases disabled.",
 			config.enableAliases,
 		);
+		const footerCurrencySetting = {
+			id: "footerCurrency",
+			label: "Cost currency",
+			description:
+				"ISO code for the status-bar cost. USD keeps $0.76. Space cycles common codes; Enter types one.",
+			currentValue: config.footerCurrency,
+			values: [...FOOTER_CURRENCY_PRESETS],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
+				nestedSubmenuOpen = true;
+				nestedHint = "  Enter to apply · Esc back to Footer";
+				return buildValueInputSubmenu(
+					theme,
+					{
+						prompt: "  Cost currency — ISO code:",
+						initial: footerCurrencySetting.currentValue,
+						hint: "  Enter to apply · Esc to go back",
+						accept: (raw) => (raw === "" ? undefined : raw),
+					},
+					(selected) => {
+						nestedSubmenuOpen = false;
+						nestedHint = "";
+						closeSubmenu(selected);
+					},
+				);
+			},
+		};
+		const footerCurrencyRateSetting = {
+			id: "footerCurrencyRate",
+			label: "Cost rate",
+			description:
+				"Display units per 1 cost unit. Empty keeps the original $ amount. USD ignores this rate.",
+			currentValue: footerCurrencyRateLabel(config.footerCurrencyRate),
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
+				nestedSubmenuOpen = true;
+				nestedHint = "  Enter to apply · empty clears · Esc back to Footer";
+				return buildValueInputSubmenu(
+					theme,
+					{
+						prompt: "  Cost rate — display units per 1 cost unit:",
+						initial:
+							footerCurrencyRateSetting.currentValue === "-"
+								? ""
+								: footerCurrencyRateSetting.currentValue,
+						hint: "  Enter to apply · empty clears conversion · Esc to go back",
+						accept: (raw) => {
+							if (raw === "" || raw === "-") return "-";
+							const n = Number(raw);
+							return Number.isFinite(n) && n > 0 ? raw : null;
+						},
+						invalid: () => "Rate must be a positive number",
+					},
+					(selected) => {
+						nestedSubmenuOpen = false;
+						nestedHint = "";
+						closeSubmenu(selected);
+					},
+				);
+			},
+		};
 		const footerNerdIconsSetting = {
 			id: "footerNerdIcons",
 			label: "Nerd Font icons",
@@ -661,6 +754,20 @@ export async function showCcstylePanel(
 				if (enabled) applyCustomFooter(ctx);
 				else clearCustomFooter(ctx);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerCurrency") {
+				updateConfig({ footerCurrency: value });
+				footerCurrencySetting.currentValue = config.footerCurrency;
+				if (config.enableCustomFooter) applyCustomFooter(ctx);
+				ctx.ui.notify(`Updated ${id}: ${config.footerCurrency}`, "info");
+				return;
+			}
+			if (id === "footerCurrencyRate") {
+				updateConfig({ footerCurrencyRate: value === "-" ? null : Number(value) });
+				footerCurrencyRateSetting.currentValue = footerCurrencyRateLabel(config.footerCurrencyRate);
+				if (config.enableCustomFooter) applyCustomFooter(ctx);
+				ctx.ui.notify(`Updated ${id}: ${footerCurrencyRateSetting.currentValue}`, "info");
 				return;
 			}
 			if (id === "footerNerdIcons") {
@@ -880,7 +987,13 @@ export async function showCcstylePanel(
 			{
 				id: "footer",
 				label: "Footer",
-				items: [customFooterSetting, footerNerdIconsSetting, pluginChipsSetting],
+				items: [
+					customFooterSetting,
+					footerCurrencySetting,
+					footerCurrencyRateSetting,
+					footerNerdIconsSetting,
+					pluginChipsSetting,
+				],
 			},
 		];
 

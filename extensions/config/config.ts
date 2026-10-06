@@ -71,6 +71,10 @@ export type Config = {
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
 	enableCustomFooter: boolean;
+	/** ISO 4217 显示币种。USD 时不换算。 */
+	footerCurrency: string;
+	/** 1 单位费用对应的显示币种数量。null 表示不换算。 */
+	footerCurrencyRate: number | null;
 	footerNerdIcons: boolean;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
@@ -156,6 +160,8 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableCustomFooter: true,
+	footerCurrency: "USD",
+	footerCurrencyRate: null,
 	footerNerdIcons: true,
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
@@ -181,6 +187,19 @@ export function pickInputClip(value: unknown): number {
 export function pickPositiveNumber(value: unknown, fallback: number, min = 1): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
 	return Number.isFinite(n) ? Math.max(min, n) : fallback;
+}
+
+function normalizeCurrency(value: unknown): string {
+	return typeof value === "string" && /^[A-Za-z]{3}$/.test(value.trim())
+		? value.trim().toUpperCase()
+		: "USD";
+}
+
+/** 缺失、空串、非正数都视为不换算。 */
+function normalizeFooterCurrencyRate(value: unknown): number | null {
+	if (value === undefined || value === null || value === "") return null;
+	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export function normalizeConfig(input: unknown): Config {
@@ -268,6 +287,8 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
+		footerCurrency: normalizeCurrency(source.footerCurrency),
+		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
 		...normalizeFooterChipLayout(source),
 	};
@@ -324,6 +345,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
+		`footerCurrency=${source.footerCurrency}`,
+		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		formatFooterChipSummary(source),
 	].join(" · ");

@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import { formatFooterCost } from "./footer-currency.ts";
 import {
 	PI_USAGE_KEY,
 	isSkippedFooterStatusKey,
@@ -419,8 +420,10 @@ const createCustomFooterFactory =
 				cachePct > 0 ? `${glyphs.cache ? `${glyphs.cache} ` : ""}${Math.floor(cachePct)}%` : "";
 			const costChip =
 				cost || usingSubscription
-					? theme.fg("dim", `$${cost.toFixed(2)}`) +
-						(usingSubscription ? theme.fg("warning", " sub") : "")
+					? theme.fg(
+							"dim",
+							formatFooterCost(cost, config.footerCurrency, config.footerCurrencyRate),
+						) + (usingSubscription ? theme.fg("warning", " sub") : "")
 					: "";
 			const line1 = joinChips([
 				theme.fg("accent", modelLabel),

@@ -81,6 +81,8 @@ pi install git:github.com/minuque/pi-cc-extensions
 
   // footer
   "enableCustomFooter": true,              // 自定义状态栏
+  "footerCurrency": "USD",                 // 底栏费用的显示币种
+  "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 表示不换算
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
   "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
   "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
