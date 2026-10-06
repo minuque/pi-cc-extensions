@@ -100,7 +100,9 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 ## Local development
 
 ```bash
-./test.sh
+./test.sh            # macOS/Linux; needs node and pi
+./test.sh --version  # argument example
+pi -e .              # one run, does not edit settings.json
 ```
 
 ## Compatibility

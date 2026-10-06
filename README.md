@@ -100,7 +100,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 ## 本地开发
 
 ```bash
-./test.sh
+./test.sh            # macOS/Linux，需要 node 和 pi
+./test.sh --version  # 参数示例
+pi -e .              # 只跑一次，不改 settings.json
 ```
 
 ## 兼容性
