@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
-import { formatFooterCost } from "../extensions/feature/shell/footer-currency.ts";
+import {
+	formatFooterCost,
+	presetFooterCurrencyRate,
+} from "../extensions/feature/shell/footer-currency.ts";
 
 test("currency settings default to USD and no rate", () => {
 	const defaults = normalizeConfig({});
@@ -32,10 +35,18 @@ test("currency rate keeps positive numbers and drops everything else", () => {
 	);
 });
 
-test("USD and a missing rate keep the original dollar text", () => {
+test("preset rates follow the currency and are empty otherwise", () => {
+	assert.equal(presetFooterCurrencyRate("cny"), 7.12);
+	assert.equal(presetFooterCurrencyRate(" EUR "), 0.92);
+	assert.equal(presetFooterCurrencyRate("JPY"), 150);
+	assert.equal(presetFooterCurrencyRate("USD"), null);
+	assert.equal(presetFooterCurrencyRate("CHF"), null);
+});
+
+test("USD keeps the dollar text and a missing rate only changes the symbol", () => {
 	assert.equal(formatFooterCost(0.76, "USD", null), "$0.76");
 	assert.equal(formatFooterCost(0.76, "USD", 7.12), "$0.76");
-	assert.equal(formatFooterCost(0.76, "CNY", null), "$0.76");
+	assert.equal(formatFooterCost(0.76, "CNY", null), "CN¥0.76");
 	assert.equal(formatFooterCost(1000, "USD", null), "$1000.00");
 });
 

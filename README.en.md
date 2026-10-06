@@ -82,7 +82,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // footer
   "enableCustomFooter": true, // custom status bar
   "footerCurrency": "USD", // display currency for the footer cost
-  "footerCurrencyRate": null, // display units per 1 cost unit; null keeps the original amount
+  "footerCurrencyRate": null, // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true, // Nerd Font glyphs for git/cache; false = plain text
   "footerHiddenKeys": [], // hidden plugin chip keys
   "footerLine1Keys": ["pi-usage"], // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage

@@ -13,6 +13,10 @@ import {
 	getFooterStatusSnapshot,
 } from "../feature/shell/footer.ts";
 import {
+	FOOTER_CURRENCY_PRESETS,
+	presetFooterCurrencyRate,
+} from "../feature/shell/footer-currency.ts";
+import {
 	footerChipDescription,
 	footerLineOfKey,
 	formatFooterChipSummary,
@@ -280,8 +284,6 @@ function buildExcludeRenderersSubmenu(
 		handleInput: (data: string) => list.handleInput(data),
 	};
 }
-
-const FOOTER_CURRENCY_PRESETS = ["USD", "CNY", "EUR", "JPY", "GBP", "INR", "HKD"] as const;
 
 function footerCurrencyRateLabel(rate: number | null): string {
 	return rate === null ? "-" : String(rate);
@@ -642,7 +644,7 @@ export async function showCcstylePanel(
 			id: "footerCurrency",
 			label: "Cost currency",
 			description:
-				"ISO code for the status-bar cost. USD keeps $0.76. Space cycles common codes; Enter types one.",
+				"ISO code for the status-bar cost. Switching currency fills its preset rate. USD clears the rate.",
 			currentValue: config.footerCurrency,
 			values: [...FOOTER_CURRENCY_PRESETS],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
@@ -668,7 +670,7 @@ export async function showCcstylePanel(
 			id: "footerCurrencyRate",
 			label: "Cost rate",
 			description:
-				"Display units per 1 cost unit. Empty keeps the original $ amount. USD ignores this rate.",
+				"Display units per 1 USD of cost. Switching currency replaces this. Empty keeps the number and only changes the symbol.",
 			currentValue: footerCurrencyRateLabel(config.footerCurrencyRate),
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
 				nestedSubmenuOpen = true;
@@ -757,10 +759,17 @@ export async function showCcstylePanel(
 				return;
 			}
 			if (id === "footerCurrency") {
-				updateConfig({ footerCurrency: value });
+				updateConfig({
+					footerCurrency: value,
+					footerCurrencyRate: presetFooterCurrencyRate(value),
+				});
 				footerCurrencySetting.currentValue = config.footerCurrency;
+				footerCurrencyRateSetting.currentValue = footerCurrencyRateLabel(config.footerCurrencyRate);
 				if (config.enableCustomFooter) applyCustomFooter(ctx);
-				ctx.ui.notify(`Updated ${id}: ${config.footerCurrency}`, "info");
+				ctx.ui.notify(
+					`Updated ${id}: ${config.footerCurrency} · ${footerCurrencyRateSetting.currentValue}`,
+					"info",
+				);
 				return;
 			}
 			if (id === "footerCurrencyRate") {

@@ -73,7 +73,7 @@ export type Config = {
 	enableCustomFooter: boolean;
 	/** ISO 4217 显示币种。USD 时不换算。 */
 	footerCurrency: string;
-	/** 1 单位费用对应的显示币种数量。null 表示不换算。 */
+	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
 	footerCurrencyRate: number | null;
 	footerNerdIcons: boolean;
 	footerHiddenKeys: string[];
