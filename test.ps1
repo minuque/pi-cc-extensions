@@ -5,6 +5,11 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$PiArgs)
 
 $ErrorActionPreference = 'Stop'
 
+if (-not (Get-Command pi -ErrorAction SilentlyContinue)) {
+	[Console]::Error.WriteLine('pi not found in PATH')
+	exit 127
+}
+
 $repoDir = $PSScriptRoot
 $npmSource = 'npm:pi-cc-extensions'
 
@@ -46,23 +51,35 @@ try {
 }
 finally {
 	Pop-Location
-	try {
-		if (-not $hadLocal) {
+	# 每步单独失败：删本地失败时仍尝试装回 npm 包。
+	if (-not $hadLocal) {
+		try {
 			pi remove $repoDir | Out-Null
 			Write-Host '[restore] remove temporary local extension'
 		}
-		if ($hadNpm) {
+		catch {
+			Write-Warning "rollback failed: pi remove $repoDir"
+			Write-Warning "run manually: pi install $npmSource"
+		}
+	}
+	if ($hadNpm) {
+		try {
 			pi install $npmSource | Out-Null
 			Write-Host "[restore] restore $npmSource"
 		}
-		Write-Host "[restore] packages: $(@(Get-ConfiguredSources) -join ', ')"
-		if (-not ($hadNpm -or $hadLocal)) {
-			Write-Host "[restore] note: $npmSource was not configured before; run 'pi install $npmSource' to restore a normal install"
+		catch {
+			Write-Warning "rollback failed: pi install $npmSource"
+			Write-Warning "run manually: pi install $npmSource"
 		}
 	}
+	try {
+		Write-Host "[restore] packages: $(@(Get-ConfiguredSources) -join ', ')"
+	}
 	catch {
-		Write-Warning "rollback failed: $_"
-		Write-Warning "run manually: pi install $npmSource"
+		Write-Warning "rollback failed: read $settingsPath"
+	}
+	if (-not ($hadNpm -or $hadLocal)) {
+		Write-Host "[restore] note: $npmSource was not configured before; run 'pi install $npmSource' to restore a normal install"
 	}
 }
 

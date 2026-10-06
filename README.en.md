@@ -99,13 +99,16 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
 ## Local development
 
+Swap the installed `npm:pi-cc-extensions` package for this checkout, then restore the previous settings on exit. Arguments are passed through to `pi`.
+
 ```bash
-npm test
-npm run typecheck
-./test.sh # macOS/Linux: load the local checkout for one run, then restore
-test.bat  # Windows: same
-# one-off run without touching settings: pi -e .
+./test.sh            # macOS/Linux; needs node and pi
+test.bat             # Windows; needs PowerShell 7 (pwsh) and pi
+./test.sh --version  # argument example
+pi -e .              # one run, does not edit settings.json
 ```
+
+If the npm package was configured, it is removed before this directory is installed. On exit the temporary local entry is removed and the npm package is installed again. An entry that already pointed at this directory is left in place. A missing `settings.json` means nothing was installed; invalid JSON exits without changing settings. Exit code is 127 when `pi` is not on PATH.
 
 ## Compatibility
 

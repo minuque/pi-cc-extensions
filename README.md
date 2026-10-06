@@ -99,13 +99,16 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 本地开发
 
+临时用当前检出替换已安装的 `npm:pi-cc-extensions`，退出后还原进入前的配置。参数原样传给 `pi`。
+
 ```bash
-npm test
-npm run typecheck
-./test.sh # macOS/Linux：临时加载本地检出，退出后还原
-test.bat  # Windows：同上
-# 只想跑一次、不改配置：pi -e .
+./test.sh            # macOS/Linux，需要 node 和 pi
+test.bat             # Windows，需要 PowerShell 7（pwsh）和 pi
+./test.sh --version  # 参数示例
+pi -e .              # 只跑一次，不改 settings.json
 ```
+
+进入前若配置了 npm 包，会先卸掉再装当前目录；退出时删掉这次的本地项，并装回 npm 包。配置本来就指向本目录时不反复拆装。`settings.json` 缺失视为未安装；JSON 无效则直接退出，不改配置。`pi` 不在 PATH 时退出码 127。
 
 ## 兼容性
 
