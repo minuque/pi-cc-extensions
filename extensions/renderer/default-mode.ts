@@ -85,8 +85,8 @@ type GlobalToolRenderPatch = {
 	prototype: any;
 	active: boolean;
 	mode: () => CompactStyleMode;
-	wrap: (tool: any) => any;
-	byDefinition: WeakMap<object, any>;
+	wrap: (tool: any, toolName: string) => any;
+	byDefinition: WeakMap<object, Map<string, any>>;
 	byName: Map<string, any>;
 	downstream: ToolRenderMethods;
 	installed: ToolRenderMethods;
@@ -217,8 +217,8 @@ function renderExpandedTaskResult(
 function createCcstyleTool(
 	originalTool: any,
 	writeExecutionMetadata: WriteExecutionMetadataStore,
+	toolName: string,
 ): any {
-	const toolName = originalTool.name;
 	const label = originalTool.label || toolName;
 	const defaultTitle = label === toolName ? humanizeToolLabel(label) : label;
 	// MCP 工具直接用 adapter 暴露的真实工具名，不做人性化
@@ -459,19 +459,24 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 
 function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): any {
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
+	const name = String(component.toolName || definition?.name || "tool");
 	if (definition && typeof definition === "object") {
-		let wrapped = patch.byDefinition.get(definition);
+		let byName = patch.byDefinition.get(definition);
+		if (!byName) {
+			byName = new Map();
+			patch.byDefinition.set(definition, byName);
+		}
+		let wrapped = byName.get(name);
 		if (!wrapped) {
-			wrapped = patch.wrap(definition);
-			patch.byDefinition.set(definition, wrapped);
+			wrapped = patch.wrap(definition, name);
+			byName.set(name, wrapped);
 		}
 		return wrapped;
 	}
 
-	const name = String(component.toolName || "tool");
 	let wrapped = patch.byName.get(name);
 	if (!wrapped) {
-		wrapped = patch.wrap({ name, label: name });
+		wrapped = patch.wrap({ name, label: name }, name);
 		patch.byName.set(name, wrapped);
 	}
 	return wrapped;
@@ -568,7 +573,8 @@ function installGlobalToolRendering(
 		prototype,
 		active: true,
 		mode: () => config.mode,
-		wrap: (tool: any) => createCcstyleTool(tool, writeExecutionMetadata),
+		wrap: (tool: any, toolName: string) =>
+			createCcstyleTool(tool, writeExecutionMetadata, toolName),
 		byDefinition: new WeakMap(),
 		byName: new Map(),
 		downstream,

@@ -18,6 +18,131 @@ import claudeCodeStyleExtension, {
 
 initTheme("dark");
 
+for (const mode of ["on", "compact"] as const) {
+	test(`${mode} renders tools with renderer-only definitions`, async () => {
+		const previousMode = config.mode;
+		const events = new Map<string, Function>();
+		claudeCodeStyleExtension(
+			{
+				registerCommand() {},
+				registerShortcut() {},
+				on(name: string, handler: Function) {
+					events.set(name, handler);
+				},
+			} as any,
+			{ mode },
+		);
+		const ui = {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		};
+		const ctx = { mode: "tui", hasUI: true, ui } as any;
+		// Pi 1.0.3 accepts ToolRenderers without name/label; the object may be shared.
+		const renderers = { renderCall: () => new Text("original", 0, 0) };
+		try {
+			await events.get("session_start")?.({}, ctx);
+			for (const name of ["read", "bash", "custom_lookup"]) {
+				const component = new ToolExecutionComponent(
+					name,
+					`${mode}-${name}`,
+					{},
+					{},
+					renderers as unknown as AnyToolDefinition,
+					ui as any,
+					process.cwd(),
+				);
+				const title = { read: "Read", bash: "Bash", custom_lookup: "Custom Lookup" }[name]!;
+				if (mode === "on") {
+					assert.match(component.render(100).join("\n"), new RegExp(title));
+				} else {
+					assert.deepEqual(component.render(100), [], "compact hides collapsed tool rows");
+				}
+				component.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+				for (const expanded of [false, true]) {
+					component.setExpanded(expanded);
+					const output = component.render(100).join("\n");
+					if (mode === "compact" && !expanded) {
+						assert.equal(output, "");
+						continue;
+					}
+					assert.match(output, new RegExp(title));
+					assert.match(output, expanded ? /done/ : /1 line (loaded|returned)/);
+				}
+			}
+			assert.equal("name" in renderers, false, "wrapping does not mutate Pi's renderers");
+		} finally {
+			await events.get("session_shutdown")?.({}, ctx);
+			config.mode = previousMode;
+		}
+	});
+}
+
+for (const kind of ["prototype", "non-enumerable"] as const) {
+	test(`off mode preserves ${kind} renderer methods after wrapping`, async () => {
+		const previousMode = config.mode;
+		const events = new Map<string, Function>();
+		claudeCodeStyleExtension(
+			{
+				registerCommand() {},
+				registerShortcut() {},
+				on(name: string, handler: Function) {
+					events.set(name, handler);
+				},
+			} as any,
+			{ mode: "on" },
+		);
+		const ui = {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		};
+		const ctx = { mode: "tui", hasUI: true, ui } as any;
+		const methods = {
+			renderCall: () => new Text("original call", 0, 0),
+			renderResult: () => new Text("original result", 0, 0),
+		};
+		const renderers =
+			kind === "prototype"
+				? Object.create(methods)
+				: Object.defineProperties(
+						{},
+						{
+							renderCall: { value: methods.renderCall },
+							renderResult: { value: methods.renderResult },
+						},
+					);
+		const descriptors = Object.getOwnPropertyDescriptors(renderers);
+		try {
+			await events.get("session_start")?.({}, ctx);
+			const component = new ToolExecutionComponent(
+				"custom_lookup",
+				"preserve-methods",
+				{},
+				{},
+				renderers,
+				ui as any,
+				process.cwd(),
+			) as any;
+			const call = component.getCallRenderer();
+			const result = component.getResultRenderer();
+			assert.match(component.render(100).join("\n"), /Custom Lookup/);
+			config.mode = "off";
+			assert.match(call({}, ui.theme, {}).render(100).join("\n"), /original call/);
+			assert.match(
+				result({ content: [], isError: false }, {}, ui.theme, {}).render(100).join("\n"),
+				/original result/,
+			);
+			component.invalidate();
+			assert.match(component.render(100).join("\n"), /original call/);
+			assert.deepEqual(Object.getOwnPropertyDescriptors(renderers), descriptors);
+		} finally {
+			await events.get("session_shutdown")?.({}, ctx);
+			config.mode = previousMode;
+		}
+	});
+}
+
 test("claude-code-style registers the write override at session_start", async () => {
 	const registeredTools: unknown[] = [];
 	const events = new Map<string, Function[]>();
