@@ -156,6 +156,16 @@ function succeed(component: any, text?: string, details?: unknown) {
 	return component;
 }
 
+function renderEditSummary(id: string, diff: string): string[] {
+	const previous = config.editDiffCollapsedLines;
+	try {
+		config.editDiffCollapsedLines = 0;
+		return renderLines(succeed(tool("edit", id, { path: "sample.ts" }), undefined, { diff }));
+	} finally {
+		config.editDiffCollapsedLines = previous;
+	}
+}
+
 function fail(component: any, text: string) {
 	component.updateResult({
 		content: [{ type: "text", text }],
@@ -283,6 +293,8 @@ async function generateDefault() {
 				"4. edit/write rich diff",
 				[
 					fence(renderLines(editCall, 46)),
+					"`editDiffCollapsedLines: 0` shows a one-line change-count summary and expand hint; expanding still shows the full diff:",
+					fence(renderEditSummary("ed-summary", editDiff)),
 					"长 diff 提示：",
 					fence([longHint]),
 					[
@@ -807,6 +819,8 @@ async function generateCompact() {
 						})),
 						...renderLines(write),
 					]),
+					"`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts:",
+					fence(renderEditSummary("ce-summary", editDiff)),
 					"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
 					fence(tailLayout),
 					"展开 edit：",

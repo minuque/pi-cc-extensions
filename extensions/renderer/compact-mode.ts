@@ -42,6 +42,7 @@ import {
 	isRichDiffComponent,
 } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult } from "./tool/diff/index.ts";
+import { displayConfigCacheKey } from "./tool/diff/diff-component.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
@@ -735,6 +736,7 @@ type CompactEditPaintHit = {
 	theme: unknown;
 	/** 展开卡的背景槽位同样参与命中判断。 */
 	bgSlot: string;
+	diffConfigKey: string;
 	expanded: boolean;
 	result: unknown;
 	isPartial: boolean;
@@ -766,6 +768,7 @@ function compactEditWriteLines(
 	const hover = isToolCallHovered(component.toolCallId);
 	const ioHover = compactEditIoHover(component);
 	const theme = themeOf();
+	const diffConfigKey = displayConfigCacheKey(getToolDisplayConfig());
 	if (!pending) {
 		const hit = compactEditPaintCache.get(component);
 		if (
@@ -773,6 +776,7 @@ function compactEditWriteLines(
 			hit.width === width &&
 			hit.theme === theme &&
 			hit.bgSlot === config.expandedCardBackground &&
+			hit.diffConfigKey === diffConfigKey &&
 			hit.expanded === expanded &&
 			hit.result === component.result &&
 			hit.isPartial === isPartial &&
@@ -789,6 +793,7 @@ function compactEditWriteLines(
 			width,
 			theme,
 			bgSlot: config.expandedCardBackground,
+			diffConfigKey,
 			expanded,
 			result: component.result,
 			isPartial,

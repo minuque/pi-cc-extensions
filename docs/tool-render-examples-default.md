@@ -58,6 +58,13 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
  ─────────────────────────────────────────────
 ```
 
+`editDiffCollapsedLines: 0` shows a one-line change-count summary and expand hint; expanding still shows the full diff:
+
+```text
+ ✓ Edit sample.ts
+   ↳ diff +2 -1 · click to show more
+```
+
 长 diff 提示：
 
 ```text

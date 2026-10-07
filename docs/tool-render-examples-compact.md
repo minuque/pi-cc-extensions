@@ -72,6 +72,13 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
    ↳ created · click to show more
 ```
 
+`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts:
+
+```text
+ ✓ edit sample.ts (+1 -1)
+   ↳ diff +1 -1 · click to show more
+```
+
 挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：
 
 ```text

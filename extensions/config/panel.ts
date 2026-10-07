@@ -482,7 +482,7 @@ export async function showCcstylePanel(
 			id: "editDiffCollapsedLines",
 			label: "Edit collapsed lines",
 			description:
-				"How many edit/diff body lines to show before the expand hint (Ctrl+O / click). Write uses its own setting below.",
+				"Edit diff body lines before the expand hint (Ctrl+O / click). 0 shows only change counts and the hint.",
 			currentValue: String(config.editDiffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -825,7 +825,7 @@ export async function showCcstylePanel(
 						editDiffCollapsedLines: pickPositiveInt(
 							value,
 							DEFAULT_CONFIG.editDiffCollapsedLines,
-							1,
+							0,
 							500,
 						),
 					});
