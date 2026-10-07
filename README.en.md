@@ -63,7 +63,6 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "expandedCardBackground": "userMessageBg", // expanded card background slot: userMessageBg (same as user prompts) / toolPendingBg (neutral) etc.
   "inputClip": 0, // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true, // startup header (logo + tips) toggle
-  "scrollStepLines": 3, // fullscreen wheel scroll step
 
   // diff
   "diffViewMode": "auto", // layout: auto / split / unified
@@ -101,7 +100,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
 ```bash
 ./test.sh            # macOS/Linux; needs node and pi
-./test.sh --version  # argument example
+./test.bat           # Windows; runs test.sh through Git Bash
 pi -e .              # one run, does not edit settings.json
 ```
 

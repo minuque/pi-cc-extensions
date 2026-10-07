@@ -63,7 +63,6 @@ export type Config = {
 	animationIntervalMs: number;
 	dimThinkingText: boolean;
 	showStartupHeader: boolean;
-	scrollStepLines: number;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -116,8 +115,6 @@ export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 export const INPUT_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
-/** fullscreen 滚轮步进行数预设。 */
-export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",
@@ -152,7 +149,6 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	dimThinkingText: false,
 	showStartupHeader: true,
-	scrollStepLines: 3,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -279,7 +275,6 @@ export function normalizeConfig(input: unknown): Config {
 		),
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
-		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -337,7 +332,6 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
-		`scrollStep=${source.scrollStepLines}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,

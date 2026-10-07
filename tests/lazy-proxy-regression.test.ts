@@ -320,7 +320,6 @@ class FullscreenRenderer {
 	currentLayout: any;
 	scrollBottomCalls = 0;
 	renderCalls = 0;
-	wheelScrollLines = 1;
 	altScreenActive = true;
 	mouseEnabled = true;
 
@@ -397,9 +396,6 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 });
 
 test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
-	// 步进数来自用户配置，测试固定为默认 3（避免受本机 pi-cc-extensions.json 影响）。
-	const previousStep = config.scrollStepLines;
-	config.scrollStepLines = 3;
 	const tool = createTool("tool-fullscreen");
 	const { terminal, writes } = createTerminalFixture();
 	let renderer = new FullscreenRenderer(tool, null, terminal);
@@ -407,7 +403,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	const ui = createUi(tui);
 	installToolMouseInteraction(ui.ctx);
 
-	assert.equal(renderer.wheelScrollLines, 3, "fullscreen native wheel step is raised to 3");
 	assert.ok(
 		!writes.some((value) => value.includes("?1000h")),
 		"click reporting belongs to official",
@@ -603,8 +598,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
 	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
-	config.scrollStepLines = previousStep;
-	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
 });
 
 test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {

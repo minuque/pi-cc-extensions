@@ -13,7 +13,6 @@ import {
 	setHoveredCompactAssistant,
 } from "../compact-mode.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
-import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/show-more-hint.ts";
 import {
@@ -308,10 +307,6 @@ function ensureFullscreenToolMouseMotion(tui: any): void {
 		releaseFullscreenToolMouseMotion(tui);
 		return;
 	}
-	// 面板改 scrollStepLines 后，下一帧渲染即同步（restore 仍按 original 恢复）。
-	if (typeof tui.wheelScrollLines === "number" && tui.wheelScrollLines !== config.scrollStepLines) {
-		tui.wheelScrollLines = config.scrollStepLines;
-	}
 	if (
 		!toolMouseInteractionActive() ||
 		tui.mouseEnabled === false ||
@@ -348,7 +343,6 @@ function releaseFullscreenToolMouseMotion(tui?: any): void {
 }
 
 const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
-const FULLSCREEN_WHEEL_SCROLL_ORIGINAL = Symbol("ccstyle.fullscreen-wheel-scroll-original");
 
 /**
  * diff 结果组件自带 remainder 行：声明存在时只有那一行是展开入口（正文里的同名字样不算）；
@@ -589,11 +583,6 @@ function patchFullscreenViewportInput(tui: any): void {
 	const proto = Object.getPrototypeOf(tui);
 	const original = proto?.handleViewportInput;
 	if (typeof original !== "function") return;
-	// 官方原生 routeWheel 已完整处理嵌套 ScrollView；只调整默认步进（config.scrollStepLines）。
-	if (typeof tui.wheelScrollLines === "number") {
-		tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL] = tui.wheelScrollLines;
-		tui.wheelScrollLines = config.scrollStepLines;
-	}
 	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
 	tui.handleViewportInput = function (this: any, data: string) {
 		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
@@ -641,11 +630,6 @@ function restoreFullscreenViewportInput(tui: any): void {
 	const proto = Object.getPrototypeOf(tui);
 	if (typeof proto?.handleViewportInput === "function") {
 		tui.handleViewportInput = proto.handleViewportInput;
-	}
-	const originalWheelScrollLines = tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL];
-	if (typeof originalWheelScrollLines === "number") {
-		tui.wheelScrollLines = originalWheelScrollLines;
-		tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL] = undefined;
 	}
 	tui[FULLSCREEN_VIEWPORT_PATCH] = false;
 }

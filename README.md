@@ -63,7 +63,6 @@ pi install git:github.com/minuque/pi-cc-extensions
   "expandedCardBackground": "userMessageBg", // 展开卡背景槽位；userMessageBg 与用户消息同色，toolPendingBg 为中性灰
   "inputClip": 0,                          // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
-  "scrollStepLines": 3,                    // fullscreen 滚轮步进
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
@@ -101,7 +100,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ```bash
 ./test.sh            # macOS/Linux，需要 node 和 pi
-./test.sh --version  # 参数示例
+./test.bat           # Windows，经 Git Bash 运行 test.sh
 pi -e .              # 只跑一次，不改 settings.json
 ```
 

@@ -46,7 +46,6 @@ import {
 	pickInputClip,
 	pickPositiveInt,
 	pickPositiveNumber,
-	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	INPUT_CLIP_VALUES,
@@ -587,15 +586,6 @@ export async function showCcstylePanel(
 			currentValue: config.showStartupHeader ? "on" : "off",
 			values: ["on", "off"],
 		};
-		const scrollStepSetting = {
-			id: "scrollStepLines",
-			label: "Scroll step",
-			description: "Mouse wheel scroll lines in fullscreen mode.",
-			currentValue: String(config.scrollStepLines),
-			values: [...SCROLL_STEP_LINES_VALUES],
-			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
-				buildNumberInputSubmenu(theme, scrollStepSetting, closeSubmenu),
-		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
 		const sessionReferenceToggle = featureToggleSetting(
@@ -926,12 +916,6 @@ export async function showCcstylePanel(
 					else clearStartupHeader(ctx);
 					break;
 				}
-				case "scrollStepLines":
-					updateConfig({
-						scrollStepLines: pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50),
-					});
-					scrollStepSetting.currentValue = String(config.scrollStepLines);
-					break;
 				default:
 					return;
 			}
@@ -968,7 +952,6 @@ export async function showCcstylePanel(
 					expandedCardBgSetting,
 					inputClipSetting,
 					startupHeaderSetting,
-					scrollStepSetting,
 				],
 			},
 			{
