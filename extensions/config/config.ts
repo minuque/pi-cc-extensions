@@ -13,6 +13,7 @@ export type CompactStyleMode = "on" | "compact" | "off";
 
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
+export type FooterGitStatsMode = "working" | "branch";
 
 export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
@@ -76,6 +77,7 @@ export type Config = {
 	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
 	footerCurrencyRate: number | null;
 	footerNerdIcons: boolean;
+	footerGitStatsMode: FooterGitStatsMode;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
 	footerLine2Keys: string[];
@@ -88,6 +90,7 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
+export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
 export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "120"];
 /** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
@@ -160,6 +163,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
+	footerGitStatsMode: "working",
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
 
@@ -286,6 +290,11 @@ export function normalizeConfig(input: unknown): Config {
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
+		footerGitStatsMode: pickEnum(
+			source.footerGitStatsMode,
+			FOOTER_GIT_STATS_MODES,
+			DEFAULT_CONFIG.footerGitStatsMode,
+		),
 		...normalizeFooterChipLayout(source),
 	};
 }
@@ -343,6 +352,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerCurrency=${source.footerCurrency}`,
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
+		`footerGitStats=${source.footerGitStatsMode}`,
 		formatFooterChipSummary(source),
 	].join(" · ");
 }
