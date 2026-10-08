@@ -29,6 +29,7 @@ import {
 	styleCompactThinkingText,
 } from "../extensions/renderer/compact-mode.ts";
 import { componentAtLocalRow } from "../extensions/renderer/mouse/layout.ts";
+import { setHoveredToolCallId } from "../extensions/renderer/mouse/hover.ts";
 import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
@@ -205,12 +206,14 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).dimThinkingText, false);
 	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
-	assert.equal(normalizeConfig({}).inputClip, 0);
-	assert.equal(normalizeConfig({ inputClip: 40 }).inputClip, 40);
-	assert.equal(normalizeConfig({ inputClip: "0" }).inputClip, 0);
-	assert.equal(normalizeConfig({ inputClip: 3 }).inputClip, 8);
-	assert.equal(normalizeConfig({ inputClip: 9999 }).inputClip, 500);
-	assert.match(formatConfigStatus(normalizeConfig({})), /inputClip=0/);
+	assert.equal(normalizeConfig({}).toolLabelClip, 0);
+	assert.equal(normalizeConfig({ toolLabelClip: 40 }).toolLabelClip, 40);
+	assert.equal(normalizeConfig({ toolLabelClip: "0" }).toolLabelClip, 0);
+	assert.equal(normalizeConfig({ toolLabelClip: 3 }).toolLabelClip, 8);
+	assert.equal(normalizeConfig({ toolLabelClip: 9999 }).toolLabelClip, 500);
+	// 旧配置键 inputClip 自动迁移
+	assert.equal(normalizeConfig({ inputClip: 60 }).toolLabelClip, 60);
+	assert.match(formatConfigStatus(normalizeConfig({})), /toolLabelClip=0/);
 	assert.equal(normalizeConfig({}).expandedInputMaxLines, 5);
 	assert.equal(normalizeConfig({}).expandedOutputMaxLines, 10);
 	assert.equal(normalizeConfig({ expandedInputMaxLines: 20 }).expandedInputMaxLines, 20);
@@ -258,7 +261,7 @@ test("config normalize keeps compact, defaults to on, command completions order 
 });
 
 test("tool path summaries relativize cwd paths and preserve filenames when clipped", () => {
-	const previous = config.inputClip;
+	const previous = config.toolLabelClip;
 	const args = {
 		path: join(
 			process.cwd(),
@@ -270,7 +273,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 	};
 	const original = { ...args };
 	try {
-		config.inputClip = 40;
+		config.toolLabelClip = 40;
 		for (const variant of ["default", "grouping"] as const) {
 			const summary = toolCallSummary("read", args, { variant, cwd: process.cwd() });
 			assert.match(summary.main, /^Read extensions/);
@@ -280,7 +283,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 				new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
 			);
 		}
-		config.inputClip = 200;
+		config.toolLabelClip = 200;
 		const outside = join(process.cwd(), "..", "outside-project", "target-file.ts");
 		assert.equal(
 			toolCallSummary("write", { path: outside }, { cwd: process.cwd() }).main,
@@ -289,7 +292,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 		);
 		assert.deepEqual(args, original, "display formatting does not mutate tool arguments");
 	} finally {
-		config.inputClip = previous;
+		config.toolLabelClip = previous;
 	}
 });
 
@@ -2187,6 +2190,36 @@ test("compact edit/write summaries preserve filenames for long cwd paths", () =>
 			assert.match(title!, new RegExp(`${name} .*target-file\\.ts`));
 			assert.doesNotMatch(title!, new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 		}
+	} finally {
+		restore();
+	}
+});
+
+test("compact 折叠行 hover 只高亮展开提示：edit 失败单行与 rich diff 兼容", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const restore = () => {
+		setHoveredToolCallId(null);
+		setMessageDisplayTheme(previousTheme);
+		hooks.shutdown();
+		config.mode = previousMode;
+	};
+	try {
+		setMessageDisplayTheme({
+			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		} as any);
+		// 失败的 edit 没有 rich diff，提示挂在标题行上。
+		const failed = tool("edit", "e-fail", { path: "a.ts" });
+		failed.updateResult({ content: [{ type: "text", text: "boom" }], isError: true });
+		const line = () => failed.render(120).join("\n");
+		assert.match(line(), /<dim> · <\/dim><dim>click to show more<\/dim>/);
+		setHoveredToolCallId("e-fail");
+		assert.match(line(), /<dim> · <\/dim><text>click to show more<\/text>/);
+		assert.doesNotMatch(line(), /<text>[^<]*(?:a\.ts|edit)/, "hover 只改提示，不改标题与路径");
+		setHoveredToolCallId(null);
+		assert.match(line(), /<dim> · <\/dim><dim>click to show more<\/dim>/);
 	} finally {
 		restore();
 	}

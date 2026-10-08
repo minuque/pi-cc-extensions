@@ -711,8 +711,9 @@ function compactEditWriteLine(
 	// 展开卡 Box(1,1) 已 pad；折叠行自己留 1 格前导空格
 	const iconPart = `${options.flushLeft ? "" : " "}${theme.fg(iconColor, icon)} `;
 	const namePart = theme.fg("toolTitle", name);
-	const hintText =
-		options.hint !== false && component.expanded !== true ? ` · ${showMoreHintText()}` : "";
+	const clickable = options.hint !== false && component.expanded !== true;
+	const clickText = clickable ? showMoreHintText() : "";
+	const hintText = clickable ? ` · ${clickText}` : "";
 	const fixedWidth =
 		visibleWidth(iconPart) +
 		visibleWidth(namePart) +
@@ -721,7 +722,11 @@ function compactEditWriteLine(
 	const pathWidth = Math.max(0, width - fixedWidth - (path ? 1 : 0));
 	const pathPart =
 		pathWidth > 0 && path ? ` ${formatDisplayPath(path, component.cwd, pathWidth)}` : "";
-	const line = `${iconPart}${namePart}${theme.fg("toolTitle", pathPart)}${statsStyled}${hintText ? theme.fg("dim", hintText) : ""}`;
+	// 圆点保持 dim；hover 只高亮可点击文字，与 compact 摘要行一致
+	const hintPart = clickable
+		? `${theme.fg("dim", " · ")}${theme.fg(isToolCallHovered(component.toolCallId) ? "text" : "dim", clickText)}`
+		: "";
+	const line = `${iconPart}${namePart}${theme.fg("toolTitle", pathPart)}${statsStyled}${hintPart}`;
 	return ["", truncateToWidth(line, width, "")];
 }
 
