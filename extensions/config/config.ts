@@ -18,6 +18,7 @@ export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
+	/** Edit-only collapsed body lines. 0 = change counts and an expand hint. */
 	editDiffCollapsedLines: number;
 	/** Write-only collapsed body lines. 0 = `↳ created · click to show more`. */
 	writeDiffCollapsedLines: number;
@@ -88,7 +89,7 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
-export const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"];
+export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "120"];
 /** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
 export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
@@ -228,7 +229,7 @@ export function normalizeConfig(input: unknown): Config {
 		editDiffCollapsedLines: pickPositiveInt(
 			source.editDiffCollapsedLines,
 			DEFAULT_CONFIG.editDiffCollapsedLines,
-			1,
+			0,
 			500,
 		),
 		writeDiffCollapsedLines: pickPositiveInt(

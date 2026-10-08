@@ -68,7 +68,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "diffViewMode": "auto",                  // 布局：auto / split / unified
   "diffIndicatorMode": "bars",             // 变更指示：bars / classic / none
   "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
-  "editDiffCollapsedLines": 24,            // Edit 折叠行数，超出显示展开提示
+  "editDiffCollapsedLines": 24,            // edit 折叠行数；0 仅显示变更统计摘要
   "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
   "diffWordWrap": true,                    // 长 diff 行换行
 
@@ -89,6 +89,8 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerLine3Keys": []                    // line3 备用槽，有可见芯片才占行
 }
 ```
+
+将 `editDiffCollapsedLines` 设为 `0`，工具标题下只保留一行变更统计和展开提示。`on` / `compact` 模式均生效；edit 仍独立显示，不并入 compact 工具计数。默认仍预览 24 行，展开后仍显示完整 diff。
 
 > [!TIP]
 > **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起（卡内拖动为选中文本）。

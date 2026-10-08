@@ -68,7 +68,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "diffViewMode": "auto", // layout: auto / split / unified
   "diffIndicatorMode": "bars", // change indicators: bars / classic / none
   "diffSplitMinWidth": 120, // min terminal width for side-by-side columns
-  "editDiffCollapsedLines": 24, // Edit collapse lines; beyond that shows the expand hint
+  "editDiffCollapsedLines": 24, // edit collapse lines; 0 = change-count summary only
   "writeDiffCollapsedLines": 0, // write collapse lines; 0 = creation summary only
   "diffWordWrap": true, // wrap long diff lines
 
@@ -89,6 +89,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerLine3Keys": [], // line3 overflow slot; painted only when a chip is visible
 }
 ```
+
+Set `editDiffCollapsedLines` to `0` to keep only a one-line change-count summary and expand hint below the tool title. This works in both `on` and `compact` modes; edit calls remain individually visible rather than joining the compact tool counts. The default stays at 24 preview lines, and expanding still shows the full diff.
 
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse (dragging inside the card selects text).
