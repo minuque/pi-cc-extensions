@@ -424,14 +424,17 @@ const createCustomFooterFactory =
 			}
 			const branch = footerData.getGitBranch();
 			if (branch) {
-				const stats =
-					gitStats && (gitStats.add || gitStats.del)
-						? theme.fg("dim", " (") +
-							theme.fg("success", `+${gitStats.add}`) +
-							" " +
-							theme.fg("error", `−${gitStats.del}`) +
-							theme.fg("dim", ")")
-						: "";
+				const s = gitStats;
+				let stats = "";
+				if (s && s.status)
+					stats = theme.fg("dim", " [") + gitColor(s.status) + theme.fg("dim", "]");
+				if (s && (s.add || s.del))
+					stats +=
+						theme.fg("dim", "(") +
+						theme.fg("success", `+${s.add}`) +
+						" " +
+						theme.fg("error", `−${s.del}`) +
+						theme.fg("dim", ")");
 				const gitLabel = glyphs.git ? `${glyphs.git} ${branch}` : branch;
 				place += theme.fg("muted", " on ") + gitColor(gitLabel) + stats;
 			}

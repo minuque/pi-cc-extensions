@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FooterGitStatsMode } from "../../config/config.ts";
 
-export type GitStats = { add: number; del: number };
+export type GitStats = { add: number; del: number; status?: string };
 
 const execFileAsync = promisify(execFile);
 const BRANCH_BASE_REFS = ["refs/remotes/origin/HEAD", "refs/heads/main", "refs/heads/master"];
@@ -18,6 +18,41 @@ export function parseGitStats(stdout: string): GitStats {
 		}
 	}
 	return { add, del };
+}
+
+const CONFLICT_CODES = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+
+/**
+ * git status --porcelain --branch 的第一行带分支头（## branch...origin/branch [ahead N, behind M]），
+ * 其余行是 XY 文件状态。返回 Starship 风格的状态符号串（= ! ? ⇡⇣），无变化时 undefined。
+ */
+export function parseGitStatus(stdout: string): string | undefined {
+	let conflicted = false;
+	let modified = false;
+	let untracked = false;
+	let ahead: number | undefined;
+	let behind: number | undefined;
+	for (const line of stdout.split("\n")) {
+		if (line.startsWith("## ")) {
+			ahead = Number(line.match(/ahead (\d+)/)?.[1]) || undefined;
+			behind = Number(line.match(/behind (\d+)/)?.[1]) || undefined;
+			continue;
+		}
+		const code = line.slice(0, 2);
+		if (code === "??") untracked = true;
+		else if (CONFLICT_CODES.has(code)) {
+			// 冲突文件必然也有未提交内容，! 与 = 同时出现
+			conflicted = true;
+			modified = true;
+		} else if (line.trim()) modified = true;
+	}
+	let status = "";
+	if (conflicted) status += "=";
+	if (modified) status += "!";
+	if (untracked) status += "?";
+	if (ahead) status += `⇡${ahead}`;
+	if (behind) status += `⇣${behind}`;
+	return status || undefined;
 }
 
 /** Read only local refs and tracked files; never fetch or change the index. */
@@ -53,7 +88,14 @@ export async function readGitStats(
 		}
 		// One comparison includes committed + staged + unstaged net changes,
 		// without double-counting edits that are later reverted. Untracked files are excluded.
-		return parseGitStats(await git(["diff", "--numstat", base, "--"]));
+		const [numstat, statusOut] = await Promise.all([
+			git(["diff", "--numstat", base, "--"]),
+			git(["status", "--porcelain", "--branch"]).catch(() => ""),
+		]);
+		if (signal?.aborted) return undefined;
+		const stats = parseGitStats(numstat);
+		const status = parseGitStatus(statusOut);
+		return status ? { ...stats, status } : stats;
 	} catch {
 		// Non-repository, unborn HEAD, unrelated histories, timeout, etc.
 		return undefined;
@@ -74,7 +116,8 @@ export function createGitStatsRefresher(options: {
 	let disposed = false;
 	let controller: AbortController | undefined;
 	const publish = (next: GitStats | undefined) => {
-		if (stats?.add === next?.add && stats?.del === next?.del) return;
+		if (stats?.add === next?.add && stats?.del === next?.del && stats?.status === next?.status)
+			return;
 		stats = next;
 		options.onChange(next);
 	};

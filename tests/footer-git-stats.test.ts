@@ -13,13 +13,26 @@ import {
 import { applyCustomFooter, refreshFooterGitStats } from "../extensions/feature/shell/footer.ts";
 import {
 	createGitStatsRefresher,
+	parseGitStatus,
 	readGitStats,
 	type GitStats,
 } from "../extensions/feature/shell/git-stats.ts";
 
 function repository(t: test.TestContext, initialBranch = "main") {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-footer-git-"));
-	t.after(() => rmSync(cwd, { recursive: true, force: true }));
+	t.after(async () => {
+		// Windows：abort 杀掉的 git 子进程句柄释放有延迟，rmSync 偊发 EPERM，重试几次
+		for (let attempt = 0; ; attempt++) {
+			try {
+				rmSync(cwd, { recursive: true, force: true });
+				return;
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (attempt >= 5 || (code !== "EPERM" && code !== "EBUSY")) throw error;
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+		}
+	});
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 	git("init", "--template=", `--initial-branch=${initialBranch}`);
@@ -47,11 +60,14 @@ test("working preserves HEAD-relative staged/unstaged net stats and excludes unt
 	write("untracked.txt", "not counted\n");
 	write("new.txt", "new line\n");
 	git("add", "new.txt");
-	assert.deepEqual(await readGitStats(cwd, "working"), { add: 3, del: 1 });
-	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 3, del: 1 });
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 3, del: 1, status: "!?" });
+	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 3, del: 1, status: "!?" });
 	// Staged changes undone in the worktree must not be counted twice.
 	write("source.txt", "one\ntwo\nthree\n");
-	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 0 });
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 0, status: "!?" });
+	// Untracked and modified files surface as Starship-style status symbols.
+	write("untracked2.txt", "ignored by counts\n");
+	assert.equal((await readGitStats(cwd, "working"))?.status, "!?");
 });
 
 test("branch statistics accept numstat output larger than 1 MiB", async (t) => {
@@ -91,10 +107,10 @@ test("branch includes committed new files and uncommitted edits, and remains sta
 	write("staged.txt", "staged line\n");
 	git("add", "staged.txt");
 	write("untracked.txt", "excluded\n");
-	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 5, del: 1 });
+	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 5, del: 1, status: "!?" });
 	git("add", "source.txt");
 	git("commit", "-m", "commit tracked edits");
-	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 5, del: 1 });
+	assert.deepEqual(await readGitStats(cwd, "branch"), { add: 5, del: 1, status: "?" });
 });
 
 test("branch counts net changes, not summed commits, and uses the merge base rather than base tip", async (t) => {
@@ -144,7 +160,7 @@ test("dangling origin/HEAD falls back to local main, then master", async (t) => 
 test("missing base, unborn HEAD and non-repositories hide stats without working fallback", async (t) => {
 	const { cwd, git, write } = repository(t, "trunk");
 	write("source.txt", "modified\n");
-	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 3 });
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 3, status: "!" });
 	assert.equal(await readGitStats(cwd, "branch"), undefined);
 	const plain = join(cwd, "plain");
 	mkdirSync(plain);
@@ -173,7 +189,52 @@ test("binary files and filenames resembling refs do not affect line sums", async
 	commit();
 	write("HEAD", "changed\n");
 	write("binary.dat", "\0changed\nextra\n");
-	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 1 });
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 1, del: 1, status: "!" });
+});
+
+test("parseGitStatus maps porcelain to Starship-style symbols", () => {
+	assert.equal(parseGitStatus("## main...origin/main\n M a.txt\n"), "!");
+	assert.equal(parseGitStatus("## main\n?? new.txt\n"), "?");
+	assert.equal(parseGitStatus("## main\n M a.txt\n?? new.txt\n"), "!?");
+	assert.equal(parseGitStatus("## main\nUU a.txt\n"), "=!");
+	assert.equal(parseGitStatus("## feature...origin/feature [ahead 3, behind 2]\n"), "⇡3⇣2");
+	assert.equal(parseGitStatus("## feature...origin/feature [ahead 3]\n R a.txt"), "!⇡3");
+	assert.equal(parseGitStatus("## feature...origin/feature\n"), undefined);
+});
+
+test("ahead/behind counts come from the upstream header without fetching", async (t) => {
+	const { cwd, git, write, commit } = repository(t);
+	git("switch", "-c", "feature");
+	write("feature.txt", "one\n");
+	commit();
+	const base = git("rev-parse", "HEAD");
+	git("switch", "-c", "side", base);
+	write("side.txt", "other side\n");
+	commit();
+	git("switch", "feature");
+	write("local.txt", "local\n");
+	commit();
+	git("update-ref", "refs/remotes/origin/feature", "side");
+	git("remote", "add", "origin", "https://example.invalid/repo.git");
+	git("config", "branch.feature.remote", "origin");
+	git("config", "branch.feature.merge", "refs/heads/feature");
+	assert.deepEqual(await readGitStats(cwd, "working"), { add: 0, del: 0, status: "⇡1⇣1" });
+});
+
+test("conflicted merge surfaces as = alongside counts", async (t) => {
+	const { cwd, git, write, commit } = repository(t);
+	git("switch", "-c", "feature");
+	write("source.txt", "feature side\n");
+	commit();
+	git("switch", "main");
+	write("source.txt", "main side\n");
+	commit();
+	try {
+		git("merge", "feature");
+	} catch {
+		// 冲突是预期结果；execFileSync 以退出码 1 抛错
+	}
+	assert.equal((await readGitStats(cwd, "working"))?.status, "=!");
 });
 
 test("active footer switches working → branch → working without recreation or reload", async (t) => {
@@ -231,14 +292,14 @@ test("active footer switches working → branch → working without recreation o
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 	};
-	await waitForStats("(+1 −1)");
+	await waitForStats("[!](+1 −1)");
 	setConfig(normalizeConfig({ ...config, footerGitStatsMode: "branch" }));
 	refreshFooterGitStats();
 	assert.doesNotMatch(line(), /\(\+/);
-	await waitForStats("(+3 −1)");
+	await waitForStats("[!](+3 −1)");
 	setConfig(normalizeConfig({ ...config, footerGitStatsMode: "working" }));
 	refreshFooterGitStats();
-	await waitForStats("(+1 −1)");
+	await waitForStats("[!](+1 −1)");
 	assert.equal(factoryCalls, 1);
 	// A branch change must drop old numbers even if the mode stays the same.
 	write("source.txt", "one\ntwo\nthree\n");
