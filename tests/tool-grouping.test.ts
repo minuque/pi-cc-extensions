@@ -575,8 +575,8 @@ test("collapsed group rows share the single-card viewport width", async () => {
 	const { config } = await import("../extensions/config/config.ts");
 	const { toolViewportWidth } = await import("../extensions/renderer/tool/result.ts");
 	const { visibleWidth } = await import("@earendil-works/pi-tui");
-	const previousInputClip = config.inputClip;
-	config.inputClip = 0;
+	const previousToolLabelClip = config.toolLabelClip;
+	config.toolLabelClip = 0;
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
@@ -592,7 +592,7 @@ test("collapsed group rows share the single-card viewport width", async () => {
 		assert.equal(rows.length, 2);
 		for (const row of rows) assert.equal(visibleWidth(row), toolViewportWidth(200));
 	} finally {
-		config.inputClip = previousInputClip;
+		config.toolLabelClip = previousToolLabelClip;
 		hooks.shutdown();
 	}
 });

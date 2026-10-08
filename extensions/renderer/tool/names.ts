@@ -5,9 +5,9 @@ import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
 import { headTruncateToWidth } from "./result.ts";
 
-/** inputClip=0 时不设字符上限，交给渲染时的实际宽度截断。 */
+/** toolLabelClip=0 时不设字符上限，交给渲染时的实际宽度截断。 */
 function clipLimit(): number {
-	return config.inputClip > 0 ? config.inputClip : Number.POSITIVE_INFINITY;
+	return config.toolLabelClip > 0 ? config.toolLabelClip : Number.POSITIVE_INFINITY;
 }
 
 function clip(value: unknown): string {

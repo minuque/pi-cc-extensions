@@ -48,9 +48,9 @@ test("displayPath / formatDisplayPath 保留 POSIX 与 Windows 原生分隔符",
 	);
 
 	// 工具卡摘要入口：截断走 lastIndexOf("/") / lastIndexOf("\\") 定位文件名，各保留原生分隔符
-	const previous = config.inputClip;
+	const previous = config.toolLabelClip;
 	try {
-		config.inputClip = 100;
+		config.toolLabelClip = 100;
 		assert.equal(
 			formatDisplayPath("/home/user/project/src/deep/file.ts", "/home/user/project", 12),
 			"src…/file.ts",
@@ -64,16 +64,16 @@ test("displayPath / formatDisplayPath 保留 POSIX 与 Windows 原生分隔符",
 			"src…\\file.ts",
 		);
 	} finally {
-		config.inputClip = previous;
+		config.toolLabelClip = previous;
 	}
 });
 
-test("inputClip=0 按可用宽度截断；正数仍是字符上限", () => {
-	const previous = config.inputClip;
+test("toolLabelClip=0 按可用宽度截断；正数仍是字符上限", () => {
+	const previous = config.toolLabelClip;
 	const command = `echo ${"x".repeat(300)}`;
 	const plain = (_color: string, text: string) => text;
 	try {
-		config.inputClip = 0;
+		config.toolLabelClip = 0;
 		const summary = toolCallSummary("bash", { command }, { variant: "grouping" });
 		assert.equal(summary.main, `Bash ${command}`, "摘要不预截断");
 		const line = renderToolSummary(summary, 180, plain);
@@ -83,7 +83,7 @@ test("inputClip=0 按可用宽度截断；正数仍是字符上限", () => {
 		const path = `/repo/${"deep/".repeat(60)}file.ts`;
 		assert.equal(formatDisplayPath(path, undefined, 1000), path);
 
-		config.inputClip = 40;
+		config.toolLabelClip = 40;
 		const clipped = renderToolSummary(
 			toolCallSummary("bash", { command }, { variant: "grouping" }),
 			180,
@@ -91,7 +91,7 @@ test("inputClip=0 按可用宽度截断；正数仍是字符上限", () => {
 		);
 		assert.equal(clipped.length, "Bash ".length + 40);
 	} finally {
-		config.inputClip = previous;
+		config.toolLabelClip = previous;
 	}
 });
 

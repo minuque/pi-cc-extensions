@@ -59,7 +59,7 @@ export type Config = {
 	expandedCardBackground: ThemeBg;
 	expandedInputMaxLines: number;
 	expandedOutputMaxLines: number;
-	inputClip: number;
+	toolLabelClip: number;
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
@@ -116,7 +116,7 @@ export const EXPANDED_INPUT_MAX_LINES_VALUES = ["5", "10", "20", "40", "80"];
 /** 展开工具卡 Output 可见行数预设。 */
 export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 /** 工具摘要里 path/command 等输入的折叠字符数；0 = 只按可用宽度截断。 */
-export const INPUT_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160"];
+export const TOOL_LABEL_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
@@ -147,7 +147,7 @@ export const DEFAULT_CONFIG: Config = {
 	expandedCardBackground: "userMessageBg",
 	expandedInputMaxLines: 5,
 	expandedOutputMaxLines: 10,
-	inputClip: 0,
+	toolLabelClip: 0,
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
@@ -179,10 +179,10 @@ export function pickPositiveInt(value: unknown, fallback: number, min = 1, max =
 	return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
-/** inputClip：0 表示按宽度自适应，其余夹到 8..500。 */
-export function pickInputClip(value: unknown): number {
+/** toolLabelClip：0 表示按宽度自适应，其余夹到 8..500。 */
+export function pickToolLabelClip(value: unknown): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-	return n === 0 ? 0 : pickPositiveInt(value, DEFAULT_CONFIG.inputClip, 8, 500);
+	return n === 0 ? 0 : pickPositiveInt(value, DEFAULT_CONFIG.toolLabelClip, 8, 500);
 }
 
 export function pickPositiveNumber(value: unknown, fallback: number, min = 1): number {
@@ -266,7 +266,9 @@ export function normalizeConfig(input: unknown): Config {
 			1,
 			5_000,
 		),
-		inputClip: pickInputClip(source.inputClip),
+		toolLabelClip: pickToolLabelClip(
+			source.toolLabelClip ?? source.inputClip, // 兼容旧配置键
+		),
 		useSummaryTitlesAsThinkingTitle: source.useSummaryTitlesAsThinkingTitle !== false,
 		previewLines: pickPositiveInt(
 			source.previewLines,
@@ -336,7 +338,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`expandedMax=${source.expandedPreviewMaxLines}`,
 		`expandedInput=${source.expandedInputMaxLines}`,
 		`expandedOutput=${source.expandedOutputMaxLines}`,
-		`inputClip=${source.inputClip}`,
+		`toolLabelClip=${source.toolLabelClip}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,

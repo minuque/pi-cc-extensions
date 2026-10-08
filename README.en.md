@@ -61,7 +61,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "expandedOutputMaxLines": 10, // expanded tool Output lines; overflow shows a footer hint
   "expandedPreviewMaxLines": 40, // max lines for expanded TaskList bodies (expanded diffs always show all)
   "expandedCardBackground": "userMessageBg", // expanded card background slot: userMessageBg (same as user prompts) / toolPendingBg (neutral) etc.
-  "inputClip": 0, // tool summary path/command clip length; 0 = fit width
+  "toolLabelClip": 0, // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true, // startup header (logo + tips) toggle
 
   // diff
@@ -90,9 +90,6 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerLine3Keys": [], // line3 overflow slot; painted only when a chip is visible
 }
 ```
-
-Set `editDiffCollapsedLines` to `0` to keep only a one-line change-count summary and expand hint below the tool title. This works in both `on` and `compact` modes; edit calls remain individually visible rather than joining the compact tool counts. The default stays at 24 preview lines, and expanding still shows the full diff.
-**Git change statistics**: switch modes in `/ccstyle → Footer → Git changes`; changes apply immediately. `working` compares HEAD with the working tree, including staged and unstaged edits. `branch` compares the merge base with the working tree, including committed and uncommitted net changes—not the sum of per-commit line counts. The base is selected in order: `origin/HEAD`, local `main`, local `master` (not the current branch's upstream). Only existing local refs are used; no automatic fetch. Both modes exclude untracked files (stage them with `git add` to include them) and binary line counts. Statistics are hidden if the base/merge base is unavailable or the query fails.
 
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse (dragging inside the card selects text).

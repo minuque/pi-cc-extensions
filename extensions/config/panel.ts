@@ -45,12 +45,12 @@ import {
 	FOOTER_GIT_STATS_MODES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
-	pickInputClip,
 	pickPositiveInt,
 	pickPositiveNumber,
+	pickToolLabelClip,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
-	INPUT_CLIP_VALUES,
+	TOOL_LABEL_CLIP_VALUES,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
 	type CompactStyleMode,
@@ -453,15 +453,15 @@ export async function showCcstylePanel(
 				);
 			},
 		};
-		const inputClipSetting = {
-			id: "inputClip",
-			label: "Input clip",
+		const toolLabelClipSetting = {
+			id: "toolLabelClip",
+			label: "Tool label clip",
 			description:
 				"Max characters for path/command/name in single and grouped tool summaries; 0 fits available width. Enter to type a custom value.",
-			currentValue: String(config.inputClip),
-			values: [...INPUT_CLIP_VALUES],
+			currentValue: String(config.toolLabelClip),
+			values: [...TOOL_LABEL_CLIP_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
-				buildNumberInputSubmenu(theme, inputClipSetting, closeSubmenu),
+				buildNumberInputSubmenu(theme, toolLabelClipSetting, closeSubmenu),
 		};
 		const diffViewSetting = {
 			id: "diffViewMode",
@@ -812,11 +812,11 @@ export async function showCcstylePanel(
 				return;
 			}
 			switch (id) {
-				case "inputClip":
+				case "toolLabelClip":
 					updateConfig({
-						inputClip: pickInputClip(value),
+						toolLabelClip: pickToolLabelClip(value),
 					});
-					inputClipSetting.currentValue = String(config.inputClip);
+					toolLabelClipSetting.currentValue = String(config.toolLabelClip);
 					break;
 				case "mode": {
 					// 选项值带 Experimental 标记，选择后还原为真实 mode 值。
@@ -974,7 +974,7 @@ export async function showCcstylePanel(
 					expandedOutputSetting,
 					expandedMaxSetting,
 					expandedCardBgSetting,
-					inputClipSetting,
+					toolLabelClipSetting,
 					startupHeaderSetting,
 				],
 			},
