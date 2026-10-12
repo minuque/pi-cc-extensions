@@ -420,7 +420,7 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 	}
 });
 
-test("compact 摘要下复用 default 分组折叠树，outer 工具把组切开", () => {
+test("compact 折叠摘要不挂分组折叠树，普通工具只进计数", () => {
 	const { restore } = installHooks();
 	try {
 		const message = {
@@ -451,22 +451,9 @@ test("compact 摘要下复用 default 分组折叠树，outer 工具把组切开
 		const summary = lines.find((line) => /bash×3/.test(line));
 		assert.ok(summary, `摘要应计数普通工具: ${lines}`);
 		assert.doesNotMatch(summary ?? "", /edit/, `edit 不进摘要: ${summary}`);
-		const heads = lines.filter((line) => line.includes("●"));
-		assert.equal(heads.length, 2, `edit 把树切成两段: ${lines}`);
-		assert.match(heads[0] ?? "", /Bash: 2 done/);
-		assert.match(heads[1] ?? "", /Multiple Tools: 2 done/);
-		const branches = lines.filter((line) => /[├└]/.test(line));
-		assert.deepEqual(
-			branches.map((line) =>
-				["npm test", "ls src", "a.ts", "echo done"].find((label) => line.includes(label)),
-			),
-			["npm test", "ls src", "a.ts", "echo done"],
-			`子行顺序应跟调用一致: ${branches}`,
-		);
-		assistant.setExpanded(true);
 		assert.ok(
-			!renderText(assistant).some((line) => line.includes("●")),
-			"展开整回合后分组树收回，工具进面板",
+			!lines.some((line) => /[●├└]/.test(line) || /Bash:|Multiple Tools/.test(line)),
+			`折叠摘要下不应出现分组树: ${lines}`,
 		);
 	} finally {
 		restore();

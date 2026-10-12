@@ -75,11 +75,6 @@ function toolTitle(tool: any): string {
 	);
 }
 
-/** compact 摘要树与分组卡共用的显示标题。 */
-export function toolGroupTitle(tool: any): string {
-	return toolTitle(tool);
-}
-
 function isGroupable(value: unknown): boolean {
 	return value instanceof ToolExecutionComponent && !NON_GROUPABLE.has(toolName(value));
 }
@@ -113,11 +108,6 @@ function status(tool: any): ToolStatus {
 	if (tool?.result?.isError) return "error";
 	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result)) return "pending";
 	return tool?.result ? "success" : "pending";
-}
-
-/** compact 摘要树与分组卡共用的状态判定。 */
-export function toolGroupStatus(tool: any): ToolStatus {
-	return status(tool);
 }
 
 function statusIcon(value: ToolStatus): string {
@@ -285,11 +275,8 @@ function shellResultTail(
 	return duration ? ` ${fg("dim", `· ${duration}`)}` : "";
 }
 
-/**
- * 分组折叠态的一行子工具：`├/└` + 状态图标 + 与组内同一套摘要。
- * compact 摘要下的工具树与 default 分组卡共用这一行，文案不另起一套。
- */
-export function collapsedGroupToolLine(
+/** 分组折叠态的一行子工具：`├/└` + 状态图标 + 与组内同一套摘要。 */
+function collapsedGroupToolLine(
 	tool: any,
 	last: boolean,
 	fg: (color: string, text: string) => string,
@@ -313,10 +300,10 @@ export function collapsedGroupToolLine(
 	);
 }
 
-export type GroupHeaderCounts = { pending: number; success: number; error: number };
+type GroupHeaderCounts = { pending: number; success: number; error: number };
 
 /** 组头计数：`2 done · 1 failed`。没有计数时返回空串。 */
-export function groupCountText(
+function groupCountText(
 	counts: GroupHeaderCounts,
 	fg: (color: string, text: string) => string,
 ): string {
@@ -331,7 +318,7 @@ export function groupCountText(
 }
 
 /** 组头圆点色：有失败取 error，否则有运行中取 accent，否则 success。 */
-export function groupOverallStatus(counts: GroupHeaderCounts): ToolStatus {
+function groupOverallStatus(counts: GroupHeaderCounts): ToolStatus {
 	return counts.error ? "error" : counts.pending ? "pending" : "success";
 }
 
@@ -339,7 +326,7 @@ export function groupOverallStatus(counts: GroupHeaderCounts): ToolStatus {
  * 组头的工具列表：名称用与单组标题、子行同一套人性化写法，次数一律带上（各跑一次也报 ×1）。
  * 同名（同显示标题）的合并成一项，避免 `MCP call×1, MCP call×1` 这种重复。
  */
-export function toolNameList(tools: any[]): string {
+function toolNameList(tools: any[]): string {
 	const counts = new Map<string, number>();
 	for (const tool of tools) {
 		const label = toolTitle(tool);

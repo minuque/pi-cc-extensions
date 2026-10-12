@@ -1,7 +1,7 @@
 /**
  * Compact mode：每条含 toolCall 的 assistant message 折叠为一条逐步累加的摘要行
  * （`Ran for 8s, bash×2, read×2`），edit/write 独立标题行（`✓ write <path> (+25 -0)`），
- * 普通工具不单独成行，摘要下复用 default 分组的折叠树（组头与 ├/└ 子行）；展开（Ctrl+O / fullscreen 点击）时助手文本按原生渲染，
+ * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）时助手文本按原生渲染，
  * thinking 与工具卡装进 userMessageBg 面板（卡内恢复 compact-thinking/Pi 原生或专用
  * renderer）。edit/write 复用 mode=on 的 rich diff
  * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
@@ -12,8 +12,8 @@
  * 展开面板因此留在自己回合的位置上）。
  * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
  *
- * live 围观态（回合进行中 / 收尾静默期）：正文跟折叠态同形；摘要行、单一槽位卡
- * （`↳` + 最新的一个块：仍在增长的思考预览，或本回合最近的工具，运行中优先）与分组折叠树挂在
+ * live 围观态（回合进行中 / 收尾静默期）：正文跟折叠态同形；摘要行与单一槽位卡
+ * （`↳` + 最新的一个块：仍在增长的思考预览，或本回合最近的工具，运行中优先）挂在
  * transcript 容器的回合末尾（尾行组件，anchor 与工具卡之后、下一消息之前）。
  * 思考原地增长不轮换，只有新的思考块或工具调用进来才换槽位内容。
  * 摘要行挂末尾是刻意的：运行中它恒在可写视口底缘，收尾时原地从 Running... 翻成
@@ -53,18 +53,10 @@ import { displayConfigCacheKey } from "./tool/diff/diff-component.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
-import { headTruncateToWidth, insetComponent, toolViewportWidth } from "./tool/result.ts";
+import { insetComponent } from "./tool/result.ts";
 import { isLiveToolCall, scheduleAnimation } from "./tool/tool-state.ts";
 import { renderExpandedToolResult } from "./tool/tool-io.ts";
-import {
-	collapsedGroupToolLine,
-	groupCountText,
-	groupOverallStatus,
-	paddedBackgroundRow,
-	toolGroupStatus,
-	toolGroupTitle,
-	toolNameList,
-} from "./tool/grouping.ts";
+import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { styleChangeCounts } from "./tool/ccstyle-tool.ts";
 import { formatDisplayPath } from "./tool/names.ts";
 import {
@@ -259,36 +251,6 @@ function buildMessagesSummary(
 	} else if (durationMs > 0) parts.push(`Ran for ${formatThoughtDuration(durationMs)}`);
 	for (const [name, count] of counts) parts.push(`${name}×${count}`);
 	return parts.join(", ");
-}
-
-/**
- * 摘要下的一段连续普通工具。edit/write/ask 留在外层，把段切开，自己不进树。
- * 一段里可以混着不同工具，组头口径与 default 分组相同。
- */
-type SummaryToolRun = { ids: string[] };
-
-function summaryToolRuns(messages: Iterable<any>): SummaryToolRun[] {
-	const runs: SummaryToolRun[] = [];
-	let current: SummaryToolRun | undefined;
-	for (const message of messages) {
-		const content = Array.isArray(message?.content) ? message.content : [];
-		for (const item of content) {
-			if (item?.type !== "toolCall") continue;
-			const rawName = typeof item.name === "string" ? item.name : "tool";
-			if (OUTER_TOOLS.has(rawName)) {
-				current = undefined;
-				continue;
-			}
-			if (typeof item.id !== "string") continue;
-			if (!current) {
-				current = { ids: [item.id] };
-				runs.push(current);
-			} else {
-				current.ids.push(item.id);
-			}
-		}
-	}
-	return runs;
 }
 
 export function buildMessageSummary(
@@ -1071,69 +1033,6 @@ function compactAssistantLineComponent(
 	};
 }
 
-/**
- * 摘要下的分组折叠树。组头与子行跟 default 分组折叠态同一套，不再挂组级展开提示：
- * 整回合的展开入口仍在摘要行。还没挂上组件的调用不占行。
- */
-function compactSummaryToolTree(identity: any, runsOf: () => SummaryToolRun[]): any {
-	return {
-		render(width: number): string[] {
-			const runs = runsOf();
-			if (runs.length === 0) return [];
-			const byId = new Map<string, any>();
-			for (const tool of trackedToolComponents) {
-				if (typeof tool?.toolCallId === "string") byId.set(tool.toolCallId, tool);
-			}
-			const theme = themeOf();
-			const fg = (color: string, text: string) =>
-				typeof theme.fg === "function" ? theme.fg(color, text) : text;
-			const pad = Math.max(0, Number(identity?.outputPad) || 0);
-			const indent = " ".repeat(pad);
-			const inner = Math.max(1, width - pad);
-			const rowWidth = toolViewportWidth(inner);
-			const lines: string[] = [];
-			for (const run of runs) {
-				const tools: any[] = [];
-				for (const id of run.ids) {
-					const tool = byId.get(id);
-					if (tool) tools.push(tool);
-				}
-				if (tools.length === 0) continue;
-				const counts = { pending: 0, success: 0, error: 0 };
-				for (const tool of tools) {
-					const toolStatus = toolGroupStatus(tool);
-					counts[toolStatus]++;
-					if (
-						toolStatus === "pending" &&
-						(tool.executionStarted || isLiveToolCall(tool.toolCallId))
-					) {
-						scheduleAnimation(tool, { light: true });
-					}
-				}
-				const titles = tools.map((tool) => toolGroupTitle(tool));
-				const unique = new Set(titles);
-				const label = unique.size === 1 ? (titles[0] ?? "Tool") : "Multiple Tools";
-				const overall = groupOverallStatus(counts);
-				const overallColor = overall === "pending" ? "accent" : overall;
-				const head = ` ${fg(overallColor, "●")} ${label}: ${groupCountText(counts, fg)}`;
-				const listRoom = rowWidth - visibleWidth(head) - 3;
-				const nameList =
-					unique.size > 1 && listRoom >= 4
-						? ` ${fg("dim", `· ${headTruncateToWidth(toolNameList(tools), listRoom)}`)}`
-						: "";
-				lines.push(`${indent}${truncateToWidth(`${head}${nameList}`, rowWidth, "")}`);
-				for (let index = 0; index < tools.length; index++) {
-					lines.push(
-						`${indent}${collapsedGroupToolLine(tools[index], index === tools.length - 1, fg, inner)}`,
-					);
-				}
-			}
-			return lines;
-		},
-		invalidate() {},
-	};
-}
-
 function compactStopStatusLine(status: string, pad = 0): any {
 	return {
 		render(width: number): string[] {
@@ -1785,14 +1684,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	const isRunningTool = (tool: any): boolean =>
 		tool?.executionStarted === true && (!tool.result || tool.isPartial === true);
 
-	/** 折叠与围观共用：摘要行，以及挂在槽位卡之下的分组折叠树。 */
-	const summaryTail = (round: any, identity: any, getSummary: () => string) => ({
-		line: compactAssistantLineComponent(identity, getSummary, deps.query),
-		tree: compactSummaryToolTree(identity, () => summaryToolRuns(roundMessages(round))),
-	});
-
 	/**
-	 * live 围观态：正文 + 摘要行照折叠态渲染，摘要下最多一张槽位卡，分组折叠树在槽位之下。
+	 * live 围观态：正文 + 摘要行照折叠态渲染，只在摘要行下多一张槽位卡。
 	 * - 思考：只预览最后一条仍在思考的消息，它的块是当前最新内容；
 	 * - 工具：没有活动思考时才占槽位，运行中优先，否则取本回合最近的，完成也留着；
 	 * - 槽位只放一个块（思考或工具），新的思考块/工具调用进来才轮换；
@@ -1860,8 +1753,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		// 运行中恒在可写视口底缘，收尾的 Ran for 原地落进 scrollback，不再留下
 		// 被挤出视口后定格的 Running 帧。
 		mountRoundTail(round, (identity) => {
-			const tail = summaryTail(round, identity, getSummary);
-			const parts: any[] = [tail.line];
+			const parts: any[] = [compactAssistantLineComponent(identity, getSummary, deps.query)];
 			if (cardItems.length > 0) {
 				parts.push(
 					compactLiveSlot(
@@ -1875,7 +1767,6 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					),
 				);
 			}
-			parts.push(tail.tree);
 			return parts;
 		});
 		appendStopStatus(anchor, stopStatus);
@@ -2070,10 +1961,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				renderAssistantWithoutThinking(component, message);
 				// 空摘要不挂行（getter 在 Running 启动瞬间也可能短暂为空）
 				if (summary || round.active) {
-					mountRoundTail(round, (identity) => {
-						const tail = summaryTail(round, identity, getSummary);
-						return [tail.line, tail.tree];
-					});
+					mountRoundTail(round, (identity) => [
+						compactAssistantLineComponent(identity, getSummary, deps.query),
+					]);
 				} else {
 					unmountRoundTail(round);
 				}
