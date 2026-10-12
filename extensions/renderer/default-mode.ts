@@ -14,7 +14,7 @@ import {
 	TOOL_EXPANDED_BACKGROUND_PATCH,
 } from "../utils/patch-keys.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
-import { isLiveToolCall } from "./tool/result.ts";
+import { isLiveToolCall } from "./tool/tool-state.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { createCcstyleTool } from "./tool/ccstyle-tool.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/index.ts";

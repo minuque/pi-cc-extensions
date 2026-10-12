@@ -20,7 +20,7 @@ import {
 import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 // 展开卡背景是 ccstyle 的渲染约定，不随上游 CompactThinkingConfig 走，直接读全局配置。
 import { config as styleConfig } from "../config/config.ts";
-import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
+import { isToolTuiFullscreen } from "../renderer/tool/names.ts";
 import {
 	animateCompactThinkingText,
 	formatThoughtDuration,

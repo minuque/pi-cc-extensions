@@ -22,7 +22,7 @@ import {
 } from "./codemode.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
-import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
+import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./names.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
@@ -33,12 +33,8 @@ import {
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
-import {
-	formatToolDuration,
-	headTruncateToWidth,
-	isLiveToolCall,
-	toolViewportWidth,
-} from "./result.ts";
+import { formatToolDuration, headTruncateToWidth, toolViewportWidth } from "./result.ts";
+import { isLiveToolCall } from "./tool-state.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,

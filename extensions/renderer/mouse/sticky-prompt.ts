@@ -25,7 +25,7 @@ import {
 	STICKY_PROMPT_MARKER_PATCH,
 	STICKY_PROMPT_STATE_SLOT,
 } from "../../utils/patch-keys.ts";
-import { isToolTuiFullscreen } from "../tool/show-more-hint.ts";
+import { isToolTuiFullscreen } from "../tool/names.ts";
 import type { SgrMousePacket } from "./packets.ts";
 import { setScrollButtonVisible } from "./scroll.ts";
 

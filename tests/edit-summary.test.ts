@@ -26,7 +26,7 @@ import {
 	isToolTuiFullscreen,
 	setToolTuiFullscreen,
 	showMoreHintText,
-} from "../extensions/renderer/tool/show-more-hint.ts";
+} from "../extensions/renderer/tool/names.ts";
 import { insetComponent } from "../extensions/renderer/tool/result.ts";
 import {
 	isRichDiffComponent,

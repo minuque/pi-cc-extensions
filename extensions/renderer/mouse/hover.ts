@@ -6,7 +6,7 @@ import {
 	invalidateIoView,
 	type ExpandedToolIoView,
 	type ToolIoSection,
-} from "../tool/result.ts";
+} from "../tool/tool-io.ts";
 import type { ToolGroupComponent } from "../tool/grouping.ts";
 import { componentAtLocalRow, type ComponentRowHit } from "./layout.ts";
 import { setScrollButtonHovered } from "./scroll.ts";

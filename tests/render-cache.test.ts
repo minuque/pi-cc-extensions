@@ -8,7 +8,8 @@ import {
 } from "../extensions/renderer/index.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { formatToolInputBody, toolViewportWidth } from "../extensions/renderer/tool/result.ts";
+import { formatToolInputBody } from "../extensions/renderer/tool/tool-io.ts";
+import { toolViewportWidth } from "../extensions/renderer/tool/result.ts";
 
 // cli-highlight 打底要读全局主题；正式运行由 pi 初始化
 initTheme("dark");

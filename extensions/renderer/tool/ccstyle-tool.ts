@@ -28,23 +28,23 @@ import {
 import {
 	collapsedResultSummary,
 	formatToolDuration,
-	hasExpandableDetail,
 	insetComponent,
-	isExpandedToolIoView,
+	renderCollapsedToolResultToWidth,
+	textFromResult,
+	toolViewportWidth,
+} from "./result.ts";
+import { hasExpandableDetail, isExpandedToolIoView, renderExpandedToolResult } from "./tool-io.ts";
+import {
 	isLiveToolCall,
 	isToolExpanded,
 	pendingIcon,
-	renderCollapsedToolResultToWidth,
-	renderExpandedToolResult,
 	resolveToolVisualState,
 	scheduleAnimation,
 	settledIcon,
 	setToolVisualState,
-	textFromResult,
 	toolIconColor,
-	toolViewportWidth,
-} from "./result.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+} from "./tool-state.ts";
+import { showMoreHintText } from "./names.ts";
 
 /** 成功勾：亮绿 truecolor（与 message-display 一致）。 */
 const BRIGHT_GREEN = "[38;2;80;220;100m";

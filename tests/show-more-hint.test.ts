@@ -5,7 +5,7 @@ import {
 	isToolTuiFullscreen,
 	setToolTuiFullscreen,
 	showMoreHintText,
-} from "../extensions/renderer/tool/show-more-hint.ts";
+} from "../extensions/renderer/tool/names.ts";
 
 test("show-more hint follows the TUI mode", () => {
 	setToolTuiFullscreen(true);

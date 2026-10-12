@@ -19,7 +19,7 @@ import {
 	renderToolSummary,
 	toolCallSummary,
 } from "./names.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { showMoreHintText } from "./names.ts";
 import { formatToolDuration, headTruncateToWidth, toolViewportWidth } from "./result.ts";
 
 export const CODEMODE_TOOL_NAME = "codemode";

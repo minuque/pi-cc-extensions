@@ -6,7 +6,7 @@ import {
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 import { config } from "../../config/config.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { showMoreHintText } from "./names.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 
 /**

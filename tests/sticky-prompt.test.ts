@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { createJiti } from "jiti";
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
-import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
+import { setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 import {
 	computeStickyPrompt,
 	disposeStickyPromptPatches,

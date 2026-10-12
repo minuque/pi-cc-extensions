@@ -13,7 +13,7 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { oneLine } from "../../utils/format.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { showMoreHintText } from "./names.ts";
 import { headTruncateToWidth, toolViewportWidth } from "./result.ts";
 
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";

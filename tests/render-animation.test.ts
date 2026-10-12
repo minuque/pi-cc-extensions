@@ -14,7 +14,7 @@ import {
 	clearLiveToolCalls,
 	noteStreamingToolCalls,
 	scheduleAnimation,
-} from "../extensions/renderer/tool/result.ts";
+} from "../extensions/renderer/tool/tool-state.ts";
 import { TOOL_LOADING_INTERVAL_MS } from "../extensions/utils/tool-loading-icon.ts";
 
 initTheme("dark");

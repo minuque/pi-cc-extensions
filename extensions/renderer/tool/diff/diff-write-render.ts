@@ -1,7 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { ToolDisplayConfig } from "../../../config/config.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "../names.ts";
 import { splitWriteContentLines } from "./diff-text.ts";
 import {
 	collectDiffStats,

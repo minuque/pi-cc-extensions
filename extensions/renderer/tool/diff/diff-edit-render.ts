@@ -1,7 +1,7 @@
 import { Text, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "../names.ts";
 import {
 	getLineNumberWidth,
 	parseDiff,

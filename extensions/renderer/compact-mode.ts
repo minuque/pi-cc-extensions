@@ -42,7 +42,7 @@ import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { showMoreHintText } from "./tool/show-more-hint.ts";
+import { showMoreHintText } from "./tool/names.ts";
 import {
 	countEditDiffStats,
 	countWriteDiffStats,
@@ -53,14 +53,9 @@ import { displayConfigCacheKey } from "./tool/diff/diff-component.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
-import {
-	headTruncateToWidth,
-	insetComponent,
-	isLiveToolCall,
-	renderExpandedToolResult,
-	scheduleAnimation,
-	toolViewportWidth,
-} from "./tool/result.ts";
+import { headTruncateToWidth, insetComponent, toolViewportWidth } from "./tool/result.ts";
+import { isLiveToolCall, scheduleAnimation } from "./tool/tool-state.ts";
+import { renderExpandedToolResult } from "./tool/tool-io.ts";
 import {
 	collapsedGroupToolLine,
 	groupCountText,

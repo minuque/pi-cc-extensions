@@ -39,7 +39,7 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
+import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
 import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");

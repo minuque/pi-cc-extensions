@@ -14,7 +14,7 @@ import {
 } from "../compact-mode.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/show-more-hint.ts";
+import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/names.ts";
 import {
 	type ExpandedToolIoView,
 	getActiveIoViewFrame,
@@ -22,7 +22,7 @@ import {
 	type IoViewFrameState,
 	setActiveIoViewFrame,
 	type ToolIoSection,
-} from "../tool/result.ts";
+} from "../tool/tool-io.ts";
 import {
 	collectToolComponents,
 	extractToolFramePlacements,

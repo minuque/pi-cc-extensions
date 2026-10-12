@@ -1,6 +1,6 @@
 import { posix, win32 } from "node:path";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
 import { headTruncateToWidth } from "./result.ts";
@@ -426,4 +426,44 @@ export function renderToolSummary(
 	return room >= MIN_PAYLOAD_WIDTH
 		? `${fg("toolTitle", title)}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
 		: fg("toolTitle", title);
+}
+
+let toolTuiFullscreen: boolean | undefined;
+
+export function setToolTuiFullscreen(value: boolean): void {
+	toolTuiFullscreen = value;
+}
+
+export function isToolTuiFullscreen(): boolean {
+	return toolTuiFullscreen !== false;
+}
+
+function formatKeyPart(part: string): string {
+	// 与 pi 内置 keybinding-hints 一致：macOS 上 alt 显示为 option
+	return process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+}
+
+/** 默认展开快捷键（app.tools.expand）显示文本；未配置时回退 ctrl+o。 */
+export function expandShortcutText(): string {
+	const keys = getKeybindings().getKeys("app.tools.expand");
+	if (keys.length === 0) return "ctrl+o";
+	return keys
+		.join("/")
+		.split("/")
+		.map((part) => part.split("+").map(formatKeyPart).join("+"))
+		.join("/");
+}
+
+export function showMoreHintText(): string {
+	return isToolTuiFullscreen() ? "click to show more" : `${expandShortcutText()} to show more`;
+}
+
+/** 展开卡的收起提示，与折叠态 showMoreHintText 同一位置对称。 */
+export function collapseHintText(): string {
+	return isToolTuiFullscreen() ? "↑ Collapse" : `${expandShortcutText()} to collapse`;
+}
+
+/** 该行是否带展开态收起提示（用于展开卡的 hint hover 命中）。 */
+export function isCollapseHintLine(plainLine: string): boolean {
+	return plainLine.includes(collapseHintText());
 }

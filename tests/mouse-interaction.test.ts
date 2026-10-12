@@ -18,7 +18,8 @@ import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 } from "../extensions/renderer/tool/diff/index.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { formatToolInputBody, insetComponent } from "../extensions/renderer/tool/result.ts";
+import { formatToolInputBody } from "../extensions/renderer/tool/tool-io.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 

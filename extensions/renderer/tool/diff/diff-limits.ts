@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../../../config/config.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "../names.ts";
 import {
 	buildCollapsedDiffHintText,
 	clampRenderedLineToWidth,

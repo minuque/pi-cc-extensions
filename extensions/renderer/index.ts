@@ -42,7 +42,7 @@ import {
 	clearLiveToolCalls,
 	noteStreamingToolCalls,
 	retireLiveToolCall,
-} from "./tool/result.ts";
+} from "./tool/tool-state.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import {
 	installMessageDisplayRendering,
@@ -324,6 +324,6 @@ export {
 	ExpandedToolIoView,
 	ExpandedToolResultText,
 	formatToolInputArgs,
-	SHOW_MORE_LABEL,
-} from "./tool/result.ts";
+} from "./tool/tool-io.ts";
+export { SHOW_MORE_LABEL } from "./tool/result.ts";
 export { installToolMouseInteraction } from "./mouse/interaction.ts";
