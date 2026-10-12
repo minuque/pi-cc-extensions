@@ -279,6 +279,21 @@ test("sticky prompt: hover marks the row and keeps one highlight", () => {
 	});
 });
 
+test("sticky prompt: scrollbar column is not part of the bar", () => {
+	withSticky(() => {
+		const content = [...messageLines("tall message", 40), ...assistantLines(10)];
+		const frame = makeFrame(content, 25, 10);
+		frame.scrollView.isScrollbarVisible = true;
+		renderStickyPromptScreen(frame.tui, frame.screen, frame.layout, VIEWPORT_WIDTH);
+
+		const scrollbarCol = VIEWPORT_WIDTH;
+		assert.equal(updateStickyPromptHover(frame.tui, { row: 1, col: scrollbarCol } as any), false);
+		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: scrollbarCol } as any), false);
+		assert.equal(frame.scrollView.lastScroll, null);
+		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: 5 } as any), true);
+	});
+});
+
 test("sticky prompt: click jumps to the message top", () => {
 	withSticky(() => {
 		const content = [...messageLines("tall message", 40), ...assistantLines(10)];

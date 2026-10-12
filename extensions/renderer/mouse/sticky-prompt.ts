@@ -269,20 +269,24 @@ export function renderStickyPromptScreen(
  * 指针是否落在粘性行上。返回 true 时调用方不再做工具 hover，避免同一行双重高亮；
  * hover 状态变化自行请求重绘（它不在 hover.ts 的状态里）。
  */
-export function updateStickyPromptHover(tui: any, packet: SgrMousePacket): boolean {
+function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
-	const fresh = stickyPromptActive() && state.visible && state.layout === tui?.currentLayout;
-	const onRow = Boolean(fresh && packet.row - 1 === state.row);
-	if (setStickyHovered(onRow)) tui.requestRender?.();
-	return onRow;
+	if (!stickyPromptActive() || !state.visible || state.layout !== tui?.currentLayout) return false;
+	if (packet.row - 1 !== state.row) return false;
+	const col = packet.col - 1;
+	return col >= state.x && col < state.x + state.width;
+}
+
+export function updateStickyPromptHover(tui: any, packet: SgrMousePacket): boolean {
+	const onBar = stickyBarHit(tui, packet);
+	if (setStickyHovered(onBar)) tui.requestRender?.();
+	return onBar;
 }
 
 /** 单击粘性行：视口滚到该消息首行（整块可见），并亮出回到底部按钮。 */
 export function handleStickyPromptClick(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
-	if (!stickyPromptActive() || !state.visible) return false;
-	if (state.layout !== tui?.currentLayout) return false;
-	if (packet.row - 1 !== state.row) return false;
+	if (!stickyBarHit(tui, packet)) return false;
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo === "function") {
 		view.scrollTo(state.jumpRow, { disableFollow: true });
