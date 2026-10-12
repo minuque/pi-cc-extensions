@@ -265,10 +265,7 @@ export function renderStickyPromptScreen(
 	return next;
 }
 
-/**
- * 指针是否落在粘性行上。返回 true 时调用方不再做工具 hover，避免同一行双重高亮；
- * hover 状态变化自行请求重绘（它不在 hover.ts 的状态里）。
- */
+/** 行与列都落在本帧画出的粘性条内。滚动条那一列在条外。 */
 function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
 	if (!stickyPromptActive() || !state.visible || state.layout !== tui?.currentLayout) return false;
@@ -277,6 +274,10 @@ function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	return col >= state.x && col < state.x + state.width;
 }
 
+/**
+ * 指针是否落在粘性条上。返回 true 时调用方不再做工具 hover，避免同一行双重高亮；
+ * hover 状态变化自行请求重绘（它不在 hover.ts 的状态里）。
+ */
 export function updateStickyPromptHover(tui: any, packet: SgrMousePacket): boolean {
 	const onBar = stickyBarHit(tui, packet);
 	if (setStickyHovered(onBar)) tui.requestRender?.();

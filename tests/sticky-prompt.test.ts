@@ -54,7 +54,7 @@ function plain(line: string): string {
 }
 
 /** 伪造 fullscreen 布局帧：主滚动盒 + 视口高度 + 内容行。 */
-function makeFrame(content: string[], scrollTop: number, viewportHeight: number) {
+function makeFrame(content: string[], scrollTop: number, viewportHeight: number, clipX = 0) {
 	let renders = 0;
 	const scrollView: any = {
 		scrollTop,
@@ -70,13 +70,13 @@ function makeFrame(content: string[], scrollTop: number, viewportHeight: number)
 	const contentBox: any = {
 		component: { render: () => content },
 		rect: { x: 0, y: -scrollTop, width: VIEWPORT_WIDTH, height: content.length },
-		clip: { x: 0, y: 0, width: VIEWPORT_WIDTH, height: viewportHeight },
+		clip: { x: clipX, y: 0, width: VIEWPORT_WIDTH, height: viewportHeight },
 		children: [],
 	};
 	const scrollBox: any = {
 		component: {},
 		rect: { x: 0, y: 0, width: VIEWPORT_WIDTH, height: viewportHeight },
-		clip: { x: 0, y: 0, width: VIEWPORT_WIDTH, height: viewportHeight },
+		clip: { x: clipX, y: 0, width: VIEWPORT_WIDTH, height: viewportHeight },
 		children: [contentBox],
 		scrollView,
 		scrollContentLines: content,
@@ -291,6 +291,31 @@ test("sticky prompt: scrollbar column is not part of the bar", () => {
 		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: scrollbarCol } as any), false);
 		assert.equal(frame.scrollView.lastScroll, null);
 		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: 5 } as any), true);
+	});
+});
+
+test("sticky prompt: the full row stays clickable when no scrollbar is drawn", () => {
+	withSticky(() => {
+		const content = [...messageLines("tall message", 40), ...assistantLines(10)];
+		const frame = makeFrame(content, 25, 10);
+		renderStickyPromptScreen(frame.tui, frame.screen, frame.layout, VIEWPORT_WIDTH);
+
+		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: VIEWPORT_WIDTH } as any), true);
+		assert.deepEqual(frame.scrollView.lastScroll, { row: 0, options: { disableFollow: true } });
+	});
+});
+
+test("sticky prompt: a click left of the bar misses", () => {
+	withSticky(() => {
+		const content = [...messageLines("tall message", 40), ...assistantLines(10)];
+		const frame = makeFrame(content, 25, 10, 8);
+		frame.scrollView.isScrollbarVisible = true;
+		renderStickyPromptScreen(frame.tui, frame.screen, frame.layout, VIEWPORT_WIDTH);
+
+		assert.equal(updateStickyPromptHover(frame.tui, { row: 1, col: 8 } as any), false);
+		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: 8 } as any), false);
+		assert.equal(frame.scrollView.lastScroll, null);
+		assert.equal(updateStickyPromptHover(frame.tui, { row: 1, col: 9 } as any), true);
 	});
 });
 
