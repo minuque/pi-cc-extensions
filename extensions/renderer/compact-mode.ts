@@ -70,6 +70,7 @@ import {
 	toolGroupTitle,
 	toolNameList,
 } from "./tool/grouping.ts";
+import { styleChangeCounts } from "./tool/ccstyle-tool.ts";
 import { formatDisplayPath } from "./tool/names.ts";
 import {
 	hasVisibleText,
@@ -770,8 +771,13 @@ function compactEditWriteLine(
 						)
 					: undefined;
 		if (stats) {
-			statsText = ` (+${stats.added} -${stats.removed})`;
-			statsStyled = ` ${theme.fg("dim", "(")}${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}${theme.fg("dim", ")")}`;
+			const counts = styleChangeCounts(
+				(color, text) => theme.fg(color, text),
+				stats.added,
+				stats.removed,
+			);
+			statsText = counts.text;
+			statsStyled = counts.styled;
 		}
 	}
 	// 展开卡 Box(1,1) 已 pad；折叠行自己留 1 格前导空格
