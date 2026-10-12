@@ -420,6 +420,59 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 	}
 });
 
+test("compact 摘要下复用 default 分组折叠树，outer 工具把组切开", () => {
+	const { restore } = installHooks();
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "npm test" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "ls src" } },
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "b3", name: "bash", arguments: { command: "echo done" } },
+			],
+		} as unknown as AssistantMessage;
+		const tools = [
+			tool("bash", "b1", { command: "npm test" }),
+			tool("bash", "b2", { command: "ls src" }),
+			tool("read", "r1", { path: "a.ts" }),
+			tool("bash", "b3", { command: "echo done" }),
+		];
+		for (const item of tools) {
+			item.executionStarted = true;
+			item.updateDisplay?.();
+			item.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		}
+		const assistant = new AssistantMessageComponent(message, true) as any;
+		assistant.updateContent(message);
+		const lines = renderText(assistant);
+		const summary = lines.find((line) => /bash×3/.test(line));
+		assert.ok(summary, `摘要应计数普通工具: ${lines}`);
+		assert.doesNotMatch(summary ?? "", /edit/, `edit 不进摘要: ${summary}`);
+		const heads = lines.filter((line) => line.includes("●"));
+		assert.equal(heads.length, 2, `edit 把树切成两段: ${lines}`);
+		assert.match(heads[0] ?? "", /Bash: 2 done/);
+		assert.match(heads[1] ?? "", /Multiple Tools: 2 done/);
+		const branches = lines.filter((line) => /[├└]/.test(line));
+		assert.deepEqual(
+			branches.map((line) =>
+				["npm test", "ls src", "a.ts", "echo done"].find((label) => line.includes(label)),
+			),
+			["npm test", "ls src", "a.ts", "echo done"],
+			`子行顺序应跟调用一致: ${branches}`,
+		);
+		assistant.setExpanded(true);
+		assert.ok(
+			!renderText(assistant).some((line) => line.includes("●")),
+			"展开整回合后分组树收回，工具进面板",
+		);
+	} finally {
+		restore();
+	}
+});
+
 test("consecutive tool-call messages accumulate into one round until the next visible assistant text", () => {
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
@@ -956,7 +1009,9 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 		text = renderText(assistant1).join("\n");
 		assert.match(text, /plan-three/, `活动思考应预览: ${text}`);
 		assert.doesNotMatch(text, /plan-one|plan-two/, `只有活动思考预览，中间态不堆积: ${text}`);
-		assert.doesNotMatch(text, /needle/, `思考占槽位时工具让位，槽位只放一个块: ${text}`);
+		const thinkingSlot = renderText(assistant1).find((line) => line.startsWith("↳"));
+		assert.ok(thinkingSlot, `思考应占槽位: ${text}`);
+		assert.ok(!thinkingSlot.includes("needle"), `思考占槽位时工具让位: ${thinkingSlot}`);
 		assert.deepEqual(renderText(assistant2), [], "成员本体不重复渲染");
 		assert.deepEqual(renderText(assistant3), [], "思考预览已移进槽位卡");
 
@@ -975,7 +1030,7 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 		const folded = renderText(assistant1).join("\n");
 		assert.match(folded, /Ran for /, `回合结束应收回收摘要行: ${folded}`);
 		assert.doesNotMatch(folded, /plan-three/, `回合结束后思考预览应回收: ${folded}`);
-		assert.doesNotMatch(folded, /echo-one/, "回合结束后工具槽位应回收");
+		assert.doesNotMatch(folded, /↳/, "回合结束后工具槽位应回收");
 		assert.match(folded, /bash×1/);
 		assert.match(folded, /grep×1/);
 		assert.deepEqual(renderText(assistant3), []);

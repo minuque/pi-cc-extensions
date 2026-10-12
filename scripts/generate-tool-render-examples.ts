@@ -761,6 +761,17 @@ async function generateCompact() {
 			} as unknown as AssistantMessage;
 
 			thinkingActive = true;
+			for (const component of [
+				tool("bash", "b1", { command: "npm test" }),
+				tool("read", "r1", { path: "a.ts" }),
+				tool("read", "r2", { path: "a.ts" }),
+				tool("read", "r3", { path: "b.ts" }),
+				tool("grep", "g1", { pattern: "x" }),
+			]) {
+				succeed(component, "ok");
+				component.executionStarted = true;
+				component.updateDisplay?.();
+			}
 			const active = new AssistantMessageComponent(msg, true) as any;
 			active.updateContent(msg);
 			const activeLines = renderLines(active);
@@ -814,7 +825,7 @@ async function generateCompact() {
 				section(
 					"1. 消息折叠摘要行",
 					[
-						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：",
+						"含 toolCall 的 assistant 折叠为一行摘要（运行时长 + 工具计数），已挂上的普通工具在摘要下按 default 分组折叠树列出。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行与树是回合末尾的独立尾行组件：",
 						fence([...activeLines, ...doneLines]),
 						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：",
 						fence(expandedLines),
@@ -822,7 +833,8 @@ async function generateCompact() {
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",
 							"- 摘要行挂在 transcript 容器内回合末尾（工具卡/diff 之下）：运行中恒在视口底缘可写区刷新，回合结束就地落成 `Ran for` 随 transcript 进入 scrollback；新工具卡追加时自动归位，不会越出回合。",
 							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
-							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。",
+							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。树按每次调用一行，不去重。",
+							"- 已挂上的普通工具在摘要下复用 default 分组折叠树：连续调用并成一组，同名用工具名，混用为 Multiple Tools。`edit` / `write` / `ask_user_question` 切开分组且不进树。展开整回合后树收回。",
 							"- `edit` / `write` / `ask_user_question` **不进**摘要计数（各自独立单行）。",
 							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
 							"- abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。",
@@ -874,7 +886,7 @@ async function generateCompact() {
 				section(
 					"2. 普通工具行隐藏",
 					[
-						"折叠时普通工具 **不渲染独立行**（摘要已统计）：",
+						"折叠时普通工具卡 **不渲染独立行**（清单在摘要下的分组树，卡自身已被摘要统计）：",
 						fence([
 							`read 折叠行数: ${renderLines(read).filter((l) => l.trim()).length}`,
 							`bash 折叠行数: ${renderLines(bash).filter((l) => l.trim()).length}`,
