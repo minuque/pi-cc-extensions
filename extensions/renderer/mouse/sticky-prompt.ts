@@ -172,6 +172,36 @@ export type StickyPromptInfo = {
 	text: string;
 };
 
+/**
+ * 滚动条轨道顶端那格所在的屏幕行和列；那一格是滑块、轨道在最顶端不可点、或
+ * 没有滚动条时返回 null。点在轨道顶端会被 Pi 当成「跳到会话开头」。
+ * 与 pi-tui getScrollbarGeometry 同一公式（它不在包入口导出）：滑块至少 2 行，
+ * 位置按 scrollTop 占可滚范围的比例映射到轨道。
+ */
+export function scrollbarTopTrackCell(box: any): { row: number; col: number } | null {
+	const view = box?.scrollView;
+	const rect = box?.rect;
+	const clip = box?.clip;
+	if (!view?.isScrollbarVisible || !rect || !clip || rect.width <= 0 || rect.height <= 0)
+		return null;
+	const column = rect.x + rect.width - 1;
+	if (column < clip.x || column >= clip.x + clip.width) return null;
+	const contentHeight = box.children?.[0]?.rect?.height ?? box.scrollContentLines?.length ?? 0;
+	const trackHeight = rect.height;
+	if (contentHeight <= 0) return null;
+	const thumbHeight = Math.max(
+		Math.min(2, trackHeight),
+		Math.min(trackHeight, Math.round((trackHeight * trackHeight) / contentHeight)),
+	);
+	const maxScrollTop = Math.max(0, contentHeight - trackHeight);
+	const maxThumbTop = trackHeight - thumbHeight;
+	const scrollTop = Number(view.scrollTop ?? 0);
+	const thumbTop =
+		rect.y + (maxScrollTop === 0 ? 0 : Math.round((scrollTop / maxScrollTop) * maxThumbTop));
+	// 顶端这一格是轨道而非滑块时才返回它：滑块一上来，整格就归拖动。
+	return thumbTop > clip.y ? { row: clip.y, col: column } : null;
+}
+
 /** 视口上沿落在 userMessage 之下时，返回粘性行的位置与文本。 */
 export function computeStickyPrompt(tui: any, layout: any): StickyPromptInfo | null {
 	if (!layout?.root) return null;
@@ -284,9 +314,26 @@ export function updateStickyPromptHover(tui: any, packet: SgrMousePacket): boole
 	return onBar;
 }
 
+/**
+ * 滚动条轨道顶端那一格的按下：吞掉不处理。
+ * 放行的话 Pi 会把滑块跳到轨道顶端，阅读位置回到会话开头。粘性条在时整行最容易误点。
+ * 那格是滑块时不拦，照常拖动；没有滚动条、滚动条不可见时也不拦。
+ */
+export function scrollbarTopTrackHit(tui: any, packet: SgrMousePacket): boolean {
+	if (!stickyPromptActive()) return false;
+	const state = stickyState();
+	if (!state.visible || state.layout !== tui?.currentLayout) return false;
+	const box = findScrollBox(tui?.currentLayout?.root, tui?.getPrimaryScrollView?.());
+	const cell = scrollbarTopTrackCell(box);
+	if (!cell) return false;
+	// 只在粘性条那一行拦：那一行被遮住，不知道点的是轨道还是滑块。
+	return state.row === cell.row && packet.row - 1 === cell.row && packet.col - 1 === cell.col;
+}
+
 /** 单击粘性行：视口滚到该消息首行（整块可见），并亮出回到底部按钮。 */
 export function handleStickyPromptClick(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
+	if (scrollbarTopTrackHit(tui, packet)) return true;
 	if (!stickyBarHit(tui, packet)) return false;
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo === "function") {
