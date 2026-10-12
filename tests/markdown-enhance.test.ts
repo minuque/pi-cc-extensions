@@ -166,3 +166,25 @@ test("圈数字转半角括号（Nerd Font 字形缺陷规避）", () => {
 	assert.strictEqual(run("方案②引入，共⑩项"), "方案(2)引入，共(10)项");
 	assert.ok(run("① ② ⑳").includes("(1) (2) (20)"));
 });
+
+test("引用块和长围栏里的代码不被改写", () => {
+	const quoted = run("> ```ts\n> const n = ①\n> ```\nplain ①");
+	assert.match(quoted, /> const n = ①/);
+	assert.match(quoted, /plain \(1\)/);
+
+	const longer = run("````\n```\nstill code ①\n````\nafter ①");
+	assert.match(longer, /still code ①/);
+	assert.match(longer, /after \(1\)/);
+
+	const tilde = run("~~~\ncode ①\n~~~\nafter ①");
+	assert.match(tilde, /code ①/);
+	assert.match(tilde, /after \(1\)/);
+
+	const indented = run("   ```\n  code ①\n   ```\nafter ①");
+	assert.match(indented, /code ①/);
+	assert.match(indented, /after \(1\)/);
+
+	const quotedUrl = run("> ```\n> see https://example.com/a\n> ```\n正文 https://example.com/b");
+	assert.ok(!quotedUrl.includes("[https://example.com/a]"));
+	assert.ok(quotedUrl.includes("[https://example.com/b](https://example.com/b)"));
+});

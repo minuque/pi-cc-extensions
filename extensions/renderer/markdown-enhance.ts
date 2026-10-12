@@ -110,14 +110,11 @@ function trimUrl(url: string): string {
 function linkifyUrls(markdown: string): string {
 	const lines = markdown.split("\n");
 	const out: string[] = [];
-	let inFence = false;
+	let fence: MarkdownFence | undefined;
 	for (const line of lines) {
-		if (/^```/.test(line)) {
-			inFence = !inFence;
-			out.push(line);
-			continue;
-		}
-		if (inFence) {
+		const scanned = scanMarkdownFence(line, fence);
+		fence = scanned.fence;
+		if (scanned.protected) {
 			out.push(line);
 			continue;
 		}
@@ -145,8 +142,53 @@ function linkifyUrls(markdown: string): string {
 // 转成 ASCII "(n)" 后任何字体下宽度一致。U+2460-U+2473 连续，差值即序号。
 const CIRCLED_RE = /[①-⑳]/g;
 
+const BLOCKQUOTE_PREFIX = /^ {0,3}>[ \t]?/;
+const CODE_FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+const CODE_FENCE_CLOSE = /^ {0,3}(`+|~+)[ \t]*$/;
+
+type MarkdownFence = { marker: string; blockquoteDepth: number };
+
+function parseFenceLine(line: string): { blockquoteDepth: number; content: string } {
+	let content = line;
+	let blockquoteDepth = 0;
+	while (BLOCKQUOTE_PREFIX.test(content)) {
+		content = content.replace(BLOCKQUOTE_PREFIX, "");
+		blockquoteDepth++;
+	}
+	return { blockquoteDepth, content };
+}
+
+function scanMarkdownFence(
+	line: string,
+	fence: MarkdownFence | undefined,
+): { protected: boolean; fence: MarkdownFence | undefined } {
+	const parsed = parseFenceLine(line);
+	if (fence && parsed.blockquoteDepth >= fence.blockquoteDepth) {
+		const close = parsed.content.match(CODE_FENCE_CLOSE)?.[1];
+		const closed =
+			parsed.blockquoteDepth === fence.blockquoteDepth &&
+			close?.[0] === fence.marker[0] &&
+			close.length >= fence.marker.length;
+		return { protected: true, fence: closed ? undefined : fence };
+	}
+	const marker = parsed.content.match(CODE_FENCE_OPEN)?.[1];
+	return {
+		protected: Boolean(marker),
+		fence: marker ? { marker, blockquoteDepth: parsed.blockquoteDepth } : undefined,
+	};
+}
+
 function deCircled(markdown: string): string {
-	return markdown.replace(CIRCLED_RE, (ch) => `(${ch.codePointAt(0)! - 0x2460 + 1})`);
+	let fence: MarkdownFence | undefined;
+	return markdown
+		.split("\n")
+		.map((line) => {
+			const scanned = scanMarkdownFence(line, fence);
+			fence = scanned.fence;
+			if (scanned.protected) return line;
+			return line.replace(CIRCLED_RE, (ch) => `(${ch.codePointAt(0)! - 0x2460 + 1})`);
+		})
+		.join("\n");
 }
 
 // ============================================================================
@@ -159,7 +201,7 @@ const MULTILINE_LINK_RE = /\[([^\]\n]*(?:\n[^\]\n]*)+)\](?=\()/g;
 function normalizeMultilineLinks(markdown: string): string {
 	const out: string[] = [];
 	let prose: string[] = [];
-	let inFence = false;
+	let fence: MarkdownFence | undefined;
 	const flush = () => {
 		if (prose.length === 0) return;
 		out.push(
@@ -171,15 +213,13 @@ function normalizeMultilineLinks(markdown: string): string {
 		prose = [];
 	};
 	for (const line of markdown.split("\n")) {
-		if (/^```/.test(line)) {
-			flush();
-			inFence = !inFence;
-			out.push(line);
-		} else if (inFence) {
-			out.push(line);
-		} else {
-			prose.push(line);
-		}
+		const scanned = scanMarkdownFence(line, fence);
+		const opening = !fence && scanned.fence;
+		const closing = fence && !scanned.fence;
+		fence = scanned.fence;
+		if (opening || closing) flush();
+		if (scanned.protected) out.push(line);
+		else prose.push(line);
 	}
 	flush();
 	return out.join("\n");
@@ -272,17 +312,18 @@ function renderDiagrams(
 function renderAdmonitions(markdown: string): string {
 	const lines = markdown.split("\n");
 	const out: string[] = [];
-	let inFence = false;
+	let fence: MarkdownFence | undefined;
 	let i = 0;
 	while (i < lines.length) {
 		const line = lines[i];
-		if (/^```/.test(line)) {
-			inFence = !inFence;
+		const scanned = scanMarkdownFence(line, fence);
+		fence = scanned.fence;
+		if (scanned.protected) {
 			out.push(line);
 			i++;
 			continue;
 		}
-		if (!inFence && /^>\s*\[\s*!/i.test(line)) {
+		if (/^>\s*\[\s*!/i.test(line)) {
 			const result = renderAdmonition(lines, i);
 			if (result) {
 				out.push(...result.output);
