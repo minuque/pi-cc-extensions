@@ -185,6 +185,53 @@ test("context breakdown attributes embedded memory and skills once", () => {
 	assert.ok(systemTokens < Math.ceil(sectionsText.length / 4));
 });
 
+test("context breakdown counts tool schemas once", () => {
+	const definition = {
+		name: "read",
+		description: "Read a file",
+		parameters: { type: "object" },
+	};
+	const removed = {
+		name: "bash",
+		description: "x".repeat(400),
+		parameters: { type: "object" },
+	};
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			cwd: "/repo",
+			selectedTools: ["read"],
+		}),
+		sessionManager: {
+			buildSessionProjection: () => ({
+				entries: [
+					{
+						sourceEntry: { type: "message" },
+						messages: [
+							{
+								role: "system",
+								content: "base",
+								toolsAdded: [definition],
+								toolsRemoved: [removed],
+							},
+						],
+					},
+				],
+			}),
+		},
+	} as any;
+	const tools = [{ ...definition, promptGuidelines: [], sourceInfo: {} }] as any;
+
+	const breakdown = collectContextBreakdown(ctx, tools);
+	const systemTokens = breakdown.parts.find((part) => part.label === "System prompt")?.tokens;
+	const toolTokens = breakdown.parts.find((part) => part.label === "Tools definition")?.tokens;
+	assert.equal(systemTokens, Math.ceil("base".length / 4));
+	assert.equal(toolTokens, Math.ceil(JSON.stringify(definition).length / 4));
+	assert.equal(
+		(systemTokens ?? 0) + (toolTokens ?? 0),
+		Math.ceil("base".length / 4) + Math.ceil(JSON.stringify(definition).length / 4),
+	);
+});
+
 test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {
 	assert.equal(resolveUsedTokens({ tokens: 1, percent: 7 }, 20_000, 272_000), 19_040);
 	assert.equal(resolveUsedTokens({ tokens: 19_000, percent: 7 }, 20_000, 272_000), 19_000);

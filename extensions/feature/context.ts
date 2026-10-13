@@ -330,19 +330,15 @@ const tokenEstimate = (value: unknown): number => {
 	return Math.max(0, Math.ceil(text.length / 4));
 };
 
-/** system 消息对请求的贡献：正文 + 各 section 文本 + 声明的工具 schema，与 pi 的 estimateTokens 同口径。 */
+/** 只算会进请求正文的 content 和 sections。工具 schema 走 tools 参数，由 Tools definition 单独计一次。 */
 function systemMessageTokens(message: {
 	content?: unknown;
 	sections?: Record<string, string | null> | null;
-	toolsAdded?: unknown;
-	toolsRemoved?: unknown;
 }): number {
 	let chars = typeof message.content === "string" ? message.content.length : 0;
 	for (const section of Object.values(message.sections ?? {})) {
 		if (typeof section === "string") chars += section.length;
 	}
-	if (message.toolsAdded) chars += JSON.stringify(message.toolsAdded).length;
-	if (message.toolsRemoved) chars += JSON.stringify(message.toolsRemoved).length;
 	return Math.ceil(chars / 4);
 }
 
