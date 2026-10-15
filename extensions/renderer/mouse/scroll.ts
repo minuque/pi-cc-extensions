@@ -68,7 +68,7 @@ export function setScrollButtonVisible(visible: boolean): void {
 export function noteNewTranscriptItem(): void {
 	const state = scrollButtonState();
 	const tui = getToolMouseTui();
-	if (!state.visible || !tui) return;
+	if (!dockScrollButtonActive() || !state.visible || !tui) return;
 	// 提交新消息时官方可能直接跳回底部（不经过滚动输入）：先按实时跟随状态校正，
 	// 否则跟随期间的内容会被当成“离开底部时的新消息”计入。
 	if (isAtTranscriptBottom(tui)) {
@@ -107,6 +107,10 @@ export function toolMouseInteractionActive(): boolean {
 	return config.mode !== "off";
 }
 
+export function dockScrollButtonActive(): boolean {
+	return toolMouseInteractionActive() && config.scrollButtonMode === "dock";
+}
+
 /** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */
 export function fullscreenLazyTui(tui: any): boolean {
 	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
@@ -132,10 +136,15 @@ export function restoreOfficialScrollToEnd(tui: any): void {
 	tui[OFFICIAL_SCROLL_TO_END_KEY] = undefined;
 }
 
-/** on/compact 用 dock 按钮；off 还回 pi 原生 Jump to latest。 */
+/** dock 模式替换官方浮层；native 或 ccstyle off 时保留 Pi 原生 Jump to latest。 */
 export function syncOfficialScrollToEnd(tui: any): void {
-	if (toolMouseInteractionActive()) disableOfficialScrollToEnd(tui);
-	else restoreOfficialScrollToEnd(tui);
+	if (dockScrollButtonActive()) {
+		disableOfficialScrollToEnd(tui);
+		return;
+	}
+	restoreOfficialScrollToEnd(tui);
+	setScrollButtonVisible(false);
+	setScrollButtonHovered(false);
 }
 
 /** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
@@ -202,7 +211,7 @@ export function hideScrollButton(tui: any): void {
 export function scheduleScrollButtonSync(tui: any, data: string): void {
 	if (
 		!fullscreenLazyTui(tui) ||
-		!toolMouseInteractionActive() ||
+		!dockScrollButtonActive() ||
 		!isScrollNavigationInput(data) ||
 		scrollButtonSyncScheduled
 	)
@@ -211,7 +220,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 	const previousLines = tui.previousLines;
 	const check = (attempt: number) => {
 		scrollButtonSyncScheduled = false;
-		if (getToolMouseTui() !== tui) return;
+		if (getToolMouseTui() !== tui || !dockScrollButtonActive()) return;
 		// Pi renders on its own frame timer. Inspect the resulting viewport before
 		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
@@ -234,7 +243,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 export function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!fullscreenLazyTui(tui) || !toolMouseInteractionActive()) return;
+	if (!fullscreenLazyTui(tui) || !dockScrollButtonActive()) return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
@@ -247,7 +256,12 @@ function scrollButtonText(): string {
 }
 
 export function renderScrollButton(width: number, theme: any): string[] {
-	if (!getScrollButtonVisible() || !fullscreenLazyTui(getToolMouseTui())) return [];
+	if (
+		!dockScrollButtonActive() ||
+		!getScrollButtonVisible() ||
+		!fullscreenLazyTui(getToolMouseTui())
+	)
+		return [];
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",
 		`[ ↓ ${scrollButtonText()} ]`,

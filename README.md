@@ -64,6 +64,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "toolLabelClip": 0,                      // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
+  "scrollButtonMode": "dock",             // fullscreen：dock 独占行 / native Pi 浮层
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified

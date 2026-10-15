@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { config } from "../extensions/config/config.ts";
+import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import {
 	disableOfficialScrollToEnd,
 	getScrollButtonNewCount,
@@ -37,6 +37,16 @@ function fakeTheme() {
 
 // SGR 滚轮包（code 65 = 向下滚动），不依赖键绑定表，纯字符串解析即可命中。
 const WHEEL_DOWN_INPUT = "\x1b[<65;1;1M";
+
+test("scroll button: config defaults to dock and accepts native", () => {
+	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
+	assert.equal(normalizeConfig({ scrollButtonMode: "native" }).scrollButtonMode, "native");
+	assert.equal(normalizeConfig({ scrollButtonMode: "invalid" }).scrollButtonMode, "dock");
+	assert.match(
+		formatConfigStatus(normalizeConfig({ scrollButtonMode: "native" })),
+		/scrollButton=native/,
+	);
+});
 
 // 滚动按钮状态机：调度后立即 teardown（/reload 中途）不得残留渲染或状态，
 // 重新 install 后调度必须恢复正常。
@@ -91,11 +101,13 @@ test("scroll button: disable official overlay keeps dock button", async () => {
 // /ccstyle off：还回官方 overlay，不画本仓库 dock 按钮。
 test("scroll button: off mode restores official overlay", () => {
 	const previousMode = config.mode;
+	const previousScrollButtonMode = config.scrollButtonMode;
 	const { tui } = lazyFullscreenTui();
 	const indicator = () => "Jump to latest message";
 	tui.scrollToEndIndicator = indicator;
 	try {
 		config.mode = "on";
+		config.scrollButtonMode = "dock";
 		disableOfficialScrollToEnd(tui);
 		assert.equal(tui.scrollToEndIndicator, undefined);
 
@@ -112,6 +124,39 @@ test("scroll button: off mode restores official overlay", () => {
 		assert.equal(tui.scrollToEndIndicator, indicator);
 	} finally {
 		config.mode = previousMode;
+		config.scrollButtonMode = previousScrollButtonMode;
+		resetScrollButtonState();
+		setToolMouseTui(null);
+	}
+});
+
+test("scroll button: native mode restores Pi overlay and omits dock row", async () => {
+	const previousMode = config.mode;
+	const previousScrollButtonMode = config.scrollButtonMode;
+	const { tui, count } = lazyFullscreenTui();
+	const indicator = () => "Jump to latest message";
+	tui.scrollToEndIndicator = indicator;
+	setToolMouseTui(tui);
+	try {
+		config.mode = "on";
+		config.scrollButtonMode = "dock";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, undefined);
+
+		config.scrollButtonMode = "native";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, indicator);
+		scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(count(), 0, "native 模式不调度 dock 按钮重绘");
+		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
+
+		config.scrollButtonMode = "dock";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, undefined);
+	} finally {
+		config.mode = previousMode;
+		config.scrollButtonMode = previousScrollButtonMode;
 		resetScrollButtonState();
 		setToolMouseTui(null);
 	}

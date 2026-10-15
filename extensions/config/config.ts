@@ -15,6 +15,7 @@ export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 export type FooterGitStatsMode = "working" | "branch";
 export type FooterTokenRateMode = "average" | "live";
+export type ScrollButtonMode = "dock" | "native";
 
 export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
@@ -68,6 +69,8 @@ export type Config = {
 	showStartupHeader: boolean;
 	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
 	stickyUserMessage: boolean;
+	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层。 */
+	scrollButtonMode: ScrollButtonMode;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -101,6 +104,7 @@ export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
 export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
+export const SCROLL_BUTTON_MODES: ScrollButtonMode[] = ["dock", "native"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
 export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "120"];
 /** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
@@ -164,6 +168,7 @@ export const DEFAULT_CONFIG: Config = {
 	dimThinkingText: false,
 	showStartupHeader: true,
 	stickyUserMessage: true,
+	scrollButtonMode: "dock",
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -297,6 +302,11 @@ export function normalizeConfig(input: unknown): Config {
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		stickyUserMessage: source.stickyUserMessage !== false,
+		scrollButtonMode: pickEnum(
+			source.scrollButtonMode,
+			SCROLL_BUTTON_MODES,
+			DEFAULT_CONFIG.scrollButtonMode,
+		),
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -367,6 +377,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
+		`scrollButton=${source.scrollButtonMode}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,
