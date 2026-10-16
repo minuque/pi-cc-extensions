@@ -40,10 +40,7 @@ const LEGACY_FIXED_FOOTER_KEYS = [
 	FOOTER_GIT_KEY,
 ] as const;
 
-const BUILTIN_FOOTER_KEYS = new Set<string>([
-	...DEFAULT_FOOTER_LINE1_KEYS,
-	...DEFAULT_FOOTER_LINE2_KEYS,
-]);
+const BUILTIN_FOOTER_KEYS = new Set<string>(LEGACY_FIXED_FOOTER_KEYS);
 
 export function isBuiltinFooterKey(key: string): boolean {
 	return BUILTIN_FOOTER_KEYS.has(key);

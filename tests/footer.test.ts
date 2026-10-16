@@ -23,6 +23,7 @@ import {
 	DEFAULT_FOOTER_LINE1_KEYS,
 	DEFAULT_FOOTER_LINE2_KEYS,
 	FOOTER_GIT_KEY,
+	isBuiltinFooterKey,
 	PI_USAGE_KEY,
 	PI_USAGE_SOURCE,
 	defaultFooterLine,
@@ -290,6 +291,11 @@ test("footerChipDescription names builtin chips and the source extension", () =>
 	);
 	assert.equal(footerChipDescription("ponytail", "⚡ FULL"), "⚡ FULL · from ponytail");
 	assert.equal(footerChipDescription("lsp", ""), "inactive · from lsp");
+});
+
+test("pi-usage stays a plugin chip even though it is on the default line", () => {
+	assert.equal(isBuiltinFooterKey(PI_USAGE_KEY), false);
+	assert.equal(isBuiltinFooterKey(FOOTER_GIT_KEY), true);
 });
 
 test("pi-usage and plugin usage can both be visible with no fallback judgment", () => {
