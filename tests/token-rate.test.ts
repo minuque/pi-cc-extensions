@@ -200,4 +200,74 @@ describe("token rate", { concurrency: false }, () => {
 			await events.get("agent_end")?.({}, ctx);
 		}
 	});
+
+	test("placeholder usage keeps delta estimates and message_end finalizes the total", async () => {
+		const { events, ctx } = install();
+		const originalNow = Date.now;
+		let now = 1_000;
+		Date.now = () => now;
+		// Anthropic 的 message_start 给出 output_tokens: 2，Pi 把它挂在之后每个 partial 上。
+		const update = (type: string, delta?: string) =>
+			events.get("message_update")?.(
+				{ assistantMessageEvent: { type, delta, partial: { usage: { output: 2 } } } },
+				ctx,
+			);
+		try {
+			await events.get("before_agent_start")?.({}, ctx);
+			await events.get("turn_start")?.({ timestamp: 1_000 }, ctx);
+			now = 1_500;
+			await update("text_start");
+			now = 2_000;
+			await update("text_delta", "a".repeat(400));
+			now = 2_500;
+			await update("text_delta", "a".repeat(400));
+			assert.equal(totalTokens(), 202, "占位值不把 delta 累计拨回去");
+			assert.equal(displayTokenRate("live"), 200);
+
+			// Pi 不把 done 转成 message_update，message_delta 的累计值只在 message_end 上。
+			now = 3_000;
+			await events.get("message_end")?.(
+				{ message: { role: "assistant", stopReason: "stop", usage: { output: 1_000 } } },
+				ctx,
+			);
+			assert.equal(totalTokens(), 1_000);
+			assert.equal(currentTokenRate(), 500, "平均按真实总量重算");
+			assert.equal(displayTokenRate("live"), 200, "未逐字流出的 token 不回填 live 窗口");
+		} finally {
+			Date.now = originalNow;
+			await events.get("turn_end")?.({}, ctx);
+			await events.get("agent_end")?.({}, ctx);
+		}
+	});
+
+	test("message_end only finalizes usage from a completed assistant message", async () => {
+		const { events, ctx } = install();
+		const update = (type: string, delta?: string) =>
+			events.get("message_update")?.(
+				{ assistantMessageEvent: { type, delta, partial: { usage: { output: 2 } } } },
+				ctx,
+			);
+		await events.get("before_agent_start")?.({}, ctx);
+		await events.get("turn_start")?.({ timestamp: Date.now() - 1_000 }, ctx);
+		await update("text_start");
+		await update("text_delta", "a".repeat(400));
+		assert.equal(totalTokens(), 102);
+
+		// 中断时 usage 还是 message_start 的占位值，不能覆盖估算。
+		await events.get("message_end")?.(
+			{ message: { role: "assistant", stopReason: "aborted", usage: { output: 2 } } },
+			ctx,
+		);
+		assert.equal(totalTokens(), 102);
+
+		// 工具结果可能带着嵌套调用的 usage，不属于本段输出。
+		await events.get("message_end")?.(
+			{ message: { role: "toolResult", usage: { output: 999 } } },
+			ctx,
+		);
+		assert.equal(totalTokens(), 102);
+
+		await events.get("turn_end")?.({}, ctx);
+		await events.get("agent_end")?.({}, ctx);
+	});
 });

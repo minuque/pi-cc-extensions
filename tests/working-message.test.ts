@@ -123,6 +123,29 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	assert.match(messages.at(-1) ?? "", /↓ 37 tokens/);
 });
 
+test("tool call argument deltas count toward the token total", async () => {
+	const { events, messages, ctx } = install();
+	await events.get("turn_start")?.({}, ctx);
+	await events.get("message_update")?.(
+		{ assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: {} } },
+		ctx,
+	);
+	// 写文件这类工具的参数走 toolcall_delta。
+	await events.get("message_update")?.(
+		{
+			assistantMessageEvent: {
+				type: "toolcall_delta",
+				contentIndex: 0,
+				delta: '{"path":"a.txt"}',
+				partial: {},
+			},
+		},
+		ctx,
+	);
+	assert.match(messages.at(-1) ?? "", /↓ 4 tokens/);
+	await events.get("turn_end")?.({}, ctx);
+});
+
 // compact 摘要不再改写 working message：无论是否在底部，都走默认文案。
 test("compact 活动回合不改写 working message", async () => {
 	const { events, messages, ctx } = install();

@@ -3,8 +3,10 @@
  *
  * average：一次用户指令的墙钟平均（工具等待计入分母），显示 `avg`。
  * live：最近 1 秒的瞬时速率，生成期暂停时钟，显示 `live`；指令结束定格为整段平均。
- * token 与 working-message 同源：优先 provider `usage.output`，否则按 delta 增量估算
- * （CJK 1 token，其余 chars/4）。provider 值回填到本段消息窗口。
+ * token 与 working-message 同源：变大的 provider `usage.output` 覆盖估算，否则按 delta 累加
+ * （CJK 1 token，其余 chars/4）。没有变大的 usage 不当作累计值：Anthropic 的 message_start
+ * 会给出一个很小的 output_tokens，并在每个 partial 上重复，直到最后的 message_delta。
+ * 消息结束时用 message_end 上的 usage 定格本段总量。
  * Pi 的 turn 是单次 assistant 消息，工具调用结束会开新 turn。token 跨 turn 累加，
  * 计时与 TTFT 直到下一条用户指令才重置。
  * TTFT：用户指令开始到第一个内容块（text/thinking/toolcall）开始的毫秒数，
@@ -120,15 +122,29 @@ export function sampleTokenDelta(delta: string, now = Date.now()): void {
 }
 
 /**
- * 记录本段 provider `usage.output`。usage 按锚点摊回窗口：
+ * 记录本段 provider `usage.output`。变大的 usage 按锚点摊回窗口：
  * 首次报告从消息起点铺到现在，之后每次把增量摊在上次报告之后。
+ * 没有变大的报告直接忽略，避免 message_start 的占位值反复覆盖 delta 累计。
+ * `final` 用于消息结束：以本次 output 为本段总量，估算偏高偏低都按它修正。
+ * 结束值含未逐字流出的思考 token，它们不属于最近一秒，所以窗口只整体平移，不回填。
  */
-export function recordProviderUsage(output: number, now = Date.now()): void {
+export function recordProviderUsage(output: number, now = Date.now(), final = false): void {
 	if (!runStartTime || output <= 0) return;
+	if (final) {
+		const shift = output - currentTokens;
+		for (const sample of samples) sample.cum += shift;
+		countedUsage = output;
+		currentTokens = output;
+		usageAnchorTime = now;
+		usageAnchorTokens = output;
+		updateRates(now);
+		return;
+	}
+	if (output <= countedUsage) return;
 	const firstReport = countedUsage === 0;
 	const jump = output - countedUsage;
 	countedUsage = output;
-	// provider 是权威计数；首次报告以它为准，之后增量接管。
+	// 变大的 provider 计数是权威值，覆盖本段估算。
 	currentTokens = output;
 	if (firstReport) {
 		samples = samples.filter((sample) => sample.t < usageAnchorTime);

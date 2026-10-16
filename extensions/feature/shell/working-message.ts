@@ -49,9 +49,9 @@ export default function (pi: ExtensionAPI): void {
 		return totalTokens();
 	}
 
-	function updateProviderUsage(message: StreamMessage): void {
+	function updateProviderUsage(message: StreamMessage, final = false): void {
 		const output = outputUsage(message);
-		if (output > 0) recordProviderUsage(output);
+		if (output > 0) recordProviderUsage(output, Date.now(), final);
 	}
 
 	function buildWorkingMessage(): string {
@@ -171,13 +171,20 @@ export default function (pi: ExtensionAPI): void {
 			// 分段锚点只在 turn_start 重置。这里再重置会把累计 usage.output 当成新的首报。
 			markFirstToken();
 			updateProviderUsage(evt.partial);
-		} else if (evt.type === "thinking_delta" || evt.type === "text_delta") {
+		} else if (
+			evt.type === "thinking_delta" ||
+			evt.type === "text_delta" ||
+			evt.type === "toolcall_delta"
+		) {
+			// 工具参数走 toolcall_delta；不计入的话，写长文件这类调用期间 token 一直不涨。
 			if (typeof evt.delta === "string") sampleTokenDelta(evt.delta);
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "text_end" || evt.type === "thinking_end") {
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "done") {
-			updateProviderUsage(evt.message);
+			// Pi 目前不会把 done/error 转成 message_update，定格在下面的 message_end 里做。
+			// 这两个分支只在宿主直接转发 done/error 时生效；同一个值重复定格不改变结果。
+			updateProviderUsage(evt.message, true);
 		} else if (evt.type === "error") {
 			updateProviderUsage(evt.error);
 		} else {
@@ -186,6 +193,18 @@ export default function (pi: ExtensionAPI): void {
 
 		syncWorkingMessage();
 		scheduleRefreshTick();
+	});
+
+	// message_delta 的累计 usage 只出现在 message_end 上，含未逐字流出的思考 token。
+	// message_end 在工具执行和 turn_end 之前，先于 carryTokenRate 结转。
+	pi.on("message_end", async (event, ctx) => {
+		const message = event?.message;
+		if (message?.role !== "assistant") return;
+		activeCtx = ctx;
+		// 出错/中断时 usage 可能还是 message_start 的占位值，只接受变大的值。
+		const failed = message.stopReason === "error" || message.stopReason === "aborted";
+		updateProviderUsage(message, !failed);
+		syncWorkingMessage();
 	});
 
 	pi.on("tool_execution_start", async () => {
