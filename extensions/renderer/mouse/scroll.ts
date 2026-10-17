@@ -61,9 +61,8 @@ export function setScrollButtonHovered(hovered: boolean): boolean {
 }
 export function getScrollButtonVisible(): boolean {
 	return (
-		patchRegistry
-			.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)
-			?.isDockVisible() ?? false
+		patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.isDockVisible() ??
+		false
 	);
 }
 export function isScrollBottomInput(data: string): boolean {
@@ -83,7 +82,7 @@ type IndicatorPatch = {
 	active: boolean;
 };
 
-export type NativeScrollIndicatorAdapter = {
+export type ScrollIndicatorController = {
 	reconcile(tui: any): void;
 	noteItem(): void;
 	resetCount(): void;
@@ -93,8 +92,8 @@ export type NativeScrollIndicatorAdapter = {
 };
 
 /** dock 时让原生浮层让位；native 时仅替换文案，样式、快捷键、布局和点击仍由 Pi 决定。 */
-export function installNativeScrollIndicator(): NativeScrollIndicatorAdapter {
-	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
+export function installScrollIndicatorController(): ScrollIndicatorController {
+	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
 	let active = true;
 	let patch: IndicatorPatch | null = null;
 	let renderer: any = null;
@@ -131,7 +130,7 @@ export function installNativeScrollIndicator(): NativeScrollIndicatorAdapter {
 		}
 	}
 
-	const adapter: NativeScrollIndicatorAdapter = {
+	const adapter: ScrollIndicatorController = {
 		reconcile(tui) {
 			if (!active) return;
 			const nextRenderer = concreteToolMouseTui(tui);
@@ -238,9 +237,9 @@ export function installNativeScrollIndicator(): NativeScrollIndicatorAdapter {
 
 /** 记账 transcript 项（消息及工具卡），不是流式 chunk 或工具结果。 */
 export function noteNewTranscriptItem(): void {
-	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.noteItem();
+	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.noteItem();
 }
 
 export function resetScrollIndicatorCount(): void {
-	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.resetCount();
+	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.resetCount();
 }

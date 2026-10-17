@@ -9,7 +9,7 @@ import {
 	ToolExecutionComponent,
 	type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, stripTerminalSequences } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
@@ -485,6 +485,51 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.scrollBottomCalls, 0);
 	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: non-indicator mouse routing keeps scrollbars, links and show-more working", (t) => {
+	const previousMode = config.scrollButtonMode;
+	config.scrollButtonMode = "native";
+	t.after(() => {
+		installToolMouseInteraction({});
+		config.scrollButtonMode = previousMode;
+	});
+	const tool = createTool("tool-routing");
+	const { terminal } = createTerminalFixture();
+	let renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	tui.handleViewportInput("\x1b[<0;20;22M");
+	assert.equal(renderer.officialInputs.length, 1, "non-tool row passes through");
+	renderer.currentLayout = fullscreenLayout(tool, null, true);
+	tui.handleViewportInput("\x1b[<0;80;2M");
+	assert.equal(renderer.officialInputs.length, 2, "scrollbar column passes through");
+	for (const parameters of ["", "id=42"]) {
+		const link = {
+			...tool,
+			render: () => ["link", `\x1b]8;${parameters};https://example.com\x07link\x1b]8;;\x07`],
+		};
+		renderer.currentLayout = fullscreenLayout(link, null);
+		const before: number = renderer.officialInputs.length;
+		tui.handleViewportInput("\x1b[<0;2;2M");
+		assert.equal(renderer.officialInputs.length, before + 1, "OSC8 link passes through");
+	}
+	const ansiTheme = { fg: (_color: string, text: string) => `\x1b[37m${text}\x1b[39m` };
+	const output = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+	const io = new ExpandedToolIoView(ansiTheme, "arg: 1", output, false, 3, 3);
+	const expanded = createTool("tool-show-more");
+	expanded.expanded = true;
+	expanded.resultRendererComponent = io;
+	expanded.render = () => io.render(80);
+	renderer = new FullscreenRenderer(expanded, ui.widget, terminal);
+	ui.widget.render(80);
+	const lines = io.render(80);
+	const { line } = io.showMoreHeaderLineIndexes()[0];
+	const col = stripTerminalSequences(lines[line]).indexOf(SHOW_MORE_LABEL) + 1;
+	tui.handleViewportInput(`\x1b[<0;${col};${line + 1}M`);
+	assert.equal(ui.notifications.length, 1, "show-more opens the extension preview");
+	assert.equal(renderer.officialInputs.length, 0, "show-more is consumed by the extension");
 });
 
 test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", async () => {

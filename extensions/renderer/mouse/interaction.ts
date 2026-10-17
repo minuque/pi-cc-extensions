@@ -51,7 +51,7 @@ import {
 	fullscreenLazyTui,
 	getScrollButtonVisible,
 	getScrollButtonWidget,
-	installNativeScrollIndicator,
+	installScrollIndicatorController,
 	isScrollBottomInput,
 	resetScrollIndicatorCount,
 	setScrollButtonHovered,
@@ -59,7 +59,7 @@ import {
 	setToolMouseTui,
 	getToolMouseTui,
 	toolMouseInteractionActive,
-	type NativeScrollIndicatorAdapter,
+	type ScrollIndicatorController,
 } from "./scroll.ts";
 import {
 	applyFullscreenHover,
@@ -73,7 +73,7 @@ import {
 	type FullscreenHoverTarget,
 } from "./hover.ts";
 import {
-	clearStickyPromptHover,
+	stickyBarHit,
 	handleStickyPromptClick,
 	resetStickyPromptState,
 	updateStickyPromptHover,
@@ -112,7 +112,6 @@ let toolMouseRenderPatchWrapper: ((...args: any[]) => any) | null = null;
 let toolMouseRenderPatchState: { active: boolean } | null = null;
 let toolMouseRawWrite: ((data: string) => unknown) | null = null;
 let toolMouseInstallationOwner: object | null = null;
-let toolMouseWidget: { reconcile(): void; dispose(): void } | null = null;
 let fullscreenMotionTerminal: any = null;
 let ownsFullscreenMotion = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -603,30 +602,48 @@ function packetOnNativeIndicator(tui: any, packet: SgrMousePacket): boolean {
 		rect &&
 			packet.row - 1 === rect.row &&
 			packet.col - 1 >= rect.column &&
-			packet.col - 1 < rect.column + rect.width,
+			packet.col - 1 < rect.column + rect.width &&
+			!stickyBarHit(tui, packet),
 	);
 }
 
 /** 包装真实实例的输入链；返回本次安装的清理函数，不捕获可跨 renderer 重绑的 Proxy 方法。 */
 function patchFullscreenViewportInput(
 	renderer: any,
-	indicator: NativeScrollIndicatorAdapter,
+	indicator: ScrollIndicatorController,
 ): () => void {
 	const original = renderer?.handleViewportInput;
 	if (renderer?.mode !== "fullscreen" || typeof original !== "function") return () => {};
 	const hadOwn = Object.hasOwn(renderer, "handleViewportInput");
 	let active = true;
-	const installed = function (this: any, data: string) {
+	const installed = function (this: any, data: string): any {
 		// 其他扩展可能保留本包装器；widget 撤销后只能透传，不再处理工具点击。
 		if (!active) return Reflect.apply(original, this, [data]);
+		const packets = parseSgrMousePackets(data);
+		if (
+			toolMouseInteractionActive() &&
+			this.mode === "fullscreen" &&
+			packets &&
+			packets.length > 1
+		) {
+			// Pi 接受单个 SGR 包；逐包处理，不能因一次按钮命中吞掉同批其他输入。
+			let consumed = false;
+			for (const packet of packets) {
+				const result = installed.call(
+					this,
+					`\x1b[<${packet.code};${packet.col};${packet.row}${packet.final}`,
+				);
+				if (result?.consume) consumed = true;
+			}
+			return consumed ? { consume: true } : undefined;
+		}
 		try {
 			if (toolMouseInteractionActive() && this.mode === "fullscreen") {
-				const packets = parseSgrMousePackets(data);
 				if (packets) {
 					if (packets.some((packet) => packetOnNativeIndicator(this, packet))) {
 						clearPendingCollapsePress();
 						applyFullscreenHover(this, null);
-						clearStickyPromptHover(this);
+						updateStickyPromptHover(this, packets[0]);
 						// 原生链决定 overlay/search/capture 优先级；禁用自定义文案时同样放行。
 						return Reflect.apply(original, this, [data]);
 					}
@@ -983,7 +1000,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 		if (dockScrollButtonActive() && isScrollBottomInput(data)) {
 			getToolMouseTui().scrollToBottom?.();
 			resetScrollIndicatorCount();
-			toolMouseWidget?.reconcile();
+			getScrollButtonWidget()?.reconcile?.();
 			return { consume: true };
 		}
 		return undefined;
@@ -1050,8 +1067,7 @@ export function teardownToolMouseInteraction(
 	} catch {
 		// The UI context may already have been reset during /reload.
 	}
-	toolMouseWidget?.dispose();
-	toolMouseWidget = null;
+	getScrollButtonWidget()?.dispose?.();
 	restoreToolMouseRenderPatch();
 	setToolMouseTui(null);
 	toolMouseUi = null;
@@ -1067,7 +1083,7 @@ export function resetToolHoverState(): void {
 	setHoveredMessageDisplay(null);
 	setHoveredCompactAssistant(null);
 	resetStickyPromptState();
-	toolMouseWidget?.reconcile();
+	getScrollButtonWidget()?.reconcile?.();
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
@@ -1147,8 +1163,8 @@ export function installToolMouseInteraction(
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		if (!patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
 			return { render: () => [], invalidate() {} };
-		toolMouseWidget?.dispose();
-		const indicator = installNativeScrollIndicator();
+		getScrollButtonWidget()?.dispose?.();
+		const indicator = installScrollIndicatorController();
 		let disposed = false;
 		let viewportRenderer: any = null;
 		let disposeViewportInput: (() => void) | undefined;
@@ -1185,7 +1201,6 @@ export function installToolMouseInteraction(
 				}
 			},
 		};
-		toolMouseWidget = widget;
 		setScrollButtonWidget(widget);
 		reconcile();
 		if (!isLazyProxyTui(tui) && toolMouseInteractionActive())

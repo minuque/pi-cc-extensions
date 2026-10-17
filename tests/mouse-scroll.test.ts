@@ -4,13 +4,28 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
-import { config } from "../extensions/config/config.ts";
+import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import {
 	concreteToolMouseTui,
-	installNativeScrollIndicator,
+	installScrollIndicatorController,
 	setToolMouseTui,
 } from "../extensions/renderer/mouse/scroll.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
+
+test("scroll options stay independent and default to dock with native text customization enabled", () => {
+	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
+	for (const scrollButtonMode of ["dock", "native"] as const) {
+		assert.equal(normalizeConfig({ scrollButtonMode }).customNativeScrollToEndIndicatorText, true);
+		const options = normalizeConfig({
+			scrollButtonMode,
+			customNativeScrollToEndIndicatorText: false,
+		});
+		assert.equal(options.scrollButtonMode, scrollButtonMode);
+		assert.equal(options.customNativeScrollToEndIndicatorText, false);
+		assert.match(formatConfigStatus(options), new RegExp(`scrollButton=${scrollButtonMode}`));
+		assert.match(formatConfigStatus(options), /nativeScrollIndicatorText=off/);
+	}
+});
 
 function rendererFixture() {
 	return {
@@ -31,7 +46,7 @@ function setup(t: TestContext, renderer: any = rendererFixture()) {
 	let activeRenderer = renderer;
 	const tui = createLazyProxy(() => activeRenderer);
 	setToolMouseTui(tui);
-	const adapter = installNativeScrollIndicator();
+	const adapter = installScrollIndicatorController();
 	t.after(() => {
 		adapter.dispose();
 		setToolMouseTui(null);
@@ -221,7 +236,7 @@ test("native indicator: module reload preserves takeover ownership and relinquis
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
 	}
-	const next = reloaded.installNativeScrollIndicator();
+	const next = reloaded.installScrollIndicatorController();
 	t.after(() => next.dispose());
 	next.reconcile(tui);
 	const installed = renderer.scrollToEndIndicator;
@@ -233,7 +248,7 @@ test("native indicator: module reload preserves takeover ownership and relinquis
 	const foreign = () => "foreign label";
 	renderer.scrollToEndIndicator = foreign;
 	next.dispose(); // 未经下一帧 reconcile 也必须记住让渡
-	const again = reloaded.installNativeScrollIndicator();
+	const again = reloaded.installScrollIndicatorController();
 	t.after(() => again.dispose());
 	again.reconcile(tui);
 	assert.equal(renderer.scrollToEndIndicator, foreign);

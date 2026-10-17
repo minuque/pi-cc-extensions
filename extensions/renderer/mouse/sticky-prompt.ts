@@ -93,11 +93,6 @@ function setStickyHovered(hovered: boolean): boolean {
 	return true;
 }
 
-/** 原生指示器命中会跳过粘性行检测，必须清掉指针离开后残留的高亮。 */
-export function clearStickyPromptHover(tui: any): void {
-	if (setStickyHovered(false)) tui.requestRender?.();
-}
-
 function lineText(line: string): string {
 	return stripTerminalSequences(line).trim();
 }
@@ -300,7 +295,7 @@ export function renderStickyPromptScreen(
 }
 
 /** 行与列都落在本帧画出的粘性条内。滚动条那一列在条外。 */
-function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
+export function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
 	if (!stickyPromptActive() || !state.visible || state.layout !== tui?.currentLayout) return false;
 	if (packet.row - 1 !== state.row) return false;
@@ -389,7 +384,7 @@ export function installStickyPromptMarkerPatch(): void {
 	markerPatch = patch;
 }
 
-/** 先合成粘性行，再交给原生指示器覆盖；单行视口也保持绘制与点击优先级一致。 */
+/** 保持粘性行的原有优先级：在原生浮层之后合成。 */
 export function installStickyPromptFramePatch(): boolean {
 	const prototype = (TuiAltScreen as any)?.prototype;
 	if (typeof prototype?.compositeScrollToEndIndicator !== "function") return false;
@@ -403,8 +398,8 @@ export function installStickyPromptFramePatch(): boolean {
 		active: true,
 		original,
 		installed(this: any, screen: string[], layout: any, width: number) {
-			const result = patch.active ? renderStickyPromptScreen(this, screen, layout, width) : screen;
-			return original.call(this, result, layout, width);
+			const result = original.call(this, screen, layout, width);
+			return patch.active ? renderStickyPromptScreen(this, result, layout, width) : result;
 		},
 	};
 	prototype.compositeScrollToEndIndicator = patch.installed;

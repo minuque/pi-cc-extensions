@@ -615,9 +615,8 @@ export async function showCcstylePanel(
 		const nativeScrollIndicatorTextSetting = {
 			id: "customNativeScrollToEndIndicatorText",
 			label: "Custom native scroll indicator text",
-			description: config.customNativeScrollToEndIndicatorText
-				? "Fullscreen, native mode only: use Back to bottom / N new message(s) labels. Dock is unchanged."
-				: "Fullscreen, native mode only: keep Pi's original indicator label. Dock is unchanged.",
+			description:
+				"Native mode only: on uses the dock labels; off keeps Pi's original text. Dock is unchanged.",
 			currentValue: config.customNativeScrollToEndIndicatorText ? "on" : "off",
 			values: ["on", "off"],
 		};
@@ -1034,10 +1033,10 @@ export async function showCcstylePanel(
 				}
 				case "customNativeScrollToEndIndicatorText": {
 					updateConfig({ customNativeScrollToEndIndicatorText: value === "on" });
-					nativeScrollIndicatorTextSetting.description = config.customNativeScrollToEndIndicatorText
-						? "Fullscreen, native mode only: use Back to bottom / N new message(s) labels. Dock is unchanged."
-						: "Fullscreen, native mode only: keep Pi's original indicator label. Dock is unchanged.";
-					break;
+					// 文案开关只需下一帧同步，不重建 transcript 或重置工具展开状态。
+					tui.requestRender();
+					ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+					return;
 				}
 				case "showStartupHeader": {
 					const enabled = value === "on";
