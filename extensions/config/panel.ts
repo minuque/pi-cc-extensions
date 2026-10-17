@@ -604,7 +604,7 @@ export async function showCcstylePanel(
 		};
 		const scrollButtonSetting = {
 			id: "scrollButtonMode",
-			label: "Scroll to bottom",
+			label: "Scroll button mode",
 			description:
 				config.scrollButtonMode === "dock"
 					? "Fullscreen: show the extension's dedicated Back to bottom row."
