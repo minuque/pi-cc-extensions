@@ -25,10 +25,6 @@ import {
 	stickyPromptBar,
 	updateStickyPromptHover,
 } from "../extensions/renderer/mouse/sticky-prompt.ts";
-import {
-	getScrollButtonVisible,
-	resetScrollButtonState,
-} from "../extensions/renderer/mouse/scroll.ts";
 
 initTheme("dark");
 
@@ -136,7 +132,6 @@ function withSticky<T>(body: () => T): T {
 		setToolTuiFullscreen(undefined as any);
 		disposeStickyPromptPatches();
 		resetStickyPromptState();
-		resetScrollButtonState();
 	}
 }
 
@@ -332,7 +327,11 @@ test("sticky prompt: click jumps to the message top", () => {
 		);
 		assert.equal(handleStickyPromptClick(frame.tui, { row: 1, col: 1 } as any), true);
 		assert.deepEqual(frame.scrollView.lastScroll, { row: 0, options: { disableFollow: true } });
-		assert.equal(getScrollButtonVisible(), true, "跳走即脱离底部跟随，亮出回到底部按钮");
+		assert.equal(
+			frame.scrollView.isFollowingEnd,
+			false,
+			"跳走保持脱离底部跟随，回底入口由 Pi 控制",
+		);
 		assert.equal(
 			handleStickyPromptClick(frame.tui, { row: 1, col: 1 } as any),
 			false,

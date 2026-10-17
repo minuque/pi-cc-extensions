@@ -51,8 +51,8 @@ export const STICKY_PROMPT_STATE_SLOT = Symbol.for("pi.ccstyle.sticky-prompt-sta
 // ── 鼠标交互 ──
 export const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 export const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");
-export const SCROLL_BUTTON_STATE_SLOT = Symbol.for("pi.ccstyle.scroll-button-state");
-export const OFFICIAL_SCROLL_TO_END_KEY = Symbol.for("pi.ccstyle.official-scroll-to-end");
+export const NATIVE_SCROLL_INDICATOR_PATCH = Symbol.for("pi.ccstyle.native-scroll-indicator");
+export const FULLSCREEN_VIEWPORT_INPUT_PATCH = Symbol.for("pi.ccstyle.fullscreen-viewport-input");
 export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-patch");
 export const EARLY_STARTUP_HEADER_PATCH = Symbol.for("pi.ccstyle.early-startup-header-patch");
 export const EARLY_STARTUP_HEADER_SWAP_KEY = Symbol.for("pi.ccstyle.early-startup-header-swap");

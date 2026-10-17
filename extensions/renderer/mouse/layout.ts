@@ -4,7 +4,6 @@ import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
-import { getScrollButtonWidget } from "./scroll.ts";
 
 export type ComponentRowHit = {
 	component: any;
@@ -141,9 +140,6 @@ export function componentAtLocalRow(
 		return { component, row: localRow };
 	}
 	if (isMessageDisplayComponent(component)) {
-		return { component, row: localRow };
-	}
-	if (component === getScrollButtonWidget()) {
 		return { component, row: localRow };
 	}
 	if (!Array.isArray(component.children)) return null;

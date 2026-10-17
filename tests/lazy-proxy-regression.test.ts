@@ -18,7 +18,7 @@ import claudeCodeStyleExtension, {
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
 import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
-import { getScrollButtonVisible } from "../extensions/renderer/mouse/scroll.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
@@ -42,34 +42,6 @@ import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 
-/** 精确模拟 Pi 0.84.1 createInteractiveTuiReference 的 renderer 重绑语义。 */
-function createLazyProxy<T extends object>(getRenderer: () => T): T {
-	return new Proxy({} as T, {
-		get: (_target, property) => {
-			const tui = getRenderer();
-			const value = Reflect.get(tui, property, tui);
-			if (typeof value !== "function") return value;
-			let methodTui = tui;
-			let method = value;
-			return (...args: any[]) => {
-				const currentTui = getRenderer();
-				if (currentTui !== methodTui) {
-					const currentMethod = Reflect.get(currentTui, property, currentTui);
-					if (typeof currentMethod !== "function") {
-						throw new TypeError(`not callable: ${String(property)}`);
-					}
-					methodTui = currentTui;
-					method = currentMethod;
-				}
-				return Reflect.apply(method, methodTui, args);
-			};
-		},
-		set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
-		has: (_target, property) => Reflect.has(getRenderer(), property),
-		getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
-	});
-}
-
 function runtime() {
 	const events = new Map<string, Function>();
 	return {
@@ -86,7 +58,10 @@ function runtime() {
 }
 
 function theme() {
-	return { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
+	return {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		bg: (_color: string, text: string) => text,
+	};
 }
 
 /** 工具桩：模拟 Tool 的最小形状（resultRendererComponent 由个别用例注入）。 */
@@ -496,112 +471,20 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(toolA.expanded, false, "expanding B collapses A");
 	assert.equal(toolB.expanded, true);
 
-	// 回到底部按钮：滚动离开底部后按钮可见，点击触发 scrollToBottom。
-	renderer = new FullscreenRenderer(tool, ui.widget, terminal);
-
-	// 非工具区域（dock 行）：放行官方。
-	tui.handleViewportInput(`\x1b[<0;20;22M`);
-	assert.equal(renderer.officialInputs.length, 1, "dock click reaches official chain");
-
-	// 滚动条列：放行官方拖动。
-	renderer.currentLayout = fullscreenLayout(tool, null, true);
-	tui.handleViewportInput(`\x1b[<0;80;2M`);
-	assert.equal(renderer.officialInputs.length, 2, "scrollbar column reaches official chain");
-
-	// 含 OSC8 链接行（普通/参数化）：放行官方 URL 点击。
-	for (const [toolId, linkLine] of [
-		["tool-url", `  \x1b]8;;https://x\x07link\x1b]8;;\x07`],
-		["tool-url-param", `  \x1b]8;id=42;https://x\x07link\x1b]8;;\x07`],
-	] as const) {
-		renderer.currentLayout = fullscreenLayout(
-			{ ...createTool(toolId), render: () => ["✓ url", linkLine] },
-			null,
-		);
-		const officialBefore: number = renderer.officialInputs.length;
-		tui.handleViewportInput(`\x1b[<0;10;2M`);
-		assert.equal(
-			renderer.officialInputs.length,
-			officialBefore + 1,
-			`OSC8 link row reaches official chain (${toolId})`,
-		);
-	}
-
-	// show-more：expanded 工具卡渲染截断体末行，点击 [show more] 打开预览。
-	// 真实 ANSI 主题：拆分样式（点 dim / 文字 text）后 indexOf 仍按可见文本命中。
-	const ansiTheme = {
-		fg: (color: string, text: string) =>
-			`\x1b[${color === "text" ? "97" : color === "dim" ? "90" : "37"}m${text}\x1b[39m`,
-	};
-	const longOutput = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
-	const ioView = new ExpandedToolIoView(ansiTheme, "arg: 1", longOutput, false, 3, 3);
-	ioView.render(80); // 触发截断状态与 show-more 头行记录
-	const showMoreTool = createTool("tool-show-more");
-	showMoreTool.expanded = true;
-	showMoreTool.resultRendererComponent = ioView;
-	showMoreTool.render = () => ioView.render(80);
-	renderer = new FullscreenRenderer(showMoreTool, ui.widget, terminal);
-	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper
-	renderer.currentLayout = fullscreenLayout(showMoreTool, null);
-	const ioLines = ioView.render(80);
-	const moreHeader = ioView.showMoreHeaderLineIndexes()[0];
-	const moreRow = moreHeader.line;
-	const moreCol =
-		ioLines[moreRow].replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").indexOf(SHOW_MORE_LABEL) + 1;
-	const notifiedBefore = ui.notifications.length;
-	const officialBeforeShowMore = renderer.officialInputs.length;
-	tui.handleViewportInput(`\x1b[<0;${moreCol};${moreRow + 1}M`);
-	assert.ok(
-		ui.notifications.length > notifiedBefore,
-		"show-more click opens the preview (custom unavailable → notify)",
-	);
-	assert.equal(moreHeader.section, "output");
-	assert.equal(
-		renderer.officialInputs.length,
-		officialBeforeShowMore,
-		"show-more click consumed, official untouched",
-	);
-
-	// 回到底部按钮：滚动离开底部后按钮可见，点击触发 scrollToBottom。
+	// The lifecycle widget never adds a dock row. Unsupported renderers retain native input.
 	renderer = new FullscreenRenderer(tool, ui.widget, terminal);
 	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
 	renderer.currentLayout.primaryScrollView.scrollTop = 50;
-	ui.widget.render(80); // renderer 切换后重新安装点击包装
-	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：同步按钮显隐
-	await new Promise<void>((resolve) => process.nextTick(resolve));
-	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "wheel away from bottom shows the button");
-	tui.handleViewportInput(`\x1b[<0;40;21M`);
-	assert.equal(renderer.scrollBottomCalls, 1, "button click scrolls to bottom");
 	assert.deepEqual(ui.widget.render(80), []);
-
-	// 按钮 hover：motion 到按钮行高亮（accent → text），离开恢复。
-	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
-	renderer.currentLayout.primaryScrollView.scrollTop = 50;
-	ui.widget.render(80);
-	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：按钮重新出现
-	await new Promise<void>((resolve) => process.nextTick(resolve));
-	renderer.currentLayout = fullscreenLayout(tool, ui.widget, false); // 重建布局（按钮行已可见）
-	tui.handleViewportInput(`\x1b[<35;40;21M`); // motion 到按钮行
-	assert.ok(
-		ui.widget.render(80)[0]?.includes("<text>[ ↓"),
-		"button hover switches label to text color",
-	);
-	tui.handleViewportInput(`\x1b[<35;10;21M`); // motion 移出按钮行
-	assert.ok(ui.widget.render(80)[0]?.includes("<accent>[ ↓"), "hover leave restores accent color");
-
-	// 键盘滚动（官方 PageUp）：同样同步按钮显隐（官方消费按键，扩展监听器无法补偿）。
-	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
-	renderer.currentLayout.primaryScrollView.scrollTop = 30;
-	ui.widget.render(80);
-	tui.handleViewportInput("\x1b[5~"); // PageUp
-	await new Promise<void>((resolve) => process.nextTick(resolve));
-	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "PageUp away from bottom shows the button");
-	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
-	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
+	tui.handleViewportInput("\x1b[5~");
+	assert.ok(renderer.officialInputs.includes("\x1b[5~"), "native viewport receives PageUp");
+	assert.equal(ui.inputHandler?.("\x1b[8^"), undefined, "no hardcoded Ctrl+End interception");
+	assert.equal(renderer.scrollBottomCalls, 0);
 	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
 });
 
-test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
+test("lazy-proxy tui: native indicator keeps its slot with custom text and no row", () => {
 	const previousMode = config.mode;
 	const tool = createTool("tool-overlay");
 	const { terminal } = createTerminalFixture();
@@ -614,7 +497,11 @@ test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
 		config.mode = "on";
 		installToolMouseInteraction(ui.ctx);
 		ui.widget.render(80);
-		assert.equal((renderer as any).scrollToEndIndicator, undefined, "官方 overlay 已关掉");
+		assert.match(
+			(renderer as any).scrollToEndIndicator(),
+			/<text> ↓ Back to bottom · Ctrl\+End <\/text>/,
+		);
+		assert.deepEqual(ui.widget.render(80), []);
 	} finally {
 		config.mode = previousMode;
 		installToolMouseInteraction({});
@@ -639,7 +526,7 @@ test("lazy-proxy tui: off mode keeps official jump-to-latest overlay", () => {
 
 		config.mode = "on";
 		ui.widget.render(80);
-		assert.equal((renderer as any).scrollToEndIndicator, undefined, "切回 on 关掉官方 overlay");
+		assert.match((renderer as any).scrollToEndIndicator(), /Back to bottom/, "切回 on 只改文案");
 
 		config.mode = "off";
 		ui.widget.render(80);
@@ -930,9 +817,9 @@ test("lazy-proxy tui: fullscreen compact expanded round tool hint expands in pla
 		assert.equal(assistant.expanded, true, "round stays open when a nested tool expands");
 		assert.deepEqual(scrollCalls, [[0, { disableFollow: true }]], "expand pins the viewport");
 		assert.equal(
-			getScrollButtonVisible(),
-			true,
-			"back-to-bottom button shows after leaving follow",
+			view.isFollowingEnd,
+			false,
+			"native follow state controls the back-to-bottom indicator",
 		);
 
 		// 面板内非提示区（工具卡标题行）单击：收起整块面板。

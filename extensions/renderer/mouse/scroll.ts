@@ -1,23 +1,12 @@
-import {
-	getKeybindings,
-	matchesKey,
-	truncateToWidth,
-	visibleWidth,
-	type Keybinding,
-} from "@earendil-works/pi-tui";
+import { getKeybindings } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { parseSgrMousePackets } from "./packets.ts";
 import {
-	OFFICIAL_SCROLL_TO_END_KEY,
+	NATIVE_SCROLL_INDICATOR_PATCH,
 	patchRegistry,
-	SCROLL_BUTTON_STATE_SLOT,
+	TOOL_MOUSE_OWNER_KEY,
 	TOOL_MOUSE_TUI_SLOT,
 } from "../../utils/patch-keys.ts";
-
-const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
-const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
-const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
 
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export function getToolMouseTui(): any {
@@ -27,246 +16,194 @@ export function setToolMouseTui(tui: any): void {
 	patchRegistry.install(TOOL_MOUSE_TUI_SLOT, tui);
 }
 
-type ScrollButtonState = {
-	visible: boolean;
-	hovered: boolean;
-	widget: any;
-	/** 按钮可见期间新落的 transcript 块数（消息 + 工具卡）。 */
-	newCount: number;
-};
-function scrollButtonState(): ScrollButtonState {
-	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
-		visible: false,
-		hovered: false,
-		widget: null,
-		newCount: 0,
-	}));
-}
-export function getScrollButtonVisible(): boolean {
-	return scrollButtonState().visible;
-}
-export function getScrollButtonHovered(): boolean {
-	return scrollButtonState().hovered;
-}
-export function getScrollButtonWidget(): any {
-	return scrollButtonState().widget;
-}
-export function getScrollButtonNewCount(): number {
-	return scrollButtonState().newCount;
-}
-export function setScrollButtonVisible(visible: boolean): void {
-	const state = scrollButtonState();
-	state.visible = visible;
-	// 计数只在离开底部期间有效：跟随输出即清零，文案回到 Back to bottom。
-	if (!visible) state.newCount = 0;
-}
-
-/**
- * 记账一块新落进 transcript 的内容（用户/助手消息、工具卡）。
- * 仅在按钮可见（已滚动离开底部）时累加，并请求重绘让按钮文案立即更新。
- */
-export function noteNewTranscriptItem(): void {
-	const state = scrollButtonState();
-	const tui = getToolMouseTui();
-	if (!dockScrollButtonActive() || !state.visible || !tui) return;
-	// 提交新消息时官方可能直接跳回底部（不经过滚动输入）：先按实时跟随状态校正，
-	// 否则跟随期间的内容会被当成“离开底部时的新消息”计入。
-	if (isAtTranscriptBottom(tui)) {
-		hideScrollButton(tui);
-		return;
-	}
-	state.newCount += 1;
-	tui.requestRender?.();
-}
-
-/** 返回是否发生变化（调用方据此决定是否需要重渲染）。 */
-export function setScrollButtonHovered(hovered: boolean): boolean {
-	if (hovered === scrollButtonState().hovered) return false;
-	scrollButtonState().hovered = hovered;
-	return true;
-}
-
-export function setScrollButtonWidget(widget: any): void {
-	scrollButtonState().widget = widget;
-}
-
-/** teardown 全量清零（visible/hovered/widget/sync 调度）。 */
-export function resetScrollButtonState(): void {
-	scrollButtonState().visible = false;
-	scrollButtonState().hovered = false;
-	scrollButtonState().widget = null;
-	scrollButtonState().newCount = 0;
-	scrollButtonSyncScheduled = false;
-}
-
-let scrollButtonSyncScheduled = false;
-
-// 交互开关只取决于配置模式：原实现按 isLazyProxyTui(toolMouseTui) 分两分支，
-// 两分支恒真（0.84+ 惰性 Proxy 下判定不再影响开关），折叠为单条件。
 export function toolMouseInteractionActive(): boolean {
 	return config.mode !== "off";
 }
 
-/** dock 模式才用扩展的独占行；native 或 ccstyle off 时交还 Pi 原生浮层。 */
-export function dockScrollButtonActive(): boolean {
-	return toolMouseInteractionActive() && config.scrollButtonMode === "dock";
-}
-
-/** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */
 export function fullscreenLazyTui(tui: any): boolean {
 	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
 }
 
-/** 关掉 pi 0.85 Jump to latest overlay，避免和本仓库 dock 按钮叠两层。 */
-export function disableOfficialScrollToEnd(tui: any): void {
-	if (!tui) return;
-	const current = tui.scrollToEndIndicator;
-	if (typeof current !== "function") return;
-	// 原函数放 object 里，避免惰性 Proxy 对 function 属性再包一层。
-	if (!tui[OFFICIAL_SCROLL_TO_END_KEY]) {
-		tui[OFFICIAL_SCROLL_TO_END_KEY] = { original: current };
+/** Pi's stable proxy forwards methods, but not property descriptors. Never save its callbacks. */
+export function concreteToolMouseTui(tui: any): any {
+	try {
+		if (!isLazyProxyTui(tui)) return tui;
+		const renderer = tui.valueOf?.();
+		return renderer && renderer !== tui && !isLazyProxyTui(renderer) ? renderer : null;
+	} catch {
+		return null;
 	}
-	tui.scrollToEndIndicator = undefined;
 }
 
-/** /ccstyle off 或 teardown 时还回官方 overlay。 */
-export function restoreOfficialScrollToEnd(tui: any): void {
-	if (!tui) return;
-	const original = tui[OFFICIAL_SCROLL_TO_END_KEY]?.original;
-	if (typeof original === "function") tui.scrollToEndIndicator = original;
-	tui[OFFICIAL_SCROLL_TO_END_KEY] = undefined;
-}
-
-/** dock 模式替换官方浮层；native 或 ccstyle off 时保留 Pi 原生 Jump to latest。 */
-export function syncOfficialScrollToEnd(tui: any): void {
-	if (dockScrollButtonActive()) {
-		disableOfficialScrollToEnd(tui);
-		return;
-	}
-	restoreOfficialScrollToEnd(tui);
-	setScrollButtonVisible(false);
-	setScrollButtonHovered(false);
-}
-
-/** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
 export function isFullscreenAtBottom(tui: any): boolean {
-	const following = tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true;
-	return Boolean(following);
+	return Boolean(tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true);
 }
 
-function formatShortcut(shortcut: string): string {
-	return shortcut
-		.split("+")
-		.map((part) =>
-			part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
+/** Match Pi's keyDisplayText without importing its private component helpers. */
+function bottomShortcut(): string {
+	return getKeybindings()
+		.getKeys("tui.altScreen.bottom")
+		.join("/")
+		.split("/")
+		.map((key) =>
+			key
+				.split("+")
+				.map((part) => {
+					const text =
+						process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+					return text.charAt(0).toUpperCase() + text.slice(1);
+				})
+				.join("+"),
 		)
-		.join("+");
+		.join("/");
 }
 
-export function isScrollBottomInput(data: string): boolean {
-	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
-}
+type IndicatorPatch = {
+	renderer: any;
+	descriptor: PropertyDescriptor;
+	installed: (...args: any[]) => any;
+	active: boolean;
+	newCount: number;
+};
 
-function isScrollNavigationInput(data: string): boolean {
-	if (
-		matchesKey(data, "pageUp") ||
-		matchesKey(data, "pageDown") ||
-		ZENTUI_PAGE_UP_INPUT.test(data) ||
-		ZENTUI_PAGE_DOWN_INPUT.test(data) ||
-		// 官方 fullscreen viewport 的可滚动键（half-page/prompt/top/bottom）。
-		[
-			"tui.altScreen.pageUp",
-			"tui.altScreen.pageDown",
-			"tui.altScreen.halfPageUp",
-			"tui.altScreen.halfPageDown",
-			"tui.altScreen.previousPrompt",
-			"tui.altScreen.nextPrompt",
-			"tui.altScreen.top",
-			"tui.altScreen.bottom",
-		].some((key) => getKeybindings().matches(data, key as Keybinding))
-	) {
-		return true;
+export type NativeScrollIndicatorAdapter = {
+	owner: object;
+	reconcile(tui: any, renderer?: any): void;
+	noteItem(): void;
+	resetCount(): void;
+	dispose(): void;
+};
+
+/**
+ * Optional label-only enhancement. Pi still owns layout, clipping, visibility and input.
+ * Each patch belongs to a concrete renderer, not the retargetable TUI reference.
+ */
+export function installNativeScrollIndicator(
+	owner: object,
+	getTheme: () => any,
+): NativeScrollIndicatorAdapter {
+	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
+	let patch: IndicatorPatch | null = null;
+	// A foreign replacement wins for this runtime, even across option/mode toggles.
+	const yielded = new WeakSet<object>();
+	const enabled = () => toolMouseInteractionActive() && config.customScrollToEndIndicatorText;
+	const current = () =>
+		patchRegistry.owns(NATIVE_SCROLL_INDICATOR_PATCH, adapter) &&
+		(!patchRegistry.get(TOOL_MOUSE_OWNER_KEY) || patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner));
+
+	function owns(p: IndicatorPatch): boolean {
+		try {
+			const d = Object.getOwnPropertyDescriptor(p.renderer, "scrollToEndIndicator");
+			return Boolean(
+				d &&
+					d.value === p.installed &&
+					d.writable === true &&
+					d.configurable === p.descriptor.configurable &&
+					d.enumerable === p.descriptor.enumerable,
+			);
+		} catch {
+			return false;
+		}
 	}
-	const packets = parseSgrMousePackets(data);
-	return Boolean(
-		packets?.some((packet) => {
-			const baseButton = packet.code & ~(4 | 8 | 16 | 32);
-			return packet.final === "M" && (baseButton === 64 || baseButton === 65);
-		}),
-	);
-}
 
-function isAtTranscriptBottom(tui: any): boolean {
-	// 惰性 Proxy fullscreen：官方 viewport 以 isFollowingOutput 判定是否在底部。
-	if (fullscreenLazyTui(tui)) return isFullscreenAtBottom(tui);
-	return true;
-}
-
-export function hideScrollButton(tui: any): void {
-	const changed = getScrollButtonVisible() || getScrollButtonHovered();
-	setScrollButtonVisible(false);
-	setScrollButtonHovered(false);
-	if (changed) tui.requestRender?.();
-}
-
-export function scheduleScrollButtonSync(tui: any, data: string): void {
-	if (
-		!fullscreenLazyTui(tui) ||
-		!dockScrollButtonActive() ||
-		!isScrollNavigationInput(data) ||
-		scrollButtonSyncScheduled
-	)
-		return;
-	scrollButtonSyncScheduled = true;
-	const previousLines = tui.previousLines;
-	const check = (attempt: number) => {
-		scrollButtonSyncScheduled = false;
-		if (getToolMouseTui() !== tui || !dockScrollButtonActive()) return;
-		// Pi renders on its own frame timer. Inspect the resulting viewport before
-		// showing the button so empty or non-scrollable transcripts never flash it.
-		const rendered = tui.previousLines !== previousLines;
-		// fullscreen 下 isFollowingOutput 是即时状态，无需等待官方帧渲染。
-		if (!rendered && attempt < 4 && !fullscreenLazyTui(tui)) {
-			scrollButtonSyncScheduled = true;
-			const timer = setTimeout(() => check(attempt + 1), 16);
-			if (typeof timer === "object" && timer !== null && "unref" in timer) {
-				(timer as { unref: () => void }).unref();
-			}
+	function release(): void {
+		if (!patch) return;
+		const previous = patch;
+		patch = null;
+		previous.active = false;
+		previous.newCount = 0;
+		if (!owns(previous)) {
+			yielded.add(previous.renderer);
 			return;
 		}
-		const nextVisible = !isAtTranscriptBottom(tui);
-		if (nextVisible !== getScrollButtonVisible()) {
-			setScrollButtonVisible(nextVisible);
-			tui.requestRender?.();
+		try {
+			Object.defineProperty(previous.renderer, "scrollToEndIndicator", previous.descriptor);
+		} catch {
+			// Frozen/replaced interfaces must not break rendering or teardown.
+			yielded.add(previous.renderer);
 		}
+	}
+
+	const adapter: NativeScrollIndicatorAdapter = {
+		owner,
+		reconcile(tui, renderer = concreteToolMouseTui(tui)) {
+			if (!current()) return;
+			if (patch && (!enabled() || renderer !== patch.renderer || !owns(patch))) release();
+			try {
+				if (!enabled() || renderer?.mode !== "fullscreen") {
+					release();
+					return;
+				}
+				if (!patch) {
+					if (yielded.has(renderer) || typeof renderer.scrollToEndIndicator !== "function") return;
+					const descriptor = Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator");
+					if (!descriptor || !descriptor.writable || typeof descriptor.value !== "function") return;
+					const original = descriptor.value;
+					const next: IndicatorPatch = {
+						renderer,
+						descriptor,
+						active: true,
+						newCount: 0,
+						installed(this: any, ...args: any[]) {
+							// Foreign wrappers may retain us after replacement/disposal. Always delegate raw.
+							if (next.active && !owns(next)) {
+								next.active = false;
+								yielded.add(renderer);
+							}
+							if (next.active && current() && enabled() && renderer.mode === "fullscreen") {
+								try {
+									if (isFullscreenAtBottom(renderer)) next.newCount = 0;
+									const count = next.newCount;
+									const label =
+										count > 0 ? `${count} new message${count === 1 ? "" : "s"}` : "Back to bottom";
+									const shortcut = bottomShortcut();
+									const theme = getTheme();
+									return theme.bg(
+										"selectedBg",
+										theme.fg("text", ` ↓ ${label}${shortcut ? ` · ${shortcut}` : ""} `),
+									);
+								} catch {
+									// Missing theme/keybinding capabilities: keep the host's label.
+								}
+							}
+							return Reflect.apply(original, this, args);
+						},
+					};
+					Object.defineProperty(renderer, "scrollToEndIndicator", {
+						...descriptor,
+						value: next.installed,
+					});
+					patch = next;
+				}
+				// The native callback is NOT called at bottom. Observe follow on every widget render/input too.
+				if (isFullscreenAtBottom(renderer)) patch.newCount = 0;
+			} catch {
+				release();
+			}
+		},
+		noteItem() {
+			adapter.reconcile(getToolMouseTui());
+			if (!current() || !patch || !patch.active || isFullscreenAtBottom(patch.renderer)) return;
+			patch.newCount += 1;
+			patch.renderer.requestRender?.();
+		},
+		resetCount() {
+			if (current() && patch) patch.newCount = 0;
+		},
+		dispose() {
+			release();
+			patchRegistry.dispose(NATIVE_SCROLL_INDICATOR_PATCH, adapter);
+		},
 	};
-	process.nextTick(() => check(0));
+	patchRegistry.install(NATIVE_SCROLL_INDICATOR_PATCH, adapter);
+	return adapter;
 }
 
-export function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!fullscreenLazyTui(tui) || !dockScrollButtonActive()) return;
-	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
+/** Count transcript items (messages and tool cards), not chunks or tool results. */
+export function noteNewTranscriptItem(): void {
+	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.noteItem();
 }
 
-/** 无新内容时提示原文案；有新内容时换成累计条数。 */
-function scrollButtonText(): string {
-	const count = getScrollButtonNewCount();
-	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
-	if (count <= 0) return `Back to bottom · ${shortcut}`;
-	return `${count} new message${count === 1 ? "" : "s"} · ${shortcut}`;
-}
-
-export function renderScrollButton(width: number, theme: any): string[] {
-	if (
-		!dockScrollButtonActive() ||
-		!getScrollButtonVisible() ||
-		!fullscreenLazyTui(getToolMouseTui())
-	)
-		return [];
-	const label = theme.fg(
-		getScrollButtonHovered() ? "text" : "accent",
-		`[ ↓ ${scrollButtonText()} ]`,
-	);
-	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
-	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
+export function resetNativeScrollIndicatorCount(): void {
+	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.resetCount();
 }

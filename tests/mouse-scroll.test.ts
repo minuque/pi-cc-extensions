@@ -1,224 +1,393 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-
+import test, { type TestContext } from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createJiti } from "jiti";
+import { getKeybindings } from "@earendil-works/pi-tui";
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import {
-	disableOfficialScrollToEnd,
-	getScrollButtonNewCount,
-	hideScrollButton,
+	concreteToolMouseTui,
+	installNativeScrollIndicator,
 	noteNewTranscriptItem,
-	renderScrollButton,
-	resetScrollButtonState,
-	restoreOfficialScrollToEnd,
-	scheduleScrollButtonSync,
+	resetNativeScrollIndicatorCount,
 	setToolMouseTui,
-	syncOfficialScrollToEnd,
 } from "../extensions/renderer/mouse/scroll.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
+import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../extensions/utils/patch-keys.ts";
 
-/** 伪造官方 fullscreen 惰性 Proxy TUI：requestRender 每次 get 返回新函数。 */
-function lazyFullscreenTui() {
-	let renders = 0;
-	const tui: any = {
+const theme = {
+	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	bg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+};
+
+function rendererFixture() {
+	return {
 		mode: "fullscreen",
-		isFollowingOutput: false, // 不在 transcript 底部 → 按钮应显示
-		previousLines: [],
-		get requestRender() {
-			return () => {
-				renders++;
-			};
+		isFollowingOutput: false,
+		renders: 0,
+		requestRender() {
+			this.renders++;
+		},
+		scrollToEndIndicator() {
+			return `original:${this.mode}`;
 		},
 	};
-	return { tui, count: () => renders };
 }
 
-function fakeTheme() {
-	return { fg: (_c: string, t: string) => t };
-}
-
-// SGR 滚轮包（code 65 = 向下滚动），不依赖键绑定表，纯字符串解析即可命中。
-const WHEEL_DOWN_INPUT = "\x1b[<65;1;1M";
-
-test("scroll button: config defaults to dock and accepts native", () => {
-	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
-	assert.equal(normalizeConfig({ scrollButtonMode: "native" }).scrollButtonMode, "native");
-	assert.equal(normalizeConfig({ scrollButtonMode: "invalid" }).scrollButtonMode, "dock");
-	assert.match(
-		formatConfigStatus(normalizeConfig({ scrollButtonMode: "native" })),
-		/scrollButton=native/,
-	);
-});
-
-// 滚动按钮状态机：调度后立即 teardown（/reload 中途）不得残留渲染或状态，
-// 重新 install 后调度必须恢复正常。
-test("scroll button: schedule → immediate teardown → reinstall stays safe", async () => {
-	const { tui, count } = lazyFullscreenTui();
-
-	// 1. 调度后立即 teardown（模拟 reload 中途打断）
+function setup(t: TestContext, renderer: any = rendererFixture()) {
+	const previous = { ...config };
+	const bindings = getKeybindings().getUserBindings();
+	config.mode = "on";
+	config.customScrollToEndIndicatorText = true;
+	getKeybindings().setUserBindings({});
+	let activeRenderer = renderer;
+	const tui = createLazyProxy(() => activeRenderer);
 	setToolMouseTui(tui);
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	resetScrollButtonState();
-	setToolMouseTui(null);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(count(), 0, "teardown 后待执行回调不得触发渲染");
-	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "teardown 后按钮不得显示");
-
-	// 2. 重新 install 后调度恢复正常
-	setToolMouseTui(tui);
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(count() >= 1, "reinstall 后滚动导航应触发按钮渲染");
-	const lines = renderScrollButton(80, fakeTheme());
-	assert.ok(
-		lines.some((line) => line.includes("Back to bottom")),
-		"不在底部时按钮应可见",
-	);
-
-	// 3. 清理
-	resetScrollButtonState();
-	setToolMouseTui(null);
-});
-
-// 0.85 关掉官方 overlay，本仓库 dock 按钮照常。
-test("scroll button: disable official overlay keeps dock button", async () => {
-	const { tui, count } = lazyFullscreenTui();
-	tui.scrollToEndIndicator = () => "Jump to latest message";
-	setToolMouseTui(tui);
-	disableOfficialScrollToEnd(tui);
-	assert.equal(tui.scrollToEndIndicator, undefined);
-
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(count() >= 1);
-	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
-		"关掉官方 overlay 后 dock 按钮仍可见",
-	);
-
-	resetScrollButtonState();
-	setToolMouseTui(null);
-});
-
-// /ccstyle off：还回官方 overlay，不画本仓库 dock 按钮。
-test("scroll button: off mode restores official overlay", () => {
-	const previousMode = config.mode;
-	const previousScrollButtonMode = config.scrollButtonMode;
-	const { tui } = lazyFullscreenTui();
-	const indicator = () => "Jump to latest message";
-	tui.scrollToEndIndicator = indicator;
-	try {
-		config.mode = "on";
-		config.scrollButtonMode = "dock";
-		disableOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, undefined);
-
-		config.mode = "off";
-		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, indicator);
-		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
-
-		config.mode = "on";
-		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, undefined);
-
-		restoreOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, indicator);
-	} finally {
-		config.mode = previousMode;
-		config.scrollButtonMode = previousScrollButtonMode;
-		resetScrollButtonState();
+	const adapter = installNativeScrollIndicator({}, () => theme);
+	t.after(() => {
+		adapter.dispose();
 		setToolMouseTui(null);
+		Object.assign(config, previous);
+		getKeybindings().setUserBindings(bindings);
+	});
+	return {
+		adapter,
+		tui,
+		renderer,
+		switchTo(next: any) {
+			activeRenderer = next;
+			adapter.reconcile(tui);
+		},
+	};
+}
+
+test("native indicator: defaults, legacy migration, explicit boolean precedence and status", () => {
+	assert.equal(normalizeConfig({}).customScrollToEndIndicatorText, true);
+	for (const [legacy, expected] of [
+		["dock", true],
+		["native", false],
+		["invalid", true],
+	] as const) {
+		assert.equal(
+			normalizeConfig({ scrollButtonMode: legacy }).customScrollToEndIndicatorText,
+			expected,
+		);
+		assert.equal(
+			normalizeConfig({ scrollButtonMode: legacy, customScrollToEndIndicatorText: "false" })
+				.customScrollToEndIndicatorText,
+			expected,
+		);
+		for (const value of [true, false]) {
+			const normalized = normalizeConfig({
+				scrollButtonMode: legacy,
+				customScrollToEndIndicatorText: value,
+			});
+			assert.equal(normalized.customScrollToEndIndicatorText, value);
+			assert.ok(!("scrollButtonMode" in normalized));
+			assert.match(
+				formatConfigStatus(normalized),
+				new RegExp(`customScrollToEndIndicatorText=${value ? "on" : "off"}`),
+			);
+			assert.doesNotMatch(formatConfigStatus(normalized), /scrollButton=/);
+		}
 	}
 });
 
-test("scroll button: native mode restores Pi overlay and omits dock row", async () => {
-	const previousMode = config.mode;
-	const previousScrollButtonMode = config.scrollButtonMode;
-	const { tui, count } = lazyFullscreenTui();
-	const indicator = () => "Jump to latest message";
-	tui.scrollToEndIndicator = indicator;
-	setToolMouseTui(tui);
+test("native indicator: saving migrated config writes only the new boolean", () => {
+	const dir = mkdtempSync(join(tmpdir(), "cc-scroll-config-"));
 	try {
-		config.mode = "on";
-		config.scrollButtonMode = "dock";
-		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, undefined);
-
-		config.scrollButtonMode = "native";
-		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, indicator);
-		scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-		await new Promise((resolve) => setImmediate(resolve));
-		assert.equal(count(), 0, "native 模式不调度 dock 按钮重绘");
-		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
-
-		config.scrollButtonMode = "dock";
-		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, undefined);
+		const path = join(dir, "pi-cc-extensions.json");
+		writeFileSync(path, JSON.stringify({ scrollButtonMode: "native" }));
+		const env: NodeJS.ProcessEnv = { ...process.env, PI_CODING_AGENT_DIR: dir };
+		delete env.PI_PACKAGE_DIR;
+		execFileSync(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				`import { saveConfig } from ${JSON.stringify(new URL("../extensions/config/config.ts", import.meta.url).href)}; saveConfig();`,
+			],
+			{ env },
+		);
+		const saved = JSON.parse(readFileSync(path, "utf8"));
+		assert.equal(saved.customScrollToEndIndicatorText, false);
+		assert.ok(!("scrollButtonMode" in saved));
 	} finally {
-		config.mode = previousMode;
-		config.scrollButtonMode = previousScrollButtonMode;
-		resetScrollButtonState();
-		setToolMouseTui(null);
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
-// 计数：仅在离开底部期间累加，文案从 Back to bottom 切成 N new message(s)，回底清零。
-test("scroll button: accumulates new content count while scrolled up", async () => {
-	const { tui } = lazyFullscreenTui();
-	setToolMouseTui(tui);
-
-	// 跟随输出时新内容不计数。
-	noteNewTranscriptItem();
-	assert.equal(getScrollButtonNewCount(), 0, "在底部时不得计数");
-
-	// 滚动离开底部 → 按钮可见，开始记账。
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
-		"无新内容时保持 Back to bottom 文案",
+test("native indicator: raw descriptor ownership, native styling and 0/1/N item counts", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	const original = Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator");
+	assert.equal(Object.getOwnPropertyDescriptor(tui, "scrollToEndIndicator"), undefined);
+	assert.notEqual(
+		tui.scrollToEndIndicator,
+		tui.scrollToEndIndicator,
+		"proxy functions have no stable identity",
 	);
-
+	adapter.reconcile(tui);
+	const wrapper = renderer.scrollToEndIndicator;
+	assert.equal(wrapper(), "<selectedBg><text> ↓ Back to bottom · Ctrl+End </text></selectedBg>");
 	noteNewTranscriptItem();
-	let text = renderScrollButton(80, fakeTheme()).join("\n");
-	assert.ok(text.includes("[ ↓ 1 new message · Ctrl+End ]"), `单条用单数：${text}`);
-
+	assert.match(wrapper(), / ↓ 1 new message · Ctrl\+End /);
 	noteNewTranscriptItem();
 	noteNewTranscriptItem();
-	text = renderScrollButton(80, fakeTheme()).join("\n");
-	assert.ok(text.includes("[ ↓ 3 new messages · Ctrl+End ]"), `多条用复数：${text}`);
-	assert.ok(!text.includes("Back to bottom"), "有计数时不再显示原正文");
-
-	// 滚回底部：按钮隐藏且计数清零；再离开底部时从 0 重新计数。
-	tui.isFollowingOutput = true;
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(getScrollButtonNewCount(), 0, "回到底部即清零");
-	assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
-
-	tui.isFollowingOutput = false;
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
-		"重新离开底部后回到原文案",
+	assert.match(wrapper(), / ↓ 3 new messages · Ctrl\+End /);
+	assert.equal(renderer.renders, 3);
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator, wrapper, "reconciliation is idempotent");
+	adapter.dispose();
+	assert.deepEqual(Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator"), original);
+	assert.equal(
+		wrapper.call(renderer),
+		"original:fullscreen",
+		"captured stale callback delegates with this",
 	);
+});
 
-	// 点击/快捷键回到底部（hideScrollButton）同样清零。
+test("native indicator: nonconfigurable writable data descriptors restore exactly", (t) => {
+	const renderer = rendererFixture();
+	const original = function (this: any, suffix: string) {
+		return `${this.mode}:${suffix}`;
+	};
+	Object.defineProperty(renderer, "scrollToEndIndicator", {
+		value: original,
+		writable: true,
+		configurable: false,
+		enumerable: false,
+	});
+	const descriptor = Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator");
+	const { adapter, tui } = setup(t, renderer);
+	adapter.reconcile(tui);
+	const installed = renderer.scrollToEndIndicator;
+	assert.match(installed(), /Back to bottom/);
+	adapter.dispose();
+	assert.deepEqual(Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator"), descriptor);
+	assert.equal(Reflect.apply(installed, renderer, ["raw-args"]), "fullscreen:raw-args");
+});
+
+test("native indicator: configured empty, remapped and multiple shortcuts, live themes", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.dispose();
+	let activeTheme = theme;
+	const live = installNativeScrollIndicator({}, () => activeTheme);
+	t.after(() => live.dispose());
+	live.reconcile(tui);
+	for (const [keys, label] of [
+		[[], ""],
+		[["alt+z"], process.platform === "darwin" ? " · Option+Z" : " · Alt+Z"],
+		[["ctrl+end", "shift+g", "pageDown"], " · Ctrl+End/Shift+G/PageDown"],
+	] as const) {
+		getKeybindings().setUserBindings({ "tui.altScreen.bottom": [...keys] });
+		assert.equal(
+			renderer.scrollToEndIndicator(),
+			`<selectedBg><text> ↓ Back to bottom${label} </text></selectedBg>`,
+		);
+	}
+	activeTheme = { fg: (_c, s) => `new-fg:${s}`, bg: (_c, s) => `new-bg:${s}` };
+	assert.match(renderer.scrollToEndIndicator(), /^new-bg:new-fg:/);
+});
+
+test("native indicator: missing, disabled, inherited, accessor and frozen callbacks stay untouched", (t) => {
+	const { adapter, switchTo } = setup(t);
+	const inherited = Object.assign(Object.create({ scrollToEndIndicator: () => "inherited" }), {
+		mode: "fullscreen",
+		requestRender() {},
+	});
+	const accessor = rendererFixture();
+	let writes = 0;
+	Object.defineProperty(accessor, "scrollToEndIndicator", {
+		get: () => () => "accessor",
+		set: () => {
+			writes++;
+		},
+		configurable: true,
+	});
+	const readonly = rendererFixture();
+	Object.defineProperty(readonly, "scrollToEndIndicator", { writable: false });
+	const absent: any = rendererFixture();
+	delete absent.scrollToEndIndicator;
+	for (const renderer of [
+		absent,
+		{ ...rendererFixture(), scrollToEndIndicator: undefined },
+		{ ...rendererFixture(), scrollToEndIndicator: false },
+		inherited,
+		accessor,
+		readonly,
+		Object.freeze(rendererFixture()),
+	]) {
+		const before = Object.getOwnPropertyDescriptors(renderer);
+		switchTo(renderer);
+		adapter.reconcile(renderer);
+		assert.deepEqual(Object.getOwnPropertyDescriptors(renderer), before);
+	}
+	assert.equal(writes, 0);
+});
+
+test("native indicator: regular/off/false preserve native labels; true/false/true resets count", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	const original = renderer.scrollToEndIndicator;
+	for (const option of [false, true, false, true]) {
+		config.customScrollToEndIndicatorText = option;
+		adapter.reconcile(tui);
+		assert.equal(renderer.scrollToEndIndicator === original, !option);
+		if (option) {
+			assert.match(renderer.scrollToEndIndicator(), /Back to bottom/);
+			noteNewTranscriptItem();
+			assert.match(renderer.scrollToEndIndicator(), /1 new message/);
+		}
+	}
+	config.mode = "off";
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator, original);
+	config.mode = "on";
+	renderer.mode = "regular";
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator, original);
+});
+
+test("native indicator: renderer switching restores raw originals without proxy retarget recursion", (t) => {
+	const { adapter, tui, renderer, switchTo } = setup(t);
+	const original = renderer.scrollToEndIndicator;
+	adapter.reconcile(tui);
+	const captured = renderer.scrollToEndIndicator;
 	noteNewTranscriptItem();
-	hideScrollButton(tui);
-	assert.equal(getScrollButtonNewCount(), 0, "回到底部按钮触发后清零");
+	const next = rendererFixture();
+	const nextOriginal = next.scrollToEndIndicator;
+	switchTo({ ...rendererFixture(), mode: "regular" });
+	assert.equal(renderer.scrollToEndIndicator, original);
+	switchTo(next);
+	assert.match(tui.scrollToEndIndicator(), /Back to bottom/);
+	assert.equal(captured.call(renderer), "original:fullscreen");
+	switchTo(renderer);
+	assert.equal(next.scrollToEndIndicator, nextOriginal);
+	assert.match(tui.scrollToEndIndicator(), /Back to bottom/);
+});
 
-	// 官方直接跳回底部（提交新消息）时，下一次记账先校正状态，不把跟随期间的内容计入。
-	tui.isFollowingOutput = false;
-	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(renderScrollButton(80, fakeTheme()).length > 0, "离开底部时按钮可见");
-	tui.isFollowingOutput = true;
+test("native indicator: foreign replacement wins, including captured old wrapper and toggles", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.reconcile(tui);
+	const captured = renderer.scrollToEndIndicator;
+	const foreign = function (this: any) {
+		return `foreign:${captured.call(this)}`;
+	};
+	renderer.scrollToEndIndicator = foreign;
+	assert.equal(
+		foreign.call(renderer),
+		"foreign:original:fullscreen",
+		"stale customization deactivates even before reconciliation",
+	);
+	for (const option of [true, false, true]) {
+		config.customScrollToEndIndicatorText = option;
+		adapter.reconcile(tui);
+		noteNewTranscriptItem();
+		assert.equal(renderer.scrollToEndIndicator, foreign);
+	}
+	adapter.dispose();
+	assert.equal(renderer.scrollToEndIndicator, foreign);
+});
+
+test("native indicator: deleted/redefined properties are not recreated by cleanup", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.reconcile(tui);
+	const captured = renderer.scrollToEndIndicator;
+	delete renderer.scrollToEndIndicator;
+	adapter.reconcile(tui);
+	adapter.dispose();
+	assert.ok(!("scrollToEndIndicator" in renderer));
+	assert.equal(captured.call(renderer), "original:fullscreen");
+});
+
+test("native indicator: freeze after installation leaves an inactive delegating wrapper", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.reconcile(tui);
+	const wrapper = renderer.scrollToEndIndicator;
+	Object.freeze(renderer);
+	assert.doesNotThrow(() => adapter.reconcile(tui));
+	adapter.dispose();
+	assert.equal(renderer.scrollToEndIndicator, wrapper);
+	assert.equal(wrapper.call(renderer), "original:fullscreen");
+});
+
+test("native indicator: guarded valueOf failure stands down; known raw input this can still reconcile", (t) => {
+	const renderer = {
+		...rendererFixture(),
+		valueOf() {
+			throw new Error("unavailable");
+		},
+	};
+	const { adapter, tui } = setup(t, renderer);
+	const original = renderer.scrollToEndIndicator;
+	assert.equal(concreteToolMouseTui(tui), null);
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator, original);
+	adapter.reconcile(tui, renderer);
+	assert.match(renderer.scrollToEndIndicator(), /Back to bottom/);
+});
+
+test("native indicator: follow reconciliation resets counts without invoking the hidden callback", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.reconcile(tui);
+	for (const reset of [
+		() => adapter.reconcile(tui),
+		noteNewTranscriptItem,
+		resetNativeScrollIndicatorCount,
+	]) {
+		renderer.isFollowingOutput = false;
+		noteNewTranscriptItem();
+		assert.match(renderer.scrollToEndIndicator(), /1 new message/);
+		renderer.isFollowingOutput = true;
+		reset();
+		renderer.isFollowingOutput = false;
+		assert.match(renderer.scrollToEndIndicator(), /Back to bottom/);
+	}
+});
+
+test("native indicator: a stale mouse owner delegates before its replacement widget mounts", (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	patchRegistry.install(TOOL_MOUSE_OWNER_KEY, adapter.owner);
+	const nextOwner = {};
+	t.after(() => {
+		patchRegistry.dispose(TOOL_MOUSE_OWNER_KEY, nextOwner);
+	});
+	adapter.reconcile(tui);
+	const installed = renderer.scrollToEndIndicator;
 	noteNewTranscriptItem();
-	assert.equal(getScrollButtonNewCount(), 0, "已跟随底部时不计入新内容");
-	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "校正后按钮隐藏");
+	assert.match(installed(), /1 new message/);
+	patchRegistry.install(TOOL_MOUSE_OWNER_KEY, nextOwner);
+	assert.equal(installed.call(renderer), "original:fullscreen");
+	adapter.reconcile(tui);
+	assert.equal(
+		renderer.scrollToEndIndicator,
+		installed,
+		"stale reconcile cannot install another patch",
+	);
+});
 
-	resetScrollButtonState();
-	setToolMouseTui(null);
+test("native indicator: reload takeover and late disposal cannot clobber the new runtime", async (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	const original = renderer.scrollToEndIndicator;
+	adapter.reconcile(tui);
+	const old = renderer.scrollToEndIndicator;
+	noteNewTranscriptItem();
+	const jiti = createJiti(import.meta.url, { moduleCache: false });
+	const reloaded = (await jiti.import(
+		new URL("../extensions/renderer/mouse/scroll.ts", import.meta.url).pathname,
+	)) as any;
+	const next = reloaded.installNativeScrollIndicator({}, () => theme);
+	t.after(() => next.dispose());
+	next.reconcile(tui);
+	const installed = renderer.scrollToEndIndicator;
+	assert.notEqual(installed, old);
+	assert.match(installed(), /Back to bottom/);
+	adapter.dispose();
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator, installed);
+	assert.equal(old.call(renderer), "original:fullscreen");
+	next.dispose();
+	next.dispose();
+	assert.equal(renderer.scrollToEndIndicator, original);
 });

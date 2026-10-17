@@ -3,6 +3,7 @@ import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts"
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import {
 	patchRegistry,
+	FULLSCREEN_VIEWPORT_INPUT_PATCH,
 	TOOL_GROUPING_PARENT_KEY,
 	TOOL_MOUSE_OWNER_KEY,
 } from "../../utils/patch-keys.ts";
@@ -46,24 +47,13 @@ import {
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
+	concreteToolMouseTui,
 	fullscreenLazyTui,
-	hideScrollButton,
-	dockScrollButtonActive,
-	restoreOfficialScrollToEnd,
-	syncOfficialScrollToEnd,
-	isScrollBottomInput,
-	renderScrollButton,
-	resetScrollButtonState,
-	scheduleScrollButtonSync,
-	setScrollButtonHovered,
-	setScrollButtonVisible,
-	setScrollButtonWidget,
+	installNativeScrollIndicator,
 	setToolMouseTui,
-	getScrollButtonVisible,
-	getScrollButtonWidget,
 	getToolMouseTui,
 	toolMouseInteractionActive,
-	updateScrollButtonFromInput,
+	type NativeScrollIndicatorAdapter,
 } from "./scroll.ts";
 import {
 	applyFullscreenHover,
@@ -77,6 +67,7 @@ import {
 	type FullscreenHoverTarget,
 } from "./hover.ts";
 import {
+	clearStickyPromptHover,
 	handleStickyPromptClick,
 	resetStickyPromptState,
 	updateStickyPromptHover,
@@ -89,7 +80,7 @@ type FrameToolRender = {
 };
 
 type InteractionRegion = {
-	kind: "collapsed-hint" | "collapse-hint" | "expanded-card" | "show-more" | "scroll-bottom";
+	kind: "collapsed-hint" | "collapse-hint" | "expanded-card" | "show-more";
 	row: number;
 	startCol: number;
 	endCol: number;
@@ -115,6 +106,8 @@ let toolMouseRenderPatchWrapper: ((...args: any[]) => any) | null = null;
 let toolMouseRenderPatchState: { active: boolean } | null = null;
 let toolMouseRawWrite: ((data: string) => unknown) | null = null;
 let toolMouseInstallationOwner: object | null = null;
+let nativeScrollIndicator: NativeScrollIndicatorAdapter | null = null;
+let toolMouseWidget: { dispose(): void } | null = null;
 let fullscreenMotionTerminal: any = null;
 let ownsFullscreenMotion = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,7 +123,6 @@ function interactionRegionAt(packet: SgrMousePacket): InteractionRegion | null {
 	);
 	return (
 		matches.find((region) => region.kind === "show-more") ??
-		matches.find((region) => region.kind === "scroll-bottom") ??
 		matches.find((region) => region.kind === "collapsed-hint") ??
 		matches.find((region) => region.kind === "collapse-hint") ??
 		matches.find((region) => region.kind === "expanded-card") ??
@@ -159,8 +151,6 @@ function tryOpenToolIoShowMore(region: InteractionRegion): boolean {
 function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	if (!isSgrIdleMotion(packet)) return;
 	const region = interactionRegionAt(packet);
-	const nextScrollButtonHovered = region?.kind === "scroll-bottom";
-	const scrollButtonChanged = setScrollButtonHovered(nextScrollButtonHovered);
 	const component = region?.component;
 	const nextToolCallId = region?.kind === "collapsed-hint" ? (component?.toolCallId ?? null) : null;
 	// group 只在提示文字上高亮（展开卡整行都是 expanded-card，不能算 hint）。
@@ -173,12 +163,7 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	const nextIoSection = region?.kind === "show-more" ? (region.section ?? null) : null;
 	const changed = nextToolCallId !== sharedToolHoverState().toolCallId;
 	setHoveredToolCallId(nextToolCallId);
-	if (
-		scrollButtonChanged ||
-		setHoveredToolIo(nextIoView, nextIoSection) ||
-		setHoveredToolGroup(nextGroup) ||
-		changed
-	)
+	if (setHoveredToolIo(nextIoView, nextIoSection) || setHoveredToolGroup(nextGroup) || changed)
 		tui.requestRender?.();
 }
 
@@ -268,7 +253,6 @@ function resolveCollapsePress(tui: any, packet: SgrMousePacket): any {
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const region = interactionRegionAt(packet);
 	if (!region) return false;
-	if (region.kind === "scroll-bottom") return false;
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
 	const component = region.component;
 	if (!component) return false;
@@ -343,7 +327,13 @@ function releaseFullscreenToolMouseMotion(tui?: any): void {
 	}
 }
 
-const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
+type ViewportInputPatch = {
+	renderer: any;
+	installed: (data: string) => any;
+	dispose(): void;
+};
+let viewportInputPatch: ViewportInputPatch | null = null;
+const yieldedViewportRenderers = new WeakSet<object>();
 
 /**
  * diff 结果组件自带 remainder 行：声明存在时只有那一行是展开入口（正文里的同名字样不算）；
@@ -374,7 +364,7 @@ function blocksOfficialCardToggle(component: any, event: any): boolean {
  * 官方 fullscreen 工具卡点击：collapsed hint 单击展开
  * （有且仅保持一个展开：展开前收起其他工具卡），expanded 卡放行官方 press，
  * 位置不变的松手才收起（官方卡经 guard，思考/group/compact 自有卡由扩展结算），
- * 拖动选择文本时不收起；截断头 show-more 单击打开全量预览；回到底部按钮 scrollToBottom。
+ * 拖动选择文本时不收起；截断头 show-more 单击打开全量预览。
  * 滚动条列、含 OSC8 链接行、非工具区域、折叠卡正文放行官方。
  */
 function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
@@ -397,12 +387,6 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	// 面板内工具行命中时 release 统一由扩展结算。
 	const card = target.group ?? target.owner ?? component;
 	const pressComponent = target.owner ?? component;
-	// 回到底部按钮：按组件引用命中，不依赖渲染行缓存。
-	if (getScrollButtonVisible() && component === getScrollButtonWidget()) {
-		tui.scrollToBottom?.();
-		hideScrollButton(tui);
-		return true;
-	}
 	const line = hit.box.lines?.[hit.localRow];
 	if (typeof line !== "string" || /\x1b]8;[^;]*;/.test(line)) return false;
 	const isTool = isToolExecutionComponent(component);
@@ -504,13 +488,11 @@ function keepViewportOnExpand(tui: any): void {
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo !== "function" || typeof view.scrollTop !== "number") return;
 	view.scrollTo(view.scrollTop, { disableFollow: true });
-	// 已脱离底部跟随：dock 模式亮出回到底部按钮，新输出到来时仍有入口。
-	if (view.isFollowingEnd === false && dockScrollButtonActive()) setScrollButtonVisible(true);
 }
 
 /**
  * fullscreen 鼠标悬停：collapsed 卡 [click to show more] hint、
- * expanded 卡截断头 show-more、回到底部按钮。motion 不 consume，官方链照常。
+ * expanded 卡截断头 show-more。motion 不 consume，官方链照常。
  */
 function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	if (!isSgrIdleMotion(packet)) return;
@@ -522,14 +504,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	const hit = fullscreenLeafAt(layout, x, y);
 	if (hit) {
 		const line = hit.box.lines?.[hit.localRow];
-		// 回到底部按钮：渲染行文本 + 列区间识别（零组件树开销）。
-		if (typeof line === "string" && getScrollButtonVisible() && line.includes("[ ↓")) {
-			const plain = stripTerminalSequencesPreservingLayout(line);
-			const idx = plain.indexOf("[ ↓");
-			if (idx >= 0 && x >= idx && x <= idx + plain.length - 1) {
-				target = { kind: "button" };
-			}
-		} else if (typeof line === "string" && !/\x1b]8;/.test(line)) {
+		if (typeof line === "string" && !/\x1b]8;/.test(line)) {
 			const width = Math.max(1, Number(tui.terminal?.columns) || 80);
 			const contentWidth = fullscreenContentWidth(hit.box, width);
 			// 与点击共用同一定位算法，避免 hover 自建行段与真实组件树错位。
@@ -613,80 +588,136 @@ function packetInsideOverlay(tui: any, packet: SgrMousePacket): boolean {
 	return false;
 }
 
-/**
- * 实例级包装 TuiAltScreen.handleViewportInput（惰性 Proxy 安全）：
- * 原型方法取 original（绕开 proxy 函数包装），实例 own property 装 wrapper
- * （constructor arrow 动态查找命中）。仅在 fullscreen 且无 overlay 时先消费
- * 工具卡左键点击，其余全部放行官方 selection/scrollbar/URL/键盘链。
- */
-function patchFullscreenViewportInput(tui: any): void {
-	if (tui[FULLSCREEN_VIEWPORT_PATCH] || !isLazyProxyTui(tui)) return;
-	const proto = Object.getPrototypeOf(tui);
-	const original = proto?.handleViewportInput;
-	if (typeof original !== "function") return;
-	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
-	tui.handleViewportInput = function (this: any, data: string) {
-		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
-			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
-			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
-			scheduleScrollButtonSync(tui, data);
-			const packets = parseSgrMousePackets(data);
-			// overlay（文本预览/context 弹框，都是真 overlay）可见时：落在
-			// overlay 矩形内的包经 packetInsideOverlay 放行官方
-			// dispatchMouseToOverlay → overlay.handleMouse；overlay 外的包仍
-			// 走扩展收起/展开/hover。两条路径各管各的。
-			if (packets) {
-				// 布局还没出来或仍是上一帧：不要把点击收成工具展开。返回 undefined
-				// 让焦点 overlay 的 handleInput 拿到原始 SGR；官方链也靠这份布局，调它会消费且打到 transcript。
-				if (tui.hasOverlay?.() && !overlayLayoutsCurrent(tui)) return undefined;
-				const overlayPackets = tui.hasOverlay?.()
-					? packets.filter((packet) => packetInsideOverlay(tui, packet))
-					: undefined;
-				const insideOverlay = (packet: SgrMousePacket) => overlayPackets?.includes(packet) === true;
-				for (const packet of packets) {
-					if (insideOverlay(packet)) continue;
-					if (isSgrLeftRelease(packet)) {
-						// 结算单击收起：成功时吞掉 release，官方不会再对同一次点击合成
-						// click（官方 click 要求按下/松开坐标严格一致，还会把刚收起的卡
-						// toggle 回去，或误触卡内其他 MouseRegion 区）。
-						if (resolveCollapsePress(tui, packet) !== undefined) {
-							// 收起会重排布局：官方还留着按下时登记的 press 目标与选区锚点，
-							// 发 FOCUS_OUT 一次清干净，避免旧坐标结算出误选/误发 click。
-							try {
-								Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
-							} catch {
-								/* 老版本没有选区状态 */
-							}
-							return { consume: true };
-						}
-					} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet))
-						clearPendingCollapsePressOnMove(packet);
-					if (isSgrLeftPress(packet) && handleStickyPromptClick(tui, packet)) {
-						return { consume: true };
-					}
-					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
-						return { consume: true };
-					}
-					// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区，避免每像素命中+重绘。
-					if (isSgrIdleMotion(packet)) {
-						// 粘性行命中时不进工具 hover：同一行只能有一个高亮。
-						if (updateStickyPromptHover(tui, packet)) applyFullscreenHover(tui, null);
-						else handleFullscreenToolHover(tui, packet);
-					}
-				}
-			}
-		}
-		return Reflect.apply(original, this, [data]);
-	};
+/** Use the native hitbox (zero-based), never infer it from our label or layout. */
+function packetOnNativeIndicator(tui: any, packet: SgrMousePacket): boolean {
+	const rect = tui.scrollToEndIndicatorRect;
+	return Boolean(
+		rect &&
+			packet.row - 1 === rect.row &&
+			packet.col - 1 >= rect.column &&
+			packet.col - 1 < rect.column + rect.width,
+	);
 }
 
-function restoreFullscreenViewportInput(tui: any): void {
-	if (!tui || !tui[FULLSCREEN_VIEWPORT_PATCH]) return;
-	const proto = Object.getPrototypeOf(tui);
-	if (typeof proto?.handleViewportInput === "function") {
-		tui.handleViewportInput = proto.handleViewportInput;
+/** Capture the concrete input chain, not a lazy method that can retarget to our wrapper. */
+function patchFullscreenViewportInput(tui: any): void {
+	const renderer = concreteToolMouseTui(tui);
+	if (
+		viewportInputPatch &&
+		viewportInputPatch.renderer === renderer &&
+		renderer?.handleViewportInput === viewportInputPatch.installed
+	)
+		return;
+	restoreFullscreenViewportInput();
+	if (renderer?.mode !== "fullscreen" || yieldedViewportRenderers.has(renderer)) return;
+	patchRegistry.get<ViewportInputPatch>(FULLSCREEN_VIEWPORT_INPUT_PATCH)?.dispose();
+	const original = renderer.handleViewportInput;
+	if (typeof original !== "function") return;
+	const descriptor = Object.getOwnPropertyDescriptor(renderer, "handleViewportInput");
+	if (descriptor && (!descriptor.writable || !("value" in descriptor))) return;
+	const owner = toolMouseInstallationOwner;
+	const indicator = nativeScrollIndicator;
+	let active = true;
+	// Press scrolls immediately; the indicator rect may disappear before release.
+	let nativeIndicatorPress = false;
+	const patch: ViewportInputPatch = {
+		renderer,
+		installed(this: any, data: string) {
+			if (!active || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
+				return Reflect.apply(original, this, [data]);
+			try {
+				const interacting = toolMouseInteractionActive() && this.mode === "fullscreen";
+				if (data === FULLSCREEN_FOCUS_OUT || !interacting) {
+					nativeIndicatorPress = false;
+					clearPendingCollapsePress();
+				}
+				if (interacting) {
+					const packets = parseSgrMousePackets(data);
+					if (packets) {
+						let nativeGesture = false;
+						for (const packet of packets) {
+							const onIndicator = packetOnNativeIndicator(this, packet);
+							if (isSgrLeftPress(packet)) nativeIndicatorPress = onIndicator;
+							nativeGesture ||= onIndicator || nativeIndicatorPress;
+							if (isSgrLeftRelease(packet)) nativeIndicatorPress = false;
+						}
+						if (nativeGesture) {
+							clearPendingCollapsePress();
+							applyFullscreenHover(this, null);
+							clearStickyPromptHover(this);
+							// Keep Pi's overlay/search/capture precedence, including with custom text disabled.
+							return Reflect.apply(original, this, [data]);
+						}
+						// A focused overlay without a current layout must receive raw input.
+						if (this.hasOverlay?.() && !overlayLayoutsCurrent(this)) return undefined;
+						for (const packet of packets) {
+							if (this.hasOverlay?.() && packetInsideOverlay(this, packet)) continue;
+							if (isSgrLeftRelease(packet)) {
+								if (resolveCollapsePress(tui, packet) !== undefined) {
+									// Clear native selection/press targets after custom collapse rearranges the card.
+									try {
+										Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
+									} catch {
+										/* Older renderers may have no selection state. */
+									}
+									return { consume: true };
+								}
+							} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet)) {
+								clearPendingCollapsePressOnMove(packet);
+							}
+							if (isSgrLeftPress(packet) && handleStickyPromptClick(tui, packet))
+								return { consume: true };
+							if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet))
+								return { consume: true };
+							if (isSgrIdleMotion(packet)) {
+								if (updateStickyPromptHover(tui, packet)) applyFullscreenHover(this, null);
+								else handleFullscreenToolHover(tui, packet);
+							}
+						}
+					}
+				}
+				return Reflect.apply(original, this, [data]);
+			} finally {
+				indicator?.reconcile(tui, this);
+			}
+		},
+		dispose() {
+			active = false;
+			nativeIndicatorPress = false;
+			try {
+				if (renderer.handleViewportInput === patch.installed) {
+					if (descriptor) Object.defineProperty(renderer, "handleViewportInput", descriptor);
+					else delete renderer.handleViewportInput;
+				} else yieldedViewportRenderers.add(renderer);
+			} catch {
+				// Frozen/replaced interfaces are not ours to restore.
+			}
+			patchRegistry.dispose(FULLSCREEN_VIEWPORT_INPUT_PATCH, patch);
+		},
+	};
+	try {
+		Object.defineProperty(
+			renderer,
+			"handleViewportInput",
+			descriptor
+				? { ...descriptor, value: patch.installed }
+				: {
+						value: patch.installed,
+						writable: true,
+						configurable: true,
+						enumerable: true,
+					},
+		);
+		viewportInputPatch = patch;
+		patchRegistry.install(FULLSCREEN_VIEWPORT_INPUT_PATCH, patch);
+	} catch {
+		active = false;
 	}
-	tui[FULLSCREEN_VIEWPORT_PATCH] = false;
+}
+
+function restoreFullscreenViewportInput(): void {
+	viewportInputPatch?.dispose();
+	viewportInputPatch = null;
 }
 
 function restoreToolMouseRenderPatch(): void {
@@ -983,26 +1014,13 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!getToolMouseTui()) return undefined;
-	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
-	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。
-	if (fullscreenLazyTui(getToolMouseTui())) {
-		scheduleScrollButtonSync(getToolMouseTui(), data);
-		if (isScrollBottomInput(data)) {
-			getToolMouseTui().scrollToBottom?.();
-			hideScrollButton(getToolMouseTui());
-			return { consume: true };
-		}
-		return undefined;
-	}
-	updateScrollButtonFromInput(getToolMouseTui(), data);
+	// Fullscreen viewport input (including configured navigation keys) belongs to Pi.
+	if (fullscreenLazyTui(getToolMouseTui())) return undefined;
 	// Off mode restores native input: wheel keeps scrolling through Pi's normal
 	// dispatcher, while hover/click affordances are entirely inactive.
 	if (!toolMouseInteractionActive()) return undefined;
 	const packets = parseSgrMousePackets(data);
-	if (!packets) {
-		scheduleScrollButtonSync(getToolMouseTui(), data);
-		return undefined;
-	}
+	if (!packets) return undefined;
 	// 文本预览活动时，点击交给预览自己的 handleInput（esc/copy/滚动条），
 	// 不被残留的工具 region 吞掉；预览关闭后恢复。
 	if (hasActiveTextPreview()) return undefined;
@@ -1026,7 +1044,6 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 
 	// Let scrolling, motion, release, and clicks outside tool results reach the
 	// normal TUI input chain (including other extensions such as pi-zentui).
-	scheduleScrollButtonSync(getToolMouseTui(), data);
 	return consumed ? { consume: true } : undefined;
 }
 
@@ -1061,26 +1078,27 @@ export function teardownToolMouseInteraction(
 	} catch {
 		// The UI context may already have been reset during /reload.
 	}
+	toolMouseWidget?.dispose();
+	toolMouseWidget = null;
 	restoreToolMouseRenderPatch();
-	restoreFullscreenViewportInput(getToolMouseTui());
-	restoreOfficialScrollToEnd(getToolMouseTui());
-	resetScrollButtonState();
+	restoreFullscreenViewportInput();
+	nativeScrollIndicator?.dispose();
+	nativeScrollIndicator = null;
 	setToolMouseTui(null);
 	toolMouseUi = null;
 	patchRegistry.dispose(TOOL_MOUSE_OWNER_KEY, owner);
 	if (toolMouseInstallationOwner === owner) toolMouseInstallationOwner = null;
 }
 
-/** off 模式清理：清空 hover 与回到底部按钮状态（跨模块 rebind 统一经由此函数）。 */
+/** off 模式清理：清空 hover 并还原原生指示器文案。 */
 export function resetToolHoverState(): void {
+	clearPendingCollapsePress();
 	setHoveredToolCallId(null);
 	setHoveredThinking(null);
 	setHoveredMessageDisplay(null);
 	setHoveredCompactAssistant(null);
-	setScrollButtonVisible(false);
-	setScrollButtonHovered(false);
 	resetStickyPromptState();
-	restoreOfficialScrollToEnd(getToolMouseTui());
+	nativeScrollIndicator?.reconcile(getToolMouseTui());
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
@@ -1158,31 +1176,42 @@ export function installToolMouseInteraction(
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen
 	// 由官方 LayoutFrame 命中，并由扩展补齐 hover 所需的 all-motion 上报。
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
-		setToolMouseTui(tui);
-		setToolTuiFullscreen(fullscreenLazyTui(tui));
-		if (isLazyProxyTui(tui)) {
-			patchFullscreenViewportInput(tui);
-			ensureFullscreenToolMouseMotion(tui);
-			syncOfficialScrollToEnd(tui);
-			setScrollButtonWidget({
-				render: (width: number) => {
-					patchFullscreenViewportInput(tui);
-					ensureFullscreenToolMouseMotion(tui);
-					syncOfficialScrollToEnd(tui);
-					return renderScrollButton(width, theme);
-				},
-				invalidate() {},
-			});
-			return getScrollButtonWidget();
-		}
-		// Wrap doRender to capture the live frame for tool click/hover mapping.
-		patchToolMouseMotionAfterRender(tui);
-		if (toolMouseInteractionActive()) tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
-		const widget = {
-			render: (width: number) => renderScrollButton(width, theme),
-			invalidate() {},
+		if (!patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
+			return { render: () => [], invalidate() {} };
+		toolMouseWidget?.dispose();
+		const indicator = installNativeScrollIndicator(owner, () => ctx.ui.theme ?? theme);
+		nativeScrollIndicator = indicator;
+		let disposed = false;
+		const reconcile = () => {
+			if (disposed || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner)) return;
+			setToolMouseTui(tui);
+			setToolTuiFullscreen(fullscreenLazyTui(tui));
+			if (isLazyProxyTui(tui)) {
+				patchFullscreenViewportInput(tui);
+				ensureFullscreenToolMouseMotion(tui);
+			} else {
+				patchToolMouseMotionAfterRender(tui);
+			}
+			indicator.reconcile(tui);
 		};
-		setScrollButtonWidget(widget);
+		const widget = {
+			render() {
+				reconcile();
+				return [];
+			},
+			invalidate() {},
+			dispose() {
+				if (disposed) return;
+				disposed = true;
+				indicator.dispose();
+				if (toolMouseWidget !== widget || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner)) return;
+				restoreFullscreenViewportInput();
+			},
+		};
+		toolMouseWidget = widget;
+		reconcile();
+		if (!isLazyProxyTui(tui) && toolMouseInteractionActive())
+			tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
 		return widget;
 	});
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);

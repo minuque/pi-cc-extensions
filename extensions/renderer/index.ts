@@ -30,7 +30,11 @@ import {
 	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
-import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
+import {
+	getToolMouseTui,
+	noteNewTranscriptItem,
+	resetNativeScrollIndicatorCount,
+} from "./mouse/scroll.ts";
 import {
 	disposeStickyPromptPatches,
 	installStickyPromptPatches,
@@ -275,6 +279,7 @@ export default function (
 	pi.on("session_tree", async (event, ctx) => {
 		// 会话树重建后在当前帧和下一帧各同步一次，替换旧组件引用。
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		resetNativeScrollIndicatorCount();
 		syncCompactMode(ctx);
 		scheduleSessionRender(() => syncCompactMode(ctx));
 	});

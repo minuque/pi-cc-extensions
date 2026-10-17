@@ -65,7 +65,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "toolLabelClip": 0,                      // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
-  "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
+  "customScrollToEndIndicatorText": true,  // fullscreen: native indicator label becomes Back to bottom / N new message(s)
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
@@ -113,6 +113,8 @@ pi -e .              # one run, does not edit settings.json
 ## Compatibility
 
 - Node.js `>=22.19.0`, Pi `^0.84.0`
+- Native scroll-indicator text is an optional, capability-detected fullscreen enhancement. Pi retains its native styling, placement, visibility, clipping, click behavior, and configured bottom shortcut; no extra row or fallback button is added. Unsupported, disabled, or read-only indicator interfaces are left unchanged. Set `customScrollToEndIndicatorText: false` (or `mode: "off"`) to keep the original native label. The count uses transcript items (messages and tool cards) received while not following output.
+- Deprecated `scrollButtonMode` migrates from `dock` to `customScrollToEndIndicatorText: true`, and `native` to `false`. An explicit new boolean takes precedence; saved config contains only the new key (default `true`).
 
 ## Recommended companions
 

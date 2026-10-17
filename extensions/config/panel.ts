@@ -49,7 +49,6 @@ import {
 	pickPositiveInt,
 	pickPositiveNumber,
 	pickToolLabelClip,
-	SCROLL_BUTTON_MODES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	TOOL_LABEL_CLIP_VALUES,
@@ -61,7 +60,6 @@ import {
 	type DiffViewMode,
 	type FooterGitStatsMode,
 	type FooterTokenRateMode,
-	type ScrollButtonMode,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -602,15 +600,14 @@ export async function showCcstylePanel(
 			currentValue: config.stickyUserMessage ? "on" : "off",
 			values: ["on", "off"],
 		};
-		const scrollButtonSetting = {
-			id: "scrollButtonMode",
-			label: "Scroll to bottom",
-			description:
-				config.scrollButtonMode === "dock"
-					? "Fullscreen: show the extension's dedicated Back to bottom row."
-					: "Fullscreen: use Pi's native floating Jump to latest overlay.",
-			currentValue: config.scrollButtonMode,
-			values: [...SCROLL_BUTTON_MODES],
+		const scrollIndicatorTextSetting = {
+			id: "customScrollToEndIndicatorText",
+			label: "Custom scroll indicator text",
+			description: config.customScrollToEndIndicatorText
+				? "Fullscreen: label a supported native indicator Back to bottom or N new messages; no extra row."
+				: "Keep Pi's original native scroll indicator label.",
+			currentValue: config.customScrollToEndIndicatorText ? "on" : "off",
+			values: ["on", "off"],
 		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
@@ -1015,12 +1012,11 @@ export async function showCcstylePanel(
 						: "User messages scroll normally.";
 					break;
 				}
-				case "scrollButtonMode": {
-					updateConfig({ scrollButtonMode: value as ScrollButtonMode });
-					scrollButtonSetting.description =
-						config.scrollButtonMode === "dock"
-							? "Fullscreen: show the extension's dedicated Back to bottom row."
-							: "Fullscreen: use Pi's native floating Jump to latest overlay.";
+				case "customScrollToEndIndicatorText": {
+					updateConfig({ customScrollToEndIndicatorText: value === "on" });
+					scrollIndicatorTextSetting.description = config.customScrollToEndIndicatorText
+						? "Fullscreen: label a supported native indicator Back to bottom or N new messages; no extra row."
+						: "Keep Pi's original native scroll indicator label.";
 					break;
 				}
 				case "showStartupHeader": {
@@ -1069,7 +1065,7 @@ export async function showCcstylePanel(
 					expandedMaxSetting,
 					toolLabelClipSetting,
 					stickyUserMessageSetting,
-					scrollButtonSetting,
+					scrollIndicatorTextSetting,
 					startupHeaderSetting,
 					editorPrefixSetting,
 				],

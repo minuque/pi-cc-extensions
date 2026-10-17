@@ -83,7 +83,13 @@ function switchMode(
 
 // ─── live on ↔ compact ───────────────────────────────────────────────
 
-test("on → compact reshapes to summary; compact → on restores tool cards", () => {
+test("on → compact reshapes to summary; compact → on restores tool cards", (t) => {
+	// This assertion exercises summary-only diffs, not the default collapsed body preview.
+	const previousCollapsedLines = config.editDiffCollapsedLines;
+	config.editDiffCollapsedLines = 0;
+	t.after(() => {
+		config.editDiffCollapsedLines = previousCollapsedLines;
+	});
 	const previous = config.mode;
 	config.mode = "on";
 	const hooks = installCompactMode({
