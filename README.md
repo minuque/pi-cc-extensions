@@ -29,7 +29,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、原生滚动指示器自定义文案                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
@@ -96,6 +96,8 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
+**滚动指示器文案**：`customScrollToEndIndicatorText` 默认 `true`，把 Pi 的 `Jump to latest message` 替换为 `Back to bottom` 或 `N new message(s)`。样式、已配置的快捷键提示、布局和输入仍由原生实现处理，不增加独占行。计数沿用停止跟随输出期间新增的 transcript 项（消息和工具卡）。设为 `false`（或 `mode: "off"`）保留原生文案。
+
 > [!TIP]
 > **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起。
 
@@ -113,7 +115,7 @@ pi -e .              # 只跑一次，不改 settings.json
 ## 兼容性
 
 - Node.js `>=22.19.0`，Pi `^0.84.0`
-- 原生滚动指示器文案是按运行时能力检测启用的可选 fullscreen 增强。样式、位置、显隐、裁剪、点击行为及已配置的回底快捷键仍由 Pi 控制，不增加独占行或回退按钮；不支持、已禁用或只读的接口保持不变。设 `customScrollToEndIndicatorText: false`（或 `mode: "off"`）保留原生文案。计数沿用停止跟随输出期间新增的 transcript 项（消息和工具卡）。
+- 原生滚动指示器文案是按运行时能力（而非版本）检测启用的可选 fullscreen 增强；不支持、已禁用或只读的接口，以及无法识别的原生文案保持不变，不增加回退按钮。
 - 已弃用的 `scrollButtonMode` 自动迁移：`dock` → `customScrollToEndIndicatorText: true`，`native` → `false`。显式的新布尔值优先；保存时仅写入新键，默认 `true`。
 
 ## 推荐搭配

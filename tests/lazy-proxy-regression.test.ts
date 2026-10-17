@@ -58,10 +58,7 @@ function runtime() {
 }
 
 function theme() {
-	return {
-		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
-		bg: (_color: string, text: string) => text,
-	};
+	return { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
 }
 
 /** 工具桩：模拟 Tool 的最小形状（resultRendererComponent 由个别用例注入）。 */
@@ -482,68 +479,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.scrollBottomCalls, 0);
 	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
-});
-
-test("lazy-proxy tui: native indicator keeps its slot with custom text and no row", () => {
-	const previousMode = config.mode;
-	const tool = createTool("tool-overlay");
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(tool, null, terminal);
-	const indicator = () => "Jump to latest message";
-	(renderer as any).scrollToEndIndicator = indicator;
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	try {
-		config.mode = "on";
-		installToolMouseInteraction(ui.ctx);
-		ui.widget.render(80);
-		assert.match(
-			(renderer as any).scrollToEndIndicator(),
-			/<text> ↓ Back to bottom · Ctrl\+End <\/text>/,
-		);
-		assert.deepEqual(ui.widget.render(80), []);
-	} finally {
-		config.mode = previousMode;
-		installToolMouseInteraction({});
-	}
-});
-
-test("lazy-proxy tui: off mode keeps official jump-to-latest overlay", () => {
-	const previousMode = config.mode;
-	const tool = createTool("tool-overlay-off");
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(tool, null, terminal);
-	const indicator = () => "Jump to latest message";
-	(renderer as any).scrollToEndIndicator = indicator;
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	try {
-		config.mode = "off";
-		installToolMouseInteraction(ui.ctx);
-		ui.widget.render(80);
-		assert.equal((renderer as any).scrollToEndIndicator, indicator, "off 模式保留官方 overlay");
-		assert.deepEqual(ui.widget.render(80), [], "off 模式不画 dock 回到底部按钮");
-
-		config.mode = "on";
-		ui.widget.render(80);
-		assert.match((renderer as any).scrollToEndIndicator(), /Back to bottom/, "切回 on 只改文案");
-
-		config.mode = "off";
-		ui.widget.render(80);
-		assert.equal(
-			typeof (renderer as any).scrollToEndIndicator,
-			"function",
-			"再切 off 还回官方 overlay",
-		);
-		assert.equal(
-			(renderer as any).scrollToEndIndicator(),
-			"Jump to latest message",
-			"还回的 overlay 文案与官方一致",
-		);
-	} finally {
-		config.mode = previousMode;
-		installToolMouseInteraction({});
-	}
 });
 
 test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", async () => {

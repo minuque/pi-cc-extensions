@@ -210,7 +210,7 @@ export default function (
 		}
 	});
 
-	// 回到底部按钮的累计计数：离开底部期间每落一块内容 +1。
+	// 原生回底指示器的自定义文案计数：离开底部期间每落一块内容 +1。
 	pi.on("message_start", async (event) => {
 		const role = event.message?.role;
 		// toolResult 不单独成块（渲染在工具卡内），跳过以免与工具卡重复计数。

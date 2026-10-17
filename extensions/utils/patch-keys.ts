@@ -55,7 +55,6 @@ export const NATIVE_SCROLL_INDICATOR_PATCH = Symbol.for("pi.ccstyle.native-scrol
 export const NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS = Symbol.for(
 	"pi.ccstyle.native-scroll-indicator-yielded-renderers",
 );
-export const FULLSCREEN_VIEWPORT_INPUT_PATCH = Symbol.for("pi.ccstyle.fullscreen-viewport-input");
 export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-patch");
 export const EARLY_STARTUP_HEADER_PATCH = Symbol.for("pi.ccstyle.early-startup-header-patch");
 export const EARLY_STARTUP_HEADER_SWAP_KEY = Symbol.for("pi.ccstyle.early-startup-header-swap");

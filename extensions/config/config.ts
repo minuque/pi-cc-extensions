@@ -283,7 +283,7 @@ export function normalizeConfig(input: unknown): Config {
 		customScrollToEndIndicatorText:
 			typeof source.customScrollToEndIndicatorText === "boolean"
 				? source.customScrollToEndIndicatorText
-				: source.scrollButtonMode !== "native", // deprecated: dock → true, native → false
+				: source.scrollButtonMode !== "native", // 兼容旧配置键：dock → true，native → false
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -355,7 +355,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
-		`customScrollToEndIndicatorText=${source.customScrollToEndIndicatorText ? "on" : "off"}`,
+		`scrollIndicatorText=${source.customScrollToEndIndicatorText ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,

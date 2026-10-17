@@ -93,6 +93,7 @@ function setStickyHovered(hovered: boolean): boolean {
 	return true;
 }
 
+/** 原生指示器命中会跳过粘性行检测，必须清掉指针离开后残留的高亮。 */
 export function clearStickyPromptHover(tui: any): void {
 	if (setStickyHovered(false)) tui.requestRender?.();
 }

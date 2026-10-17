@@ -3,7 +3,6 @@ import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts"
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import {
 	patchRegistry,
-	FULLSCREEN_VIEWPORT_INPUT_PATCH,
 	TOOL_GROUPING_PARENT_KEY,
 	TOOL_MOUSE_OWNER_KEY,
 } from "../../utils/patch-keys.ts";
@@ -106,8 +105,7 @@ let toolMouseRenderPatchWrapper: ((...args: any[]) => any) | null = null;
 let toolMouseRenderPatchState: { active: boolean } | null = null;
 let toolMouseRawWrite: ((data: string) => unknown) | null = null;
 let toolMouseInstallationOwner: object | null = null;
-let nativeScrollIndicator: NativeScrollIndicatorAdapter | null = null;
-let toolMouseWidget: { dispose(): void } | null = null;
+let toolMouseWidget: { reconcile(): void; dispose(): void } | null = null;
 let fullscreenMotionTerminal: any = null;
 let ownsFullscreenMotion = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -326,14 +324,6 @@ function releaseFullscreenToolMouseMotion(tui?: any): void {
 		// renderer 可能正在切换或终端已经关闭。
 	}
 }
-
-type ViewportInputPatch = {
-	renderer: any;
-	installed: (data: string) => any;
-	dispose(): void;
-};
-let viewportInputPatch: ViewportInputPatch | null = null;
-const yieldedViewportRenderers = new WeakSet<object>();
 
 /**
  * diff 结果组件自带 remainder 行：声明存在时只有那一行是展开入口（正文里的同名字样不算）；
@@ -588,7 +578,7 @@ function packetInsideOverlay(tui: any, packet: SgrMousePacket): boolean {
 	return false;
 }
 
-/** Use the native hitbox (zero-based), never infer it from our label or layout. */
+/** 按原生 hitbox 命中（0-based），不根据文案或布局重新计算按钮位置。 */
 function packetOnNativeIndicator(tui: any, packet: SgrMousePacket): boolean {
 	const rect = tui.scrollToEndIndicatorRect;
 	return Boolean(
@@ -599,125 +589,81 @@ function packetOnNativeIndicator(tui: any, packet: SgrMousePacket): boolean {
 	);
 }
 
-/** Capture the concrete input chain, not a lazy method that can retarget to our wrapper. */
-function patchFullscreenViewportInput(tui: any): void {
-	const renderer = concreteToolMouseTui(tui);
-	if (
-		viewportInputPatch &&
-		viewportInputPatch.renderer === renderer &&
-		renderer?.handleViewportInput === viewportInputPatch.installed
-	)
-		return;
-	restoreFullscreenViewportInput();
-	if (renderer?.mode !== "fullscreen" || yieldedViewportRenderers.has(renderer)) return;
-	patchRegistry.get<ViewportInputPatch>(FULLSCREEN_VIEWPORT_INPUT_PATCH)?.dispose();
-	const original = renderer.handleViewportInput;
-	if (typeof original !== "function") return;
-	const descriptor = Object.getOwnPropertyDescriptor(renderer, "handleViewportInput");
-	if (descriptor && (!descriptor.writable || !("value" in descriptor))) return;
-	const owner = toolMouseInstallationOwner;
-	const indicator = nativeScrollIndicator;
+/** 包装真实实例的输入链；返回本次安装的清理函数，不捕获可跨 renderer 重绑的 Proxy 方法。 */
+function patchFullscreenViewportInput(
+	renderer: any,
+	indicator: NativeScrollIndicatorAdapter,
+): () => void {
+	const original = renderer?.handleViewportInput;
+	if (renderer?.mode !== "fullscreen" || typeof original !== "function") return () => {};
+	const hadOwn = Object.hasOwn(renderer, "handleViewportInput");
 	let active = true;
-	// Press scrolls immediately; the indicator rect may disappear before release.
-	let nativeIndicatorPress = false;
-	const patch: ViewportInputPatch = {
-		renderer,
-		installed(this: any, data: string) {
-			if (!active || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
-				return Reflect.apply(original, this, [data]);
-			try {
-				const interacting = toolMouseInteractionActive() && this.mode === "fullscreen";
-				if (data === FULLSCREEN_FOCUS_OUT || !interacting) {
-					nativeIndicatorPress = false;
-					clearPendingCollapsePress();
-				}
-				if (interacting) {
-					const packets = parseSgrMousePackets(data);
-					if (packets) {
-						let nativeGesture = false;
-						for (const packet of packets) {
-							const onIndicator = packetOnNativeIndicator(this, packet);
-							if (isSgrLeftPress(packet)) nativeIndicatorPress = onIndicator;
-							nativeGesture ||= onIndicator || nativeIndicatorPress;
-							if (isSgrLeftRelease(packet)) nativeIndicatorPress = false;
-						}
-						if (nativeGesture) {
-							clearPendingCollapsePress();
-							applyFullscreenHover(this, null);
-							clearStickyPromptHover(this);
-							// Keep Pi's overlay/search/capture precedence, including with custom text disabled.
-							return Reflect.apply(original, this, [data]);
-						}
-						// A focused overlay without a current layout must receive raw input.
-						if (this.hasOverlay?.() && !overlayLayoutsCurrent(this)) return undefined;
-						for (const packet of packets) {
-							if (this.hasOverlay?.() && packetInsideOverlay(this, packet)) continue;
-							if (isSgrLeftRelease(packet)) {
-								if (resolveCollapsePress(tui, packet) !== undefined) {
-									// Clear native selection/press targets after custom collapse rearranges the card.
-									try {
-										Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
-									} catch {
-										/* Older renderers may have no selection state. */
-									}
-									return { consume: true };
+	const installed = function (this: any, data: string) {
+		// 其他扩展可能保留本包装器；widget 撤销后只能透传，不再处理工具点击。
+		if (!active) return Reflect.apply(original, this, [data]);
+		try {
+			if (toolMouseInteractionActive() && this.mode === "fullscreen") {
+				const packets = parseSgrMousePackets(data);
+				if (packets) {
+					if (packets.some((packet) => packetOnNativeIndicator(this, packet))) {
+						clearPendingCollapsePress();
+						applyFullscreenHover(this, null);
+						clearStickyPromptHover(this);
+						// 原生链决定 overlay/search/capture 优先级；禁用自定义文案时同样放行。
+						return Reflect.apply(original, this, [data]);
+					}
+					// 布局还没出来或仍是上一帧：让焦点 overlay 收到原始 SGR，不误点 transcript。
+					if (this.hasOverlay?.() && !overlayLayoutsCurrent(this)) return undefined;
+					for (const packet of packets) {
+						if (this.hasOverlay?.() && packetInsideOverlay(this, packet)) continue;
+						if (isSgrLeftRelease(packet)) {
+							if (resolveCollapsePress(this, packet) !== undefined) {
+								// 收起会重排布局：清掉官方按下目标与选区锚点，避免旧坐标结算误选/误点。
+								try {
+									Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
+								} catch {
+									/* 老版本没有选区状态 */
 								}
-							} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet)) {
-								clearPendingCollapsePressOnMove(packet);
-							}
-							if (isSgrLeftPress(packet) && handleStickyPromptClick(tui, packet))
 								return { consume: true };
-							if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet))
-								return { consume: true };
-							if (isSgrIdleMotion(packet)) {
-								if (updateStickyPromptHover(tui, packet)) applyFullscreenHover(this, null);
-								else handleFullscreenToolHover(tui, packet);
 							}
+						} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet)) {
+							clearPendingCollapsePressOnMove(packet);
+						}
+						if (isSgrLeftPress(packet) && handleStickyPromptClick(this, packet))
+							return { consume: true };
+						if (isSgrLeftPress(packet) && handleFullscreenToolClick(this, packet))
+							return { consume: true };
+						// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区，避免每像素命中+重绘。
+						if (isSgrIdleMotion(packet)) {
+							// 粘性行命中时不进工具 hover：同一行只能有一个高亮。
+							if (updateStickyPromptHover(this, packet)) applyFullscreenHover(this, null);
+							else handleFullscreenToolHover(this, packet);
 						}
 					}
 				}
-				return Reflect.apply(original, this, [data]);
-			} finally {
-				indicator?.reconcile(tui, this);
-			}
-		},
-		dispose() {
-			active = false;
-			nativeIndicatorPress = false;
-			try {
-				if (renderer.handleViewportInput === patch.installed) {
-					if (descriptor) Object.defineProperty(renderer, "handleViewportInput", descriptor);
-					else delete renderer.handleViewportInput;
-				} else yieldedViewportRenderers.add(renderer);
-			} catch {
-				// Frozen/replaced interfaces are not ours to restore.
-			}
-			patchRegistry.dispose(FULLSCREEN_VIEWPORT_INPUT_PATCH, patch);
-		},
+			} else clearPendingCollapsePress();
+			if (data === FULLSCREEN_FOCUS_OUT) clearPendingCollapsePress();
+			return Reflect.apply(original, this, [data]);
+		} finally {
+			// 连续回底/翻页可能发生在同一帧之前；必须先观察短暂的跟随状态，不能只等 widget 渲染。
+			indicator.reconcile(this);
+		}
 	};
 	try {
-		Object.defineProperty(
-			renderer,
-			"handleViewportInput",
-			descriptor
-				? { ...descriptor, value: patch.installed }
-				: {
-						value: patch.installed,
-						writable: true,
-						configurable: true,
-						enumerable: true,
-					},
-		);
-		viewportInputPatch = patch;
-		patchRegistry.install(FULLSCREEN_VIEWPORT_INPUT_PATCH, patch);
+		renderer.handleViewportInput = installed;
 	} catch {
-		active = false;
+		return () => {};
 	}
-}
-
-function restoreFullscreenViewportInput(): void {
-	viewportInputPatch?.dispose();
-	viewportInputPatch = null;
+	return () => {
+		active = false;
+		if (renderer.handleViewportInput !== installed) return;
+		try {
+			if (hadOwn) renderer.handleViewportInput = original;
+			else delete renderer.handleViewportInput;
+		} catch {
+			// 实例可能已被冻结；残留包装器已经停用。
+		}
+	};
 }
 
 function restoreToolMouseRenderPatch(): void {
@@ -1014,7 +960,7 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!getToolMouseTui()) return undefined;
-	// Fullscreen viewport input (including configured navigation keys) belongs to Pi.
+	// fullscreen 的视口输入（包括已配置的导航键）交给 Pi。
 	if (fullscreenLazyTui(getToolMouseTui())) return undefined;
 	// Off mode restores native input: wheel keeps scrolling through Pi's normal
 	// dispatcher, while hover/click affordances are entirely inactive.
@@ -1081,9 +1027,6 @@ export function teardownToolMouseInteraction(
 	toolMouseWidget?.dispose();
 	toolMouseWidget = null;
 	restoreToolMouseRenderPatch();
-	restoreFullscreenViewportInput();
-	nativeScrollIndicator?.dispose();
-	nativeScrollIndicator = null;
 	setToolMouseTui(null);
 	toolMouseUi = null;
 	patchRegistry.dispose(TOOL_MOUSE_OWNER_KEY, owner);
@@ -1098,7 +1041,7 @@ export function resetToolHoverState(): void {
 	setHoveredMessageDisplay(null);
 	setHoveredCompactAssistant(null);
 	resetStickyPromptState();
-	nativeScrollIndicator?.reconcile(getToolMouseTui());
+	toolMouseWidget?.reconcile();
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
@@ -1175,26 +1118,30 @@ export function installToolMouseInteraction(
 	toolMouseUi = ctx.ui;
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen
 	// 由官方 LayoutFrame 命中，并由扩展补齐 hover 所需的 all-motion 上报。
-	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
+	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any) => {
 		if (!patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
 			return { render: () => [], invalidate() {} };
 		toolMouseWidget?.dispose();
-		const indicator = installNativeScrollIndicator(owner, () => ctx.ui.theme ?? theme);
-		nativeScrollIndicator = indicator;
+		const indicator = installNativeScrollIndicator();
 		let disposed = false;
+		let viewportRenderer: any = null;
+		let disposeViewportInput: (() => void) | undefined;
 		const reconcile = () => {
-			if (disposed || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner)) return;
+			if (disposed) return;
 			setToolMouseTui(tui);
 			setToolTuiFullscreen(fullscreenLazyTui(tui));
-			if (isLazyProxyTui(tui)) {
-				patchFullscreenViewportInput(tui);
-				ensureFullscreenToolMouseMotion(tui);
-			} else {
-				patchToolMouseMotionAfterRender(tui);
+			const renderer = isLazyProxyTui(tui) ? concreteToolMouseTui(tui) : null;
+			if (renderer !== viewportRenderer) {
+				disposeViewportInput?.();
+				viewportRenderer = renderer;
+				disposeViewportInput = patchFullscreenViewportInput(renderer, indicator);
 			}
+			if (isLazyProxyTui(tui)) ensureFullscreenToolMouseMotion(tui);
+			else patchToolMouseMotionAfterRender(tui);
 			indicator.reconcile(tui);
 		};
 		const widget = {
+			reconcile,
 			render() {
 				reconcile();
 				return [];
@@ -1204,8 +1151,7 @@ export function installToolMouseInteraction(
 				if (disposed) return;
 				disposed = true;
 				indicator.dispose();
-				if (toolMouseWidget !== widget || !patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner)) return;
-				restoreFullscreenViewportInput();
+				disposeViewportInput?.();
 			},
 		};
 		toolMouseWidget = widget;

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { tmpdir } from "node:os";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	getKeybindings,
@@ -8,7 +10,6 @@ import {
 	stripTerminalSequences,
 	Text,
 	truncateToWidth,
-	TuiAltScreen,
 	VStack,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -17,7 +18,10 @@ import {
 	installToolMouseInteraction,
 	teardownToolMouseInteraction,
 } from "../extensions/renderer/mouse/interaction.ts";
-import { noteNewTranscriptItem } from "../extensions/renderer/mouse/scroll.ts";
+import {
+	noteNewTranscriptItem,
+	resetNativeScrollIndicatorCount,
+} from "../extensions/renderer/mouse/scroll.ts";
 import {
 	disposeStickyPromptPatches,
 	installStickyPromptFramePatch,
@@ -25,6 +29,15 @@ import {
 } from "../extensions/renderer/mouse/sticky-prompt.ts";
 import { sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
+
+// 使用 Pi 的实际组合根，避免测试再复制一份原生文案、主题或快捷键格式。
+const { createInteractiveTui } = await import(
+	new URL(
+		"./modes/interactive/tui-renderer.js",
+		import.meta.resolve("@earendil-works/pi-coding-agent"),
+	).href
+);
+initTheme("dark");
 
 const theme = {
 	fg: (_color: string, text: string) => `\x1b[37m${text}\x1b[39m`,
@@ -82,12 +95,19 @@ function realFrame(t: TestContext, custom = true, width = 80) {
 		showCursor() {},
 		hideCursor() {},
 	};
-	let nativeLabel = "Jump to latest message";
-	const original = () => theme.bg("selectedBg", theme.fg("text", ` ↓ ${nativeLabel} · Ctrl+End `));
-	const renderer: any = new TuiAltScreen(terminal, false, undefined, {
-		mouse: true,
-		scrollToEndIndicator: original,
+	const renderer: any = createInteractiveTui({
+		tuiMode: "fullscreen",
+		showHardwareCursor: false,
+		logDirectory: tmpdir(),
+		terminal,
+		fullscreenWheelScrollLines: 3,
 	});
+	const nativeIndicator = renderer.scrollToEndIndicator;
+	let nativeLabel = "Jump to latest message";
+	const original = function (this: any) {
+		return nativeIndicator.call(this).replace("Jump to latest message", nativeLabel);
+	};
+	renderer.scrollToEndIndicator = original;
 	renderer.altScreenActive = true;
 	// Deterministic frames, no terminal/timer loop. All layout/compositing/input code is real Pi.
 	renderer.requestRender = () => {};
@@ -179,6 +199,7 @@ for (const width of [1, 8, 20, 80]) {
 		const baseline = frame.render();
 		const rect = frame.renderer.scrollToEndIndicatorRect;
 		const height = frame.scroll.viewportHeight;
+		frame.setLabel("Jump to latest message");
 		frame.install();
 		assert.deepEqual(frame.widget.render(width), [], "lifecycle widget adds no lines");
 		assert.deepEqual(frame.render(), baseline, "only the native compositor paints the indicator");
@@ -192,7 +213,7 @@ for (const width of [1, 8, 20, 80]) {
 		if (width === 80)
 			assert.equal(
 				frame.renderer.scrollToEndIndicator(),
-				theme.bg("selectedBg", theme.fg("text", " ↓ Back to bottom · Ctrl+End ")),
+				frame.original().replace("Jump to latest message", "Back to bottom"),
 			);
 		frame.renderer.scrollToBottom();
 		frame.render();
@@ -377,6 +398,20 @@ test("real native indicator: counts reset after native keyboard, wheel, submit a
 	awayWithItem();
 	frame.install(); // session_start/compaction rebind resets the count
 	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+	noteNewTranscriptItem();
+	noteNewTranscriptItem();
+	noteNewTranscriptItem();
+	assert.match(frame.renderer.scrollToEndIndicator(), /3 new messages/);
+	resetNativeScrollIndicatorCount(); // session_tree
+	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+	for (const enabled of [false, true, false, true]) {
+		config.customScrollToEndIndicatorText = enabled;
+		frame.render();
+		if (enabled) {
+			assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+			noteNewTranscriptItem();
+		} else assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
+	}
 });
 
 test("real native indicator: native overlay and mouse capture keep precedence", (t) => {
@@ -413,8 +448,14 @@ test("real native indicator: native overlay and mouse capture keep precedence", 
 	assert.equal(frame.scroll.isFollowingEnd, true, "native button works after capture ends");
 });
 
-test("real native indicator: stale widget disposal and shutdown leave replacement owner intact", (t) => {
+test("real native indicator: stale factories, widget disposal and shutdown leave replacement owner intact", (t) => {
 	const frame = realFrame(t);
+	const setWidget = frame.ctx.ui.setWidget;
+	let staleFactory: any;
+	frame.ctx.ui.setWidget = (key, factory) => {
+		if (typeof factory === "function") staleFactory ??= factory;
+		setWidget(key, factory);
+	};
 	frame.install();
 	const oldWidget = frame.widget;
 	const oldWrapper = frame.renderer.scrollToEndIndicator;
@@ -422,11 +463,14 @@ test("real native indicator: stale widget disposal and shutdown leave replacemen
 	installToolMouseInteraction(frame.ctx, owner);
 	const next = frame.renderer.scrollToEndIndicator;
 	try {
+		assert.deepEqual(staleFactory(frame.tui, theme).render(80), []);
 		oldWidget.dispose();
 		oldWidget.render(80);
 		teardownToolMouseInteraction(frame.owner);
 		assert.equal(frame.renderer.scrollToEndIndicator, next);
 		assert.match(next(), /Back to bottom/);
+		noteNewTranscriptItem();
+		assert.match(next(), /1 new message/, "new owner still receives count bookkeeping");
 		assert.equal(oldWrapper(), frame.original());
 		frame.render();
 		frame.tui.handleViewportInput(frame.packet(0));
@@ -436,23 +480,89 @@ test("real native indicator: stale widget disposal and shutdown leave replacemen
 	}
 });
 
-test("real native indicator: input reconciliation runs even when the downstream handler throws", (t) => {
+test("real native indicator: consecutive bottom/page-up keys reset counts before the next frame", (t) => {
 	const frame = realFrame(t);
-	const original = frame.renderer.handleViewportInput;
-	frame.renderer.handleViewportInput = function (this: any, data: string) {
-		if (data === "test-follow") {
-			this.scrollToBottom();
-			throw new Error("downstream failure");
-		}
-		return Reflect.apply(original, this, [data]);
-	};
 	frame.install();
 	noteNewTranscriptItem();
 	assert.match(frame.renderer.scrollToEndIndicator(), /1 new message/);
-	assert.throws(() => frame.tui.handleViewportInput("test-follow"), /downstream failure/);
-	// Leave follow again before any widget render or native label callback can observe it.
-	frame.scroll.scrollTo(10, { disableFollow: true });
+	frame.tui.handleViewportInput("\x1b[1;5F");
+	assert.equal(frame.scroll.isFollowingEnd, true);
+	frame.tui.handleViewportInput("\x1b[5~");
+	assert.equal(frame.scroll.isFollowingEnd, false);
+	frame.render();
 	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+});
+
+test("real native indicator: live foreign wrappers retain custom text until disposal", (t) => {
+	const frame = realFrame(t);
+	frame.install();
+	const installed = frame.renderer.scrollToEndIndicator;
+	const foreign = function (this: any) {
+		return `foreign:${installed.call(this)}`;
+	};
+	frame.renderer.scrollToEndIndicator = foreign;
+	frame.render();
+	noteNewTranscriptItem();
+	assert.match(frame.renderer.scrollToEndIndicator(), /1 new message/);
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+	config.customScrollToEndIndicatorText = false;
+	frame.render();
+	noteNewTranscriptItem();
+	assert.equal(foreign.call(frame.renderer), `foreign:${frame.original()}`);
+	config.customScrollToEndIndicatorText = true;
+	frame.render();
+	assert.match(foreign.call(frame.renderer), /Back to bottom/);
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign, "no rewrapping on option changes");
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+	assert.equal(foreign.call(frame.renderer), `foreign:${frame.original()}`);
+});
+
+test("real native input: restores inherited handlers and deactivates retained foreign chains", (t) => {
+	const frame = realFrame(t);
+	const original = frame.renderer.handleViewportInput;
+	assert.equal(Object.hasOwn(frame.renderer, "handleViewportInput"), false);
+	frame.install();
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(Object.hasOwn(frame.renderer, "handleViewportInput"), false);
+	assert.equal(frame.renderer.handleViewportInput, original);
+	frame.install();
+	const installed = frame.renderer.handleViewportInput;
+	const foreign = function (this: any, data: string) {
+		return installed.call(this, data);
+	};
+	frame.renderer.handleViewportInput = foreign;
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(frame.renderer.handleViewportInput, foreign);
+	frame.render();
+	frame.tui.handleViewportInput("\x1b[<0;22;2M");
+	assert.equal(frame.card.toggles, 0, "disposed extension must not expand on the native press");
+	frame.tui.handleViewportInput("\x1b[<0;22;2m");
+	assert.equal(frame.card.toggles, 1, "the retained chain still reaches native click dispatch");
+});
+
+test("real native indicator: leaving the sticky prompt for the button clears its hover", (t) => {
+	const frame = realFrame(t);
+	config.stickyUserMessage = true;
+	setStickyPromptTheme({
+		...theme,
+		fg: (color: string, text: string) => `\x1b[${color === "dim" ? 90 : 37}m${text}\x1b[39m`,
+	});
+	assert.equal(installStickyPromptFramePatch(), true);
+	t.after(() => {
+		disposeStickyPromptPatches();
+		setStickyPromptTheme(null);
+	});
+	frame.card.children.unshift({
+		render: () => ["pinned prompt\x1b_cc:p\x07\x1b_cc:P\x07"],
+		invalidate() {},
+	});
+	frame.install();
+	const resting = frame.render()[0];
+	frame.tui.handleViewportInput("\x1b[<35;1;1M");
+	assert.notEqual(frame.render()[0], resting, "sticky row highlights under pointer");
+	frame.tui.handleViewportInput(frame.packet(35));
+	assert.equal(frame.render()[0], resting, "sticky row unhighlights over native button");
 });
 
 test("real native indicator: mode off restores original text and native input", (t) => {
