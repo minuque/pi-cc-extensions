@@ -146,6 +146,7 @@ export function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | n
 	const nextView = target?.kind === "tool" ? target.view : null;
 	const nextSection = target?.kind === "tool" ? target.section : null;
 	if (setHoveredToolIo(nextView, nextSection)) changed = true;
-	if (setScrollButtonHovered(target?.kind === "button")) changed = true;
+	const nextButton = target?.kind === "button";
+	if (setScrollButtonHovered(nextButton)) changed = true;
 	if (changed) tui.requestRender?.();
 }

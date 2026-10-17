@@ -143,7 +143,9 @@ export function componentAtLocalRow(
 	if (isMessageDisplayComponent(component)) {
 		return { component, row: localRow };
 	}
-	if (component === getScrollButtonWidget()) return { component, row: localRow };
+	if (component === getScrollButtonWidget()) {
+		return { component, row: localRow };
+	}
 	if (!Array.isArray(component.children)) return null;
 	let offset = 0;
 	for (const child of component.children) {

@@ -29,7 +29,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮及原生指示器自定义文案                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
@@ -66,7 +66,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
   "scrollButtonMode": "dock",              // fullscreen：dock 独占行 / native Pi 原生浮层
-  "customNativeScrollToEndIndicatorText": true, // 仅 native 模式定制指示器文案；不影响 dock
+  "customNativeScrollToEndIndicatorText": true,
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
@@ -97,10 +97,10 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
-**回到底部**：`scrollButtonMode` 默认 `"dock"`，使用扩展的回到底部行；设为 `"native"` 则使用 Pi 原生浮层。独立的 `customNativeScrollToEndIndicatorText` 默认 `true`，仅在 `scrollButtonMode: "native"` 时生效，把 Pi 的 `Jump to latest message` 替换为与 dock 共用的 `Back to bottom` 或 `N new message(s)`。计数沿用停止跟随输出期间新增的 transcript 项（消息和工具卡）。只改原生文案，样式、已配置的快捷键提示、位置、布局和输入行为保持不变。设为 `false`（或 `mode: "off"`）保留原生文案；此开关不改变 dock 的文案、布局或行为。
-
 > [!TIP]
 > **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起。
+>
+> 当 `scrollButtonMode: "native"` 时，`customNativeScrollToEndIndicatorText`（默认 `true`）使用与 dock 共用的 `Back to bottom` / `N new message(s)` 文案；设为 `false` 保留 Pi 原生文案。此选项不影响 dock 模式。
 
 > [!NOTE]
 > **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
@@ -116,7 +116,6 @@ pi -e .              # 只跑一次，不改 settings.json
 ## 兼容性
 
 - Node.js `>=22.19.0`，Pi `^0.84.0`
-- 原生滚动指示器文案是仅用于 `scrollButtonMode: "native"` 的可选 fullscreen 增强，按运行时能力而非版本检测启用。不支持、已禁用或只读的接口，以及无法识别的原生文案保持不变；不会自动切换到 dock。
 
 ## 推荐搭配
 

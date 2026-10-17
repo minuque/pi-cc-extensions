@@ -29,7 +29,7 @@ Run `/reload` after installation.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes                                                   | `/ccstyle`                                      |
 | Markdown enhancements       | Mermaid dialects and circled-number conversion                                                                                               | Automatic; turn off with `enableMarkdownEnhance: false` |
-| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, a back-to-bottom button, and custom native indicator text                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
@@ -66,7 +66,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
   "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
-  "customNativeScrollToEndIndicatorText": true, // native mode only: customize indicator text; dock unchanged
+  "customNativeScrollToEndIndicatorText": true,
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
@@ -97,10 +97,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 }
 ```
 
-**Back to bottom:** `scrollButtonMode` defaults to `"dock"`, using the extension’s back-to-bottom row; set it to `"native"` to use Pi’s floating overlay. The independent `customNativeScrollToEndIndicatorText` option defaults to `true` and applies only with `scrollButtonMode: "native"`, replacing Pi’s `Jump to latest message` with the shared dock labels `Back to bottom` or `N new message(s)`. The count uses transcript items (messages and tool cards) received while not following output. Only the native text changes: styling, configured shortcut hints, placement, layout, and input behavior stay unchanged. Set the boolean to `false` (or use `mode: "off"`) to keep the original native text; the toggle never changes dock text, layout, or behavior.
-
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse.
+>
+> With `scrollButtonMode: "native"`, `customNativeScrollToEndIndicatorText` (default `true`) uses the same `Back to bottom` / `N new message(s)` text as dock mode. Set it to `false` for Pi’s original text. Dock mode is unaffected.
 
 > [!NOTE]
 > **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
@@ -116,7 +116,6 @@ pi -e .              # one run, does not edit settings.json
 ## Compatibility
 
 - Node.js `>=22.19.0`, Pi `^0.84.0`
-- Native scroll-indicator text is an optional fullscreen enhancement only for `scrollButtonMode: "native"`, detected by runtime capability rather than version. Unsupported, disabled or read-only interfaces and unrecognized native labels remain unchanged; there is no automatic fallback to dock.
 
 ## Recommended companions
 

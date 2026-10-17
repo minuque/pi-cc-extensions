@@ -27,6 +27,7 @@ import {
 } from "../../utils/patch-keys.ts";
 import { isToolTuiFullscreen } from "../tool/names.ts";
 import type { SgrMousePacket } from "./packets.ts";
+import { dockScrollButtonActive, setScrollButtonVisible } from "./scroll.ts";
 
 /** 消息正文首行/末行的零宽 APC 标记；终端忽略，合成前剥离。 */
 const MESSAGE_START = "\x1b_cc:p\x07";
@@ -329,7 +330,7 @@ export function scrollbarTopTrackHit(tui: any, packet: SgrMousePacket): boolean 
 	return state.row === cell.row && packet.row - 1 === cell.row && packet.col - 1 === cell.col;
 }
 
-/** 单击粘性行：视口滚到该消息首行（整块可见），原生 follow 状态控制回底入口。 */
+/** 单击粘性行：视口滚到该消息首行（整块可见），并亮出回到底部按钮。 */
 export function handleStickyPromptClick(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
 	if (scrollbarTopTrackHit(tui, packet)) return true;
@@ -337,6 +338,7 @@ export function handleStickyPromptClick(tui: any, packet: SgrMousePacket): boole
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo === "function") {
 		view.scrollTo(state.jumpRow, { disableFollow: true });
+		if (view.isFollowingEnd === false && dockScrollButtonActive()) setScrollButtonVisible(true);
 	}
 	// 落点已到消息头，这一帧的粘性行立即失效；等下一帧按新位置重算。
 	state.visible = false;
@@ -384,7 +386,7 @@ export function installStickyPromptMarkerPatch(): void {
 	markerPatch = patch;
 }
 
-/** 保持粘性行的原有优先级：在原生浮层之后合成。 */
+/** TuiAltScreen.compositeScrollToEndIndicator 包装：合成粘性行。返回是否安装成功。 */
 export function installStickyPromptFramePatch(): boolean {
 	const prototype = (TuiAltScreen as any)?.prototype;
 	if (typeof prototype?.compositeScrollToEndIndicator !== "function") return false;
@@ -399,7 +401,8 @@ export function installStickyPromptFramePatch(): boolean {
 		original,
 		installed(this: any, screen: string[], layout: any, width: number) {
 			const result = original.call(this, screen, layout, width);
-			return patch.active ? renderStickyPromptScreen(this, result, layout, width) : result;
+			if (!patch.active) return result;
+			return renderStickyPromptScreen(this, result, layout, width);
 		},
 	};
 	prototype.compositeScrollToEndIndicator = patch.installed;

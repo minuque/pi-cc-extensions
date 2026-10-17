@@ -1,13 +1,23 @@
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	getKeybindings,
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+	type Keybinding,
+} from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
+import { parseSgrMousePackets } from "./packets.ts";
 import {
-	NATIVE_SCROLL_INDICATOR_PATCH,
-	NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
+	OFFICIAL_SCROLL_TO_END_KEY,
 	patchRegistry,
 	SCROLL_BUTTON_STATE_SLOT,
 	TOOL_MOUSE_TUI_SLOT,
 } from "../../utils/patch-keys.ts";
+
+const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
+const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
+const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
 
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export function getToolMouseTui(): any {
@@ -17,229 +27,296 @@ export function setToolMouseTui(tui: any): void {
 	patchRegistry.install(TOOL_MOUSE_TUI_SLOT, tui);
 }
 
+type ScrollButtonState = {
+	visible: boolean;
+	hovered: boolean;
+	widget: any;
+	/** 按钮可见期间新落的 transcript 块数（消息 + 工具卡）。 */
+	newCount: number;
+};
+function scrollButtonState(): ScrollButtonState {
+	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
+		visible: false,
+		hovered: false,
+		widget: null,
+		newCount: 0,
+	}));
+}
+export function getScrollButtonVisible(): boolean {
+	return scrollButtonState().visible;
+}
+export function getScrollButtonHovered(): boolean {
+	return scrollButtonState().hovered;
+}
+export function getScrollButtonWidget(): any {
+	return scrollButtonState().widget;
+}
+export function getScrollButtonNewCount(): number {
+	return scrollButtonState().newCount;
+}
+export function setScrollButtonVisible(visible: boolean): void {
+	const state = scrollButtonState();
+	state.visible = visible;
+	// 计数只在离开底部期间有效：跟随输出即清零，文案回到 Back to bottom。
+	if (!visible) state.newCount = 0;
+}
+
+/**
+ * 记账一块新落进 transcript 的内容（用户/助手消息、工具卡）。
+ * 仅在按钮可见（已滚动离开底部）时累加，并请求重绘让按钮文案立即更新。
+ */
+export function noteNewTranscriptItem(): void {
+	const state = scrollButtonState();
+	const tui = getToolMouseTui();
+	if (nativeScrollTextEnabled(tui)) {
+		syncOfficialScrollToEnd(tui);
+		if (nativeScrollTextPatch && !isFullscreenAtBottom(tui)) {
+			state.newCount += 1;
+			tui.requestRender?.();
+		}
+		return;
+	}
+	if (!dockScrollButtonActive() || !state.visible || !tui) return;
+	// 提交新消息时官方可能直接跳回底部（不经过滚动输入）：先按实时跟随状态校正，
+	// 否则跟随期间的内容会被当成“离开底部时的新消息”计入。
+	if (isAtTranscriptBottom(tui)) {
+		hideScrollButton(tui);
+		return;
+	}
+	state.newCount += 1;
+	tui.requestRender?.();
+}
+
+/** 返回是否发生变化（调用方据此决定是否需要重渲染）。 */
+export function setScrollButtonHovered(hovered: boolean): boolean {
+	if (hovered === scrollButtonState().hovered) return false;
+	scrollButtonState().hovered = hovered;
+	return true;
+}
+
+export function setScrollButtonWidget(widget: any): void {
+	scrollButtonState().widget = widget;
+}
+
+/** teardown 全量清零（visible/hovered/widget/sync 调度）。 */
+export function resetScrollButtonState(): void {
+	scrollButtonState().visible = false;
+	scrollButtonState().hovered = false;
+	scrollButtonState().widget = null;
+	scrollButtonState().newCount = 0;
+	scrollButtonSyncScheduled = false;
+}
+
+let scrollButtonSyncScheduled = false;
+
+// 交互开关只取决于配置模式：原实现按 isLazyProxyTui(toolMouseTui) 分两分支，
+// 两分支恒真（0.84+ 惰性 Proxy 下判定不再影响开关），折叠为单条件。
 export function toolMouseInteractionActive(): boolean {
 	return config.mode !== "off";
 }
 
+/** dock 模式才用扩展的独占行；native 或 ccstyle off 时交还 Pi 原生浮层。 */
 export function dockScrollButtonActive(): boolean {
 	return toolMouseInteractionActive() && config.scrollButtonMode === "dock";
 }
 
+/** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */
 export function fullscreenLazyTui(tui: any): boolean {
 	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
 }
 
-/** 惰性 Proxy 不转发属性描述符，且捕获的方法会跨 renderer 重绑；补丁只持有真实实例。 */
-export function concreteToolMouseTui(tui: any): any {
-	try {
-		if (!isLazyProxyTui(tui)) return tui;
-		const renderer = tui.valueOf?.();
-		return renderer && renderer !== tui && !isLazyProxyTui(renderer) ? renderer : null;
-	} catch {
-		return null;
+/** 关掉 pi 0.85 Jump to latest overlay，避免和本仓库 dock 按钮叠两层。 */
+export function disableOfficialScrollToEnd(tui: any): void {
+	if (!tui) return;
+	const current = tui.scrollToEndIndicator;
+	if (typeof current !== "function") return;
+	// 原函数放 object 里，避免惰性 Proxy 对 function 属性再包一层。
+	if (!tui[OFFICIAL_SCROLL_TO_END_KEY]) {
+		tui[OFFICIAL_SCROLL_TO_END_KEY] = { original: current };
 	}
+	tui.scrollToEndIndicator = undefined;
 }
 
+/** /ccstyle off 或 teardown 时还回官方 overlay。 */
+export function restoreOfficialScrollToEnd(tui: any): void {
+	if (!tui) return;
+	const original = tui[OFFICIAL_SCROLL_TO_END_KEY]?.original;
+	if (typeof original === "function") tui.scrollToEndIndicator = original;
+	tui[OFFICIAL_SCROLL_TO_END_KEY] = undefined;
+}
+
+/** dock 模式替换官方浮层；native 或 ccstyle off 时保留 Pi 原生 Jump to latest。 */
+export function syncOfficialScrollToEnd(tui: any): void {
+	if (!nativeScrollTextEnabled(tui)) restoreNativeScrollIndicatorText();
+	if (dockScrollButtonActive()) {
+		disableOfficialScrollToEnd(tui);
+		return;
+	}
+	restoreOfficialScrollToEnd(tui);
+	if (nativeScrollTextEnabled(tui)) {
+		// 离开 dock 时清零一次；native 的后续渲染保留共享计数。
+		if (getScrollButtonVisible()) setScrollButtonVisible(false);
+		setScrollButtonHovered(false);
+		syncNativeScrollIndicatorText(tui);
+		return;
+	}
+	setScrollButtonVisible(false);
+	setScrollButtonHovered(false);
+}
+
+/** 只记录文案补丁；dock 的显隐、快捷键和原生浮层开关仍走原路径。 */
+let nativeScrollTextPatch: { renderer: any; original: () => string } | undefined;
+
+function nativeScrollTextEnabled(tui: any): boolean {
+	return (
+		toolMouseInteractionActive() &&
+		config.scrollButtonMode === "native" &&
+		config.customNativeScrollToEndIndicatorText &&
+		fullscreenLazyTui(tui)
+	);
+}
+
+/** widget 销毁、关闭文案选项或离开 native 模式时还原 Pi 的原始回调。 */
+export function restoreNativeScrollIndicatorText(): void {
+	if (!nativeScrollTextPatch) return;
+	const { renderer, original } = nativeScrollTextPatch;
+	renderer.scrollToEndIndicator = original;
+	nativeScrollTextPatch = undefined;
+	scrollButtonState().newCount = 0;
+}
+
+function syncNativeScrollIndicatorText(tui: any): void {
+	// Pi 的稳定 Proxy 会重绑捕获的方法；文案回调必须从真实 renderer 上取得。
+	const renderer = tui.valueOf();
+	if (nativeScrollTextPatch?.renderer !== renderer) restoreNativeScrollIndicatorText();
+	if (!nativeScrollTextPatch) {
+		const original = renderer.scrollToEndIndicator;
+		if (typeof original !== "function") return;
+		nativeScrollTextPatch = { renderer, original };
+		renderer.scrollToEndIndicator = () =>
+			original.call(renderer).replace("Jump to latest message", scrollButtonText());
+	}
+	if (isFullscreenAtBottom(renderer)) scrollButtonState().newCount = 0;
+}
+
+/** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
 export function isFullscreenAtBottom(tui: any): boolean {
-	return Boolean(tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true);
+	const following = tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true;
+	return Boolean(following);
 }
 
-function dockState(): { widget: any; hovered: boolean } {
-	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({ widget: null, hovered: false }));
+function formatShortcut(shortcut: string): string {
+	return shortcut
+		.split("+")
+		.map((part) =>
+			part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
+		)
+		.join("+");
 }
 
-export function getScrollButtonWidget(): any {
-	return dockState().widget;
+export function isScrollBottomInput(data: string): boolean {
+	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
 }
-export function setScrollButtonWidget(widget: any): void {
-	dockState().widget = widget;
+
+function isScrollNavigationInput(data: string): boolean {
+	if (
+		matchesKey(data, "pageUp") ||
+		matchesKey(data, "pageDown") ||
+		ZENTUI_PAGE_UP_INPUT.test(data) ||
+		ZENTUI_PAGE_DOWN_INPUT.test(data) ||
+		// 官方 fullscreen viewport 的可滚动键（half-page/prompt/top/bottom）。
+		[
+			"tui.altScreen.pageUp",
+			"tui.altScreen.pageDown",
+			"tui.altScreen.halfPageUp",
+			"tui.altScreen.halfPageDown",
+			"tui.altScreen.previousPrompt",
+			"tui.altScreen.nextPrompt",
+			"tui.altScreen.top",
+			"tui.altScreen.bottom",
+		].some((key) => getKeybindings().matches(data, key as Keybinding))
+	) {
+		return true;
+	}
+	const packets = parseSgrMousePackets(data);
+	return Boolean(
+		packets?.some((packet) => {
+			const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+			return packet.final === "M" && (baseButton === 64 || baseButton === 65);
+		}),
+	);
 }
-export function setScrollButtonHovered(hovered: boolean): boolean {
-	if (dockState().hovered === hovered) return false;
-	dockState().hovered = hovered;
+
+function isAtTranscriptBottom(tui: any): boolean {
+	// 惰性 Proxy fullscreen：官方 viewport 以 isFollowingOutput 判定是否在底部。
+	if (fullscreenLazyTui(tui)) return isFullscreenAtBottom(tui);
 	return true;
 }
-export function getScrollButtonVisible(): boolean {
-	return (
-		patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.isDockVisible() ??
-		false
-	);
-}
-export function isScrollBottomInput(data: string): boolean {
-	return matchesKey(data, "ctrl+end");
+
+export function hideScrollButton(tui: any): void {
+	const changed = getScrollButtonVisible() || getScrollButtonHovered();
+	setScrollButtonVisible(false);
+	setScrollButtonHovered(false);
+	if (changed) tui.requestRender?.();
 }
 
-/** dock 与 native 共用的唯一文案生成器；样式、箭头和快捷键由各自 renderer 包装。 */
-function scrollButtonText(newCount: number): string {
-	return newCount > 0 ? `${newCount} new message${newCount === 1 ? "" : "s"}` : "Back to bottom";
-}
-
-type IndicatorPatch = {
-	mode: "dock" | "custom";
-	renderer: any;
-	original: (...args: any[]) => any;
-	installed: (...args: any[]) => any;
-	active: boolean;
-};
-
-export type ScrollIndicatorController = {
-	reconcile(tui: any): void;
-	noteItem(): void;
-	resetCount(): void;
-	isDockVisible(): boolean;
-	renderDock(width: number, theme: any): string[];
-	dispose(): void;
-};
-
-/** dock 时让原生浮层让位；native 时仅替换文案，样式、快捷键、布局和点击仍由 Pi 决定。 */
-export function installScrollIndicatorController(): ScrollIndicatorController {
-	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
-	let active = true;
-	let patch: IndicatorPatch | null = null;
-	let renderer: any = null;
-	let newCount = 0;
-	let dockVisible = false;
-	let previousMode: "dock" | "custom" | undefined;
-	// 让渡记录跟随真实 renderer，避免 widget 重建或 /reload 后抢回其他扩展的回调。
-	const yielded = patchRegistry.ensure(
-		NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
-		() => new WeakSet<object>(),
-	);
-	const indicatorMode = (): "dock" | "custom" | undefined => {
-		if (dockScrollButtonActive()) return "dock";
-		if (
-			toolMouseInteractionActive() &&
-			config.scrollButtonMode === "native" &&
-			config.customNativeScrollToEndIndicatorText
-		)
-			return "custom";
-		return undefined;
-	};
-
-	function release(): void {
-		if (!patch) return;
-		const previous = patch;
-		patch = null;
-		previous.active = false;
-		try {
-			if (previous.renderer.scrollToEndIndicator === previous.installed) {
-				previous.renderer.scrollToEndIndicator = previous.original;
-			} else yielded.add(previous.renderer);
-		} catch {
-			// 后来被冻结的实例无法还原；留下的包装器已停用，只透传原生文案。
+export function scheduleScrollButtonSync(tui: any, data: string): void {
+	if (
+		!fullscreenLazyTui(tui) ||
+		!dockScrollButtonActive() ||
+		!isScrollNavigationInput(data) ||
+		scrollButtonSyncScheduled
+	)
+		return;
+	scrollButtonSyncScheduled = true;
+	const previousLines = tui.previousLines;
+	const check = (attempt: number) => {
+		scrollButtonSyncScheduled = false;
+		if (getToolMouseTui() !== tui || !dockScrollButtonActive()) return;
+		// Pi renders on its own frame timer. Inspect the resulting viewport before
+		// showing the button so empty or non-scrollable transcripts never flash it.
+		const rendered = tui.previousLines !== previousLines;
+		// fullscreen 下 isFollowingOutput 是即时状态，无需等待官方帧渲染。
+		if (!rendered && attempt < 4 && !fullscreenLazyTui(tui)) {
+			scrollButtonSyncScheduled = true;
+			const timer = setTimeout(() => check(attempt + 1), 16);
+			if (typeof timer === "object" && timer !== null && "unref" in timer) {
+				(timer as { unref: () => void }).unref();
+			}
+			return;
 		}
-	}
-
-	const adapter: ScrollIndicatorController = {
-		reconcile(tui) {
-			if (!active) return;
-			const nextRenderer = concreteToolMouseTui(tui);
-			const mode = indicatorMode();
-			if (nextRenderer !== renderer || mode !== previousMode) {
-				adapter.resetCount();
-				setScrollButtonHovered(false);
-			}
-			renderer = nextRenderer;
-			previousMode = mode;
-			// dock 的临时抑制必须先还原，native 再按让渡记录决定是否定制文案。
-			if (patch && (renderer !== patch.renderer || (patch.mode === "dock" && mode !== "dock")))
-				release();
-			try {
-				dockVisible =
-					mode === "dock" && renderer?.mode === "fullscreen" && !isFullscreenAtBottom(renderer);
-				if (!dockVisible) setScrollButtonHovered(false);
-				if (renderer?.mode !== "fullscreen") {
-					release();
-					return;
-				}
-				// 渲染、输入和记账共用跟随状态同步；不依赖浮层回调（底部不会调用它）。
-				if (isFullscreenAtBottom(renderer)) adapter.resetCount();
-				if (!mode) {
-					if (patch && renderer.scrollToEndIndicator !== patch.installed) {
-						// 外层包装器保持原位；关闭时透传，重新开启时复用已有调用链。
-						yielded.add(renderer);
-					} else release();
-					return;
-				}
-				if (patch && renderer.scrollToEndIndicator !== patch.installed) {
-					// native 文案让渡外层包装器；dock 必须抑制当前整层浮层（外层可能不透传）。
-					yielded.add(renderer);
-					if (mode === "dock") release();
-				}
-				if (!patch) {
-					// native 文案不抢回其他扩展的回调；dock 则需临时抑制整层原生浮层，
-					// 保存当前回调并在离开 dock / dispose 时原样还回，不能同时画两个按钮。
-					if (mode === "custom" && yielded.has(renderer)) return;
-					// 只接管可写的实例数据字段；旧版、禁用、只读或 accessor 接口均不修改。
-					const descriptor = Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator");
-					if (!descriptor?.writable || typeof descriptor.value !== "function") return;
-					const next: IndicatorPatch = {
-						mode,
-						renderer,
-						original: descriptor.value,
-						active: true,
-						installed(this: any, ...args: any[]) {
-							const currentMode = next.active ? indicatorMode() : undefined;
-							if (currentMode === "dock") return "";
-							const nativeText = Reflect.apply(next.original, this, args);
-							if (!next.active || currentMode !== "custom" || typeof nativeText !== "string")
-								return nativeText;
-							// 空文案、ANSI-only 和未知文案原样保留，不猜测上游或其他扩展的格式。
-							return nativeText.replace("Jump to latest message", scrollButtonText(newCount));
-						},
-					};
-					renderer.scrollToEndIndicator = next.installed;
-					patch = next;
-				}
-			} catch {
-				dockVisible = false;
-				release();
-			}
-		},
-		noteItem() {
-			adapter.reconcile(getToolMouseTui());
-			if (
-				!active ||
-				!indicatorMode() ||
-				renderer?.mode !== "fullscreen" ||
-				isFullscreenAtBottom(renderer)
-			)
-				return;
-			if (!dockVisible && !patch) return;
-			newCount += 1;
-			renderer.requestRender?.();
-		},
-		resetCount() {
-			if (active) newCount = 0;
-		},
-		isDockVisible() {
-			return active && dockScrollButtonActive() && dockVisible;
-		},
-		renderDock(width, theme) {
-			if (!adapter.isDockVisible()) return [];
-			const label = theme.fg(
-				dockState().hovered ? "text" : "accent",
-				`[ ↓ ${scrollButtonText(newCount)} · Ctrl+End ]`,
-			);
-			const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
-			return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
-		},
-		dispose() {
-			active = false;
-			dockVisible = false;
-			release();
-			patchRegistry.dispose(NATIVE_SCROLL_INDICATOR_PATCH, adapter);
-		},
+		const nextVisible = !isAtTranscriptBottom(tui);
+		if (nextVisible !== getScrollButtonVisible()) {
+			setScrollButtonVisible(nextVisible);
+			tui.requestRender?.();
+		}
 	};
-	patchRegistry.install(NATIVE_SCROLL_INDICATOR_PATCH, adapter);
-	return adapter;
+	process.nextTick(() => check(0));
 }
 
-/** 记账 transcript 项（消息及工具卡），不是流式 chunk 或工具结果。 */
-export function noteNewTranscriptItem(): void {
-	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.noteItem();
+export function updateScrollButtonFromInput(tui: any, data: string): void {
+	if (!fullscreenLazyTui(tui) || !dockScrollButtonActive()) return;
+	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
-export function resetScrollIndicatorCount(): void {
-	patchRegistry.get<ScrollIndicatorController>(NATIVE_SCROLL_INDICATOR_PATCH)?.resetCount();
+/** 无新内容时提示原文案；有新内容时换成累计条数。 */
+function scrollButtonText(): string {
+	const count = getScrollButtonNewCount();
+	if (count <= 0) return "Back to bottom";
+	return `${count} new message${count === 1 ? "" : "s"}`;
+}
+
+export function renderScrollButton(width: number, theme: any): string[] {
+	if (
+		!dockScrollButtonActive() ||
+		!getScrollButtonVisible() ||
+		!fullscreenLazyTui(getToolMouseTui())
+	)
+		return [];
+	const label = theme.fg(
+		getScrollButtonHovered() ? "text" : "accent",
+		`[ ↓ ${scrollButtonText()} · ${formatShortcut(SCROLL_BOTTOM_SHORTCUT)} ]`,
+	);
+	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
+	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
 }

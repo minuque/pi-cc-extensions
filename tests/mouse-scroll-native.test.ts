@@ -17,10 +17,6 @@ import {
 	teardownToolMouseInteraction,
 } from "../extensions/renderer/mouse/interaction.ts";
 import {
-	noteNewTranscriptItem,
-	resetScrollIndicatorCount,
-} from "../extensions/renderer/mouse/scroll.ts";
-import {
 	disposeStickyPromptPatches,
 	installStickyPromptFramePatch,
 	setStickyPromptTheme,
@@ -199,7 +195,13 @@ function realFrame(t: TestContext, custom = true) {
 
 test("native text toggle changes only the real native label and preserves host geometry", (t) => {
 	const frame = realFrame(t, false);
+	const mainNativeFrame = frame.render();
 	frame.install();
+	assert.deepEqual(
+		frame.render(),
+		mainNativeFrame,
+		"disabled option preserves the unmodified native frame",
+	);
 	assert.deepEqual(frame.widget.render(WIDTH), [], "the lifecycle widget adds no rows");
 	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""], "Pi's Spacer(1) remains installed");
 	assert.equal(frame.editor.render(WIDTH).length, 3, "the real editor keeps its three rows");
@@ -236,6 +238,37 @@ test("native text toggle changes only the real native label and preserves host g
 	const restored = geometry();
 	assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
 	assert.deepEqual(restored.lines, baseline.lines);
+
+	config.scrollButtonMode = "dock";
+	frame.render();
+	assert.equal(
+		frame.renderer.scrollToEndIndicator,
+		undefined,
+		"dock uses main's overlay suppression",
+	);
+	config.scrollButtonMode = "native";
+	assert.deepEqual(frame.render(), baseline.lines);
+	const originalAfterDock = frame.renderer.scrollToEndIndicator;
+	config.customNativeScrollToEndIndicatorText = true;
+	frame.render();
+	assert.notEqual(frame.renderer.scrollToEndIndicator, originalAfterDock);
+	config.customNativeScrollToEndIndicatorText = false;
+	assert.deepEqual(frame.render(), baseline.lines);
+	assert.equal(frame.renderer.scrollToEndIndicator, originalAfterDock);
+
+	config.customNativeScrollToEndIndicatorText = true;
+	frame.render();
+	config.mode = "off";
+	frame.render();
+	assert.equal(frame.renderer.scrollToEndIndicator, originalAfterDock);
+	config.mode = "on";
+	frame.render();
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(
+		frame.renderer.scrollToEndIndicator,
+		originalAfterDock,
+		"widget disposal restores only native text",
+	);
 });
 
 test("native indicator clears a pending card press and still yields to an overlay", (t) => {
@@ -274,81 +307,6 @@ test("native indicator clears a pending card press and still yields to an overla
 	handle.hide();
 });
 
-test("dock to native to off keeps each mode's lifecycle and shared dock state", (t) => {
-	const frame = realFrame(t, true);
-	const nativeHeight = frame.scroll.viewportHeight;
-	config.scrollButtonMode = "dock";
-	frame.install();
-	let lines = frame.render().map(stripTerminalSequences);
-	const dockRow = lines.findIndex((line) => line.includes("[ ↓ Back to bottom · Ctrl+End ]"));
-	assert.ok(dockRow >= 0);
-	assert.equal(frame.scroll.viewportHeight, nativeHeight - 1, "dock owns one dedicated row");
-	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
-	assert.equal(lines[dockRow - 1].trim(), "", "the host spacer remains above dock");
-
-	noteNewTranscriptItem();
-	noteNewTranscriptItem();
-	const counted = frame.render();
-	assert.match(stripTerminalSequences(counted[dockRow]), /2 new messages/);
-	config.customNativeScrollToEndIndicatorText = false;
-	assert.deepEqual(
-		frame.render(),
-		counted,
-		"the native-text option cannot alter dock label or count",
-	);
-	lines = frame.render().map(stripTerminalSequences);
-	const column = lines[dockRow].indexOf("[ ↓");
-	frame.tui.handleViewportInput(`\x1b[<0;${column + 1};${dockRow + 1}M`);
-	assert.equal(frame.scroll.isFollowingEnd, true, "the dock button still follows the bottom");
-
-	frame.scroll.scrollTo(10, { disableFollow: true });
-	config.scrollButtonMode = "native";
-	frame.render();
-	assert.equal(frame.scroll.viewportHeight, nativeHeight);
-	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""]);
-	assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
-	assert.match(frame.renderer.scrollToEndIndicator(), /Jump to latest message/);
-	config.customNativeScrollToEndIndicatorText = true;
-	frame.render();
-	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
-
-	config.mode = "off";
-	frame.render();
-	assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
-	config.mode = "on";
-	frame.render();
-	assert.notEqual(frame.renderer.scrollToEndIndicator, frame.original);
-	teardownToolMouseInteraction(frame.owner);
-	assert.equal(
-		frame.renderer.scrollToEndIndicator,
-		frame.original,
-		"shutdown restores Pi's callback",
-	);
-	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""]);
-});
-
-test("native count resets between consecutive bottom/page-up input and on explicit reset", (t) => {
-	const frame = realFrame(t);
-	frame.install();
-	noteNewTranscriptItem();
-	assert.match(frame.renderer.scrollToEndIndicator(), /1 new message/);
-	frame.tui.handleViewportInput("\x1b[1;5F");
-	assert.equal(frame.scroll.isFollowingEnd, true);
-	frame.tui.handleViewportInput("\x1b[5~");
-	assert.equal(frame.scroll.isFollowingEnd, false);
-	assert.match(
-		frame.renderer.scrollToEndIndicator(),
-		/Back to bottom/,
-		"the transient bottom state resets the count before another frame",
-	);
-
-	noteNewTranscriptItem();
-	noteNewTranscriptItem();
-	assert.match(frame.renderer.scrollToEndIndicator(), /2 new messages/);
-	resetScrollIndicatorCount();
-	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
-});
-
 test("one-row sticky prompt paints after native and wins clicks for either text setting", (t) => {
 	const frame = realFrame(t, false);
 	config.stickyUserMessage = true;
@@ -382,104 +340,4 @@ test("one-row sticky prompt paints after native and wins clicks for either text 
 		assert.equal(frame.scroll.scrollTop, 0, "the sticky row handles the overlapping click");
 		assert.equal(frame.scroll.isFollowingEnd, false);
 	}
-});
-
-test("stale factories, widgets, and owners cannot dispose a replacement installation", (t) => {
-	const frame = realFrame(t);
-	const setWidget = frame.ctx.ui.setWidget;
-	let staleFactory: any;
-	frame.ctx.ui.setWidget = (key, factory) => {
-		if (typeof factory === "function") staleFactory ??= factory;
-		setWidget(key, factory);
-	};
-	frame.install();
-	const oldWidget = frame.widget;
-	const oldWrapper = frame.renderer.scrollToEndIndicator;
-	const replacementOwner = {};
-	installToolMouseInteraction(frame.ctx, replacementOwner);
-	const replacement = frame.renderer.scrollToEndIndicator;
-	try {
-		assert.deepEqual(staleFactory(frame.tui, theme).render(WIDTH), []);
-		oldWidget.dispose();
-		oldWidget.render(WIDTH);
-		teardownToolMouseInteraction(frame.owner);
-		assert.equal(frame.renderer.scrollToEndIndicator, replacement);
-		assert.match(replacement(), /Back to bottom/);
-		noteNewTranscriptItem();
-		assert.match(replacement(), /1 new message/);
-		assert.equal(oldWrapper(), frame.original.call(frame.renderer));
-		frame.render();
-		frame.tui.handleViewportInput(frame.packet(0));
-		assert.equal(frame.scroll.isFollowingEnd, true);
-	} finally {
-		teardownToolMouseInteraction(replacementOwner);
-	}
-});
-
-test("dispose restores inherited input while a retained foreign chain stays native", (t) => {
-	const frame = realFrame(t);
-	const original = frame.renderer.handleViewportInput;
-	assert.equal(Object.hasOwn(frame.renderer, "handleViewportInput"), false);
-	frame.install();
-	teardownToolMouseInteraction(frame.owner);
-	assert.equal(Object.hasOwn(frame.renderer, "handleViewportInput"), false);
-	assert.equal(frame.renderer.handleViewportInput, original);
-
-	frame.install();
-	const installed = frame.renderer.handleViewportInput;
-	const foreign = function (this: any, data: string) {
-		return installed.call(this, data);
-	};
-	frame.renderer.handleViewportInput = foreign;
-	teardownToolMouseInteraction(frame.owner);
-	assert.equal(frame.renderer.handleViewportInput, foreign);
-	frame.render();
-	frame.tui.handleViewportInput("\x1b[<0;22;2M");
-	assert.equal(frame.card.toggles, 0, "disposed extension no longer expands on press");
-	frame.tui.handleViewportInput("\x1b[<0;22;2m");
-	assert.equal(
-		frame.card.toggles,
-		1,
-		"the retained chain still reaches Pi's native click dispatch",
-	);
-});
-
-test("retained foreign native wrapper survives dock widget reinstall and shutdown", (t) => {
-	const frame = realFrame(t);
-	frame.install();
-	const installed = frame.renderer.scrollToEndIndicator;
-	const foreign = function (this: any) {
-		return installed.call(this);
-	};
-	frame.renderer.scrollToEndIndicator = foreign;
-	config.scrollButtonMode = "dock";
-	frame.render();
-	frame.install(); // session compaction rebuilds the widget and adapter
-	const dock = frame.render().map(stripTerminalSequences).join("\n");
-	assert.equal((dock.match(/\[ ↓ Back to bottom · Ctrl\+End \]/g) ?? []).length, 1);
-	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined, "only dock remains visible");
-
-	config.scrollButtonMode = "native";
-	frame.render();
-	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
-	assert.equal(foreign.call(frame.renderer), frame.original.call(frame.renderer));
-	config.scrollButtonMode = "dock";
-	frame.render();
-	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
-	teardownToolMouseInteraction(frame.owner);
-	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
-	assert.equal(foreign.call(frame.renderer), frame.original.call(frame.renderer));
-});
-
-test("concatenated tool and native-indicator presses are dispatched in order", (t) => {
-	const frame = realFrame(t);
-	frame.install();
-	frame.render();
-	assert.equal(frame.card.expanded, false);
-	assert.equal(frame.scroll.isFollowingEnd, false);
-	const toolPress = "\x1b[<0;22;2M";
-	const indicatorPress = frame.packet(0);
-	frame.tui.handleViewportInput(toolPress + indicatorPress);
-	assert.equal(frame.card.expanded, true, "the first packet expands the collapsed tool");
-	assert.equal(frame.scroll.isFollowingEnd, true, "the second packet follows the viewport bottom");
 });

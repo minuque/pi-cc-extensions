@@ -30,11 +30,7 @@ import {
 	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
-import {
-	getToolMouseTui,
-	noteNewTranscriptItem,
-	resetScrollIndicatorCount,
-} from "./mouse/scroll.ts";
+import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
 import {
 	disposeStickyPromptPatches,
 	installStickyPromptPatches,
@@ -210,7 +206,7 @@ export default function (
 		}
 	});
 
-	// dock / native 共用文案计数：离开底部期间每落一块内容 +1。
+	// 回到底部按钮的累计计数：离开底部期间每落一块内容 +1。
 	pi.on("message_start", async (event) => {
 		const role = event.message?.role;
 		// toolResult 不单独成块（渲染在工具卡内），跳过以免与工具卡重复计数。
@@ -279,7 +275,6 @@ export default function (
 	pi.on("session_tree", async (event, ctx) => {
 		// 会话树重建后在当前帧和下一帧各同步一次，替换旧组件引用。
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		resetScrollIndicatorCount();
 		syncCompactMode(ctx);
 		scheduleSessionRender(() => syncCompactMode(ctx));
 	});
