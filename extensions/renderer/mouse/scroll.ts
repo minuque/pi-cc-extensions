@@ -1,8 +1,9 @@
-import { getKeybindings } from "@earendil-works/pi-tui";
+import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import {
 	NATIVE_SCROLL_INDICATOR_PATCH,
+	NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
 	patchRegistry,
 	TOOL_MOUSE_OWNER_KEY,
 	TOOL_MOUSE_TUI_SLOT,
@@ -84,8 +85,11 @@ export function installNativeScrollIndicator(
 ): NativeScrollIndicatorAdapter {
 	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
 	let patch: IndicatorPatch | null = null;
-	// A foreign replacement wins for this runtime, even across option/mode toggles.
-	const yielded = new WeakSet<object>();
+	// Relinquishment belongs to the renderer, surviving widget rebuilds and /reload.
+	const yielded = patchRegistry.ensure(
+		NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
+		() => new WeakSet<object>(),
+	);
 	const enabled = () => toolMouseInteractionActive() && config.customScrollToEndIndicatorText;
 	const current = () =>
 		patchRegistry.owns(NATIVE_SCROLL_INDICATOR_PATCH, adapter) &&
@@ -145,6 +149,7 @@ export function installNativeScrollIndicator(
 						active: true,
 						newCount: 0,
 						installed(this: any, ...args: any[]) {
+							const nativeText = Reflect.apply(original, this, args);
 							// Foreign wrappers may retain us after replacement/disposal. Always delegate raw.
 							if (next.active && !owns(next)) {
 								next.active = false;
@@ -152,6 +157,9 @@ export function installNativeScrollIndicator(
 							}
 							if (next.active && current() && enabled() && renderer.mode === "fullscreen") {
 								try {
+									// An empty (including ANSI-only) native label intentionally suppresses the indicator.
+									if (typeof nativeText !== "string" || visibleWidth(nativeText) === 0)
+										return nativeText;
 									if (isFullscreenAtBottom(renderer)) next.newCount = 0;
 									const count = next.newCount;
 									const label =
@@ -166,7 +174,7 @@ export function installNativeScrollIndicator(
 									// Missing theme/keybinding capabilities: keep the host's label.
 								}
 							}
-							return Reflect.apply(original, this, args);
+							return nativeText;
 						},
 					};
 					Object.defineProperty(renderer, "scrollToEndIndicator", {

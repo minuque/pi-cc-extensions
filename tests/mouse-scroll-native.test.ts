@@ -18,6 +18,11 @@ import {
 	teardownToolMouseInteraction,
 } from "../extensions/renderer/mouse/interaction.ts";
 import { noteNewTranscriptItem } from "../extensions/renderer/mouse/scroll.ts";
+import {
+	disposeStickyPromptPatches,
+	installStickyPromptFramePatch,
+	setStickyPromptTheme,
+} from "../extensions/renderer/mouse/sticky-prompt.ts";
 import { sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
@@ -255,6 +260,76 @@ test("real native indicator: clears pending custom collapse before native press/
 	frame.tui.handleViewportInput("\x1b[<0;2;2m");
 	assert.equal(frame.card.expanded, false);
 });
+
+test("real native indicator: reinstallation does not reclaim a foreign callback", (t) => {
+	const frame = realFrame(t);
+	frame.install();
+	const foreign = () => "foreign indicator";
+	frame.renderer.scrollToEndIndicator = foreign;
+	frame.render();
+	for (let i = 0; i < 2; i++) {
+		frame.install(); // session_compact rebuilds the widget on the same renderer
+		assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+		assert.match(stripTerminalSequences(frame.render().join("\n")), /foreign indicator/);
+	}
+});
+
+for (const custom of [true, false]) {
+	test(`real native indicator: dynamically suppressed callback adds no button, custom=${custom}`, (t) => {
+		const frame = realFrame(t, custom);
+		let text = "";
+		frame.renderer.scrollToEndIndicator = () => text;
+		const baseline = frame.render();
+		assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+		frame.install();
+		for (const hidden of ["", "\x1b[37m\x1b[39m"]) {
+			text = hidden;
+			assert.deepEqual(frame.render(), baseline);
+			assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+		}
+		text = "visible native label";
+		frame.render();
+		assert.ok(frame.renderer.scrollToEndIndicatorRect);
+		text = "";
+		assert.deepEqual(frame.render(), baseline);
+		assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+	});
+
+	test(`real native indicator: remains above sticky prompt in a one-row viewport, custom=${custom}`, (t) => {
+		const frame = realFrame(t, custom);
+		config.stickyUserMessage = true;
+		setStickyPromptTheme(theme);
+		assert.equal(installStickyPromptFramePatch(), true);
+		t.after(() => {
+			disposeStickyPromptPatches();
+			setStickyPromptTheme(null);
+		});
+		frame.card.children.unshift({
+			render: () => ["pinned prompt\x1b_cc:p\x07\x1b_cc:P\x07"],
+			invalidate() {},
+		});
+		frame.install();
+		frame.terminal.rows = 2; // resizing leaves one transcript row above the editor
+		const lines = frame.render().map(stripTerminalSequences);
+		assert.equal(frame.scroll.viewportHeight, 1);
+		assert.match(lines[0], /pinned prompt/);
+		assert.ok(lines[0].includes(custom ? "Back to bottom" : "Jump to latest message"));
+		assert.ok(frame.renderer.scrollToEndIndicatorRect);
+		// The uncovered sticky text still jumps to the prompt, not the transcript bottom.
+		frame.tui.handleViewportInput("\x1b[<0;1;1M");
+		assert.equal(frame.scroll.scrollTop, 0);
+		assert.equal(frame.scroll.isFollowingEnd, false);
+		frame.scroll.scrollTo(10, { disableFollow: true });
+		frame.render();
+		frame.tui.handleViewportInput(frame.packet(0));
+		assert.equal(
+			frame.scroll.isFollowingEnd,
+			true,
+			"visible native label keeps native input priority",
+		);
+		assert.equal(frame.card.toggles, 0);
+	});
+}
 
 test("real native indicator: counts reset after native keyboard, wheel, submit and programmatic follow", (t) => {
 	const frame = realFrame(t);

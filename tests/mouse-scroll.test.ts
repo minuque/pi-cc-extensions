@@ -130,12 +130,15 @@ test("native indicator: raw descriptor ownership, native styling and 0/1/N item 
 	);
 	adapter.reconcile(tui);
 	const wrapper = renderer.scrollToEndIndicator;
-	assert.equal(wrapper(), "<selectedBg><text> ↓ Back to bottom · Ctrl+End </text></selectedBg>");
+	assert.equal(
+		wrapper.call(renderer),
+		"<selectedBg><text> ↓ Back to bottom · Ctrl+End </text></selectedBg>",
+	);
 	noteNewTranscriptItem();
-	assert.match(wrapper(), / ↓ 1 new message · Ctrl\+End /);
+	assert.match(wrapper.call(renderer), / ↓ 1 new message · Ctrl\+End /);
 	noteNewTranscriptItem();
 	noteNewTranscriptItem();
-	assert.match(wrapper(), / ↓ 3 new messages · Ctrl\+End /);
+	assert.match(wrapper.call(renderer), / ↓ 3 new messages · Ctrl\+End /);
 	assert.equal(renderer.renders, 3);
 	adapter.reconcile(tui);
 	assert.equal(renderer.scrollToEndIndicator, wrapper, "reconciliation is idempotent");
@@ -163,7 +166,7 @@ test("native indicator: nonconfigurable writable data descriptors restore exactl
 	const { adapter, tui } = setup(t, renderer);
 	adapter.reconcile(tui);
 	const installed = renderer.scrollToEndIndicator;
-	assert.match(installed(), /Back to bottom/);
+	assert.match(installed.call(renderer), /Back to bottom/);
 	adapter.dispose();
 	assert.deepEqual(Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator"), descriptor);
 	assert.equal(Reflect.apply(installed, renderer, ["raw-args"]), "fullscreen:raw-args");
@@ -189,6 +192,27 @@ test("native indicator: configured empty, remapped and multiple shortcuts, live 
 	}
 	activeTheme = { fg: (_c, s) => `new-fg:${s}`, bg: (_c, s) => `new-bg:${s}` };
 	assert.match(renderer.scrollToEndIndicator(), /^new-bg:new-fg:/);
+});
+
+test("native indicator: respects dynamically empty and zero-width native callback results", (t) => {
+	const renderer = rendererFixture();
+	let nativeText = "";
+	let calls = 0;
+	renderer.scrollToEndIndicator = function () {
+		assert.equal(this, renderer, "native callback keeps its receiver");
+		calls++;
+		return nativeText;
+	};
+	const { adapter, tui } = setup(t, renderer);
+	adapter.reconcile(tui);
+	for (const text of ["", "\x1b[37m\x1b[39m", "visible native label", ""]) {
+		nativeText = text;
+		const before = calls;
+		const rendered = renderer.scrollToEndIndicator();
+		assert.equal(calls, before + 1, "evaluate native visibility once per callback");
+		if (text === "visible native label") assert.match(rendered, /Back to bottom/);
+		else assert.equal(rendered, text, "native suppression is preserved exactly");
+	}
 });
 
 test("native indicator: missing, disabled, inherited, accessor and frozen callbacks stay untouched", (t) => {
@@ -356,7 +380,7 @@ test("native indicator: a stale mouse owner delegates before its replacement wid
 	adapter.reconcile(tui);
 	const installed = renderer.scrollToEndIndicator;
 	noteNewTranscriptItem();
-	assert.match(installed(), /1 new message/);
+	assert.match(installed.call(renderer), /1 new message/);
 	patchRegistry.install(TOOL_MOUSE_OWNER_KEY, nextOwner);
 	assert.equal(installed.call(renderer), "original:fullscreen");
 	adapter.reconcile(tui);
@@ -365,6 +389,27 @@ test("native indicator: a stale mouse owner delegates before its replacement wid
 		installed,
 		"stale reconcile cannot install another patch",
 	);
+});
+
+test("native indicator: relinquished renderers remain native across reinstall and reload", async (t) => {
+	const { adapter, tui, renderer } = setup(t);
+	adapter.reconcile(tui);
+	const foreign = () => "foreign label";
+	renderer.scrollToEndIndicator = foreign;
+	adapter.reconcile(tui);
+	const jiti = createJiti(import.meta.url, { moduleCache: false });
+	const reloaded = (await jiti.import(
+		new URL("../extensions/renderer/mouse/scroll.ts", import.meta.url).pathname,
+	)) as typeof import("../extensions/renderer/mouse/scroll.ts");
+	for (const install of [installNativeScrollIndicator, reloaded.installNativeScrollIndicator]) {
+		const next = install({}, () => theme);
+		t.after(() => next.dispose());
+		next.reconcile(tui);
+		noteNewTranscriptItem();
+		assert.equal(renderer.scrollToEndIndicator, foreign);
+		next.dispose();
+		assert.equal(renderer.scrollToEndIndicator, foreign);
+	}
 });
 
 test("native indicator: reload takeover and late disposal cannot clobber the new runtime", async (t) => {
@@ -382,7 +427,7 @@ test("native indicator: reload takeover and late disposal cannot clobber the new
 	next.reconcile(tui);
 	const installed = renderer.scrollToEndIndicator;
 	assert.notEqual(installed, old);
-	assert.match(installed(), /Back to bottom/);
+	assert.match(installed.call(renderer), /Back to bottom/);
 	adapter.dispose();
 	adapter.reconcile(tui);
 	assert.equal(renderer.scrollToEndIndicator, installed);

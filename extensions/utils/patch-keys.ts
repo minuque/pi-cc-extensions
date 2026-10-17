@@ -52,6 +52,9 @@ export const STICKY_PROMPT_STATE_SLOT = Symbol.for("pi.ccstyle.sticky-prompt-sta
 export const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 export const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");
 export const NATIVE_SCROLL_INDICATOR_PATCH = Symbol.for("pi.ccstyle.native-scroll-indicator");
+export const NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS = Symbol.for(
+	"pi.ccstyle.native-scroll-indicator-yielded-renderers",
+);
 export const FULLSCREEN_VIEWPORT_INPUT_PATCH = Symbol.for("pi.ccstyle.fullscreen-viewport-input");
 export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-patch");
 export const EARLY_STARTUP_HEADER_PATCH = Symbol.for("pi.ccstyle.early-startup-header-patch");

@@ -388,7 +388,7 @@ export function installStickyPromptMarkerPatch(): void {
 	markerPatch = patch;
 }
 
-/** TuiAltScreen.compositeScrollToEndIndicator 包装：合成粘性行。返回是否安装成功。 */
+/** 先合成粘性行，再交给原生指示器覆盖；单行视口也保持绘制与点击优先级一致。 */
 export function installStickyPromptFramePatch(): boolean {
 	const prototype = (TuiAltScreen as any)?.prototype;
 	if (typeof prototype?.compositeScrollToEndIndicator !== "function") return false;
@@ -402,9 +402,8 @@ export function installStickyPromptFramePatch(): boolean {
 		active: true,
 		original,
 		installed(this: any, screen: string[], layout: any, width: number) {
-			const result = original.call(this, screen, layout, width);
-			if (!patch.active) return result;
-			return renderStickyPromptScreen(this, result, layout, width);
+			const result = patch.active ? renderStickyPromptScreen(this, screen, layout, width) : screen;
+			return original.call(this, result, layout, width);
 		},
 	};
 	prototype.compositeScrollToEndIndicator = patch.installed;
