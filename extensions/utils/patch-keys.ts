@@ -51,6 +51,7 @@ export const STICKY_PROMPT_STATE_SLOT = Symbol.for("pi.ccstyle.sticky-prompt-sta
 // ── 鼠标交互 ──
 export const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 export const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");
+export const SCROLL_BUTTON_STATE_SLOT = Symbol.for("pi.ccstyle.scroll-button-state");
 export const NATIVE_SCROLL_INDICATOR_PATCH = Symbol.for("pi.ccstyle.native-scroll-indicator");
 export const NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS = Symbol.for(
 	"pi.ccstyle.native-scroll-indicator-yielded-renderers",

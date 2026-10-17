@@ -1,9 +1,11 @@
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import {
 	NATIVE_SCROLL_INDICATOR_PATCH,
 	NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
 	patchRegistry,
+	SCROLL_BUTTON_STATE_SLOT,
 	TOOL_MOUSE_TUI_SLOT,
 } from "../../utils/patch-keys.ts";
 
@@ -17,6 +19,10 @@ export function setToolMouseTui(tui: any): void {
 
 export function toolMouseInteractionActive(): boolean {
 	return config.mode !== "off";
+}
+
+export function dockScrollButtonActive(): boolean {
+	return toolMouseInteractionActive() && config.scrollButtonMode === "dock";
 }
 
 export function fullscreenLazyTui(tui: any): boolean {
@@ -38,32 +44,78 @@ export function isFullscreenAtBottom(tui: any): boolean {
 	return Boolean(tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true);
 }
 
+function dockState(): { widget: any; hovered: boolean } {
+	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({ widget: null, hovered: false }));
+}
+
+export function getScrollButtonWidget(): any {
+	return dockState().widget;
+}
+export function setScrollButtonWidget(widget: any): void {
+	dockState().widget = widget;
+}
+export function setScrollButtonHovered(hovered: boolean): boolean {
+	if (dockState().hovered === hovered) return false;
+	dockState().hovered = hovered;
+	return true;
+}
+export function getScrollButtonVisible(): boolean {
+	return (
+		patchRegistry
+			.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)
+			?.isDockVisible() ?? false
+	);
+}
+export function isScrollBottomInput(data: string): boolean {
+	return matchesKey(data, "ctrl+end");
+}
+
+/** dock 与 native 共用的唯一文案生成器；样式、箭头和快捷键由各自 renderer 包装。 */
+function scrollButtonText(newCount: number): string {
+	return newCount > 0 ? `${newCount} new message${newCount === 1 ? "" : "s"}` : "Back to bottom";
+}
+
 type IndicatorPatch = {
+	mode: "dock" | "custom";
 	renderer: any;
 	original: (...args: any[]) => any;
 	installed: (...args: any[]) => any;
 	active: boolean;
-	newCount: number;
 };
 
 export type NativeScrollIndicatorAdapter = {
 	reconcile(tui: any): void;
 	noteItem(): void;
 	resetCount(): void;
+	isDockVisible(): boolean;
+	renderDock(width: number, theme: any): string[];
 	dispose(): void;
 };
 
-/** 仅替换已知原生文案；样式、快捷键、显隐、布局和点击仍由 Pi 决定。 */
+/** dock 时让原生浮层让位；native 时仅替换文案，样式、快捷键、布局和点击仍由 Pi 决定。 */
 export function installNativeScrollIndicator(): NativeScrollIndicatorAdapter {
 	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.dispose();
 	let active = true;
 	let patch: IndicatorPatch | null = null;
+	let renderer: any = null;
+	let newCount = 0;
+	let dockVisible = false;
+	let previousMode: "dock" | "custom" | undefined;
 	// 让渡记录跟随真实 renderer，避免 widget 重建或 /reload 后抢回其他扩展的回调。
 	const yielded = patchRegistry.ensure(
 		NATIVE_SCROLL_INDICATOR_YIELDED_RENDERERS,
 		() => new WeakSet<object>(),
 	);
-	const enabled = () => toolMouseInteractionActive() && config.customScrollToEndIndicatorText;
+	const indicatorMode = (): "dock" | "custom" | undefined => {
+		if (dockScrollButtonActive()) return "dock";
+		if (
+			toolMouseInteractionActive() &&
+			config.scrollButtonMode === "native" &&
+			config.customNativeScrollToEndIndicatorText
+		)
+			return "custom";
+		return undefined;
+	};
 
 	function release(): void {
 		if (!patch) return;
@@ -82,65 +134,100 @@ export function installNativeScrollIndicator(): NativeScrollIndicatorAdapter {
 	const adapter: NativeScrollIndicatorAdapter = {
 		reconcile(tui) {
 			if (!active) return;
-			const renderer = concreteToolMouseTui(tui);
-			if (patch && renderer !== patch.renderer) release();
+			const nextRenderer = concreteToolMouseTui(tui);
+			const mode = indicatorMode();
+			if (nextRenderer !== renderer || mode !== previousMode) {
+				adapter.resetCount();
+				setScrollButtonHovered(false);
+			}
+			renderer = nextRenderer;
+			previousMode = mode;
+			// dock 的临时抑制必须先还原，native 再按让渡记录决定是否定制文案。
+			if (patch && (renderer !== patch.renderer || (patch.mode === "dock" && mode !== "dock")))
+				release();
 			try {
+				dockVisible =
+					mode === "dock" && renderer?.mode === "fullscreen" && !isFullscreenAtBottom(renderer);
+				if (!dockVisible) setScrollButtonHovered(false);
 				if (renderer?.mode !== "fullscreen") {
 					release();
 					return;
 				}
-				if (!enabled()) {
+				// 渲染、输入和记账共用跟随状态同步；不依赖浮层回调（底部不会调用它）。
+				if (isFullscreenAtBottom(renderer)) adapter.resetCount();
+				if (!mode) {
 					if (patch && renderer.scrollToEndIndicator !== patch.installed) {
 						// 外层包装器保持原位；关闭时透传，重新开启时复用已有调用链。
 						yielded.add(renderer);
-						adapter.resetCount();
 					} else release();
 					return;
 				}
 				if (patch && renderer.scrollToEndIndicator !== patch.installed) {
-					// 允许外层扩展继续调用我们的活跃包装器，但不覆盖或重新包装它。
+					// native 文案让渡外层包装器；dock 必须抑制当前整层浮层（外层可能不透传）。
 					yielded.add(renderer);
+					if (mode === "dock") release();
 				}
 				if (!patch) {
-					if (yielded.has(renderer)) return;
+					// native 文案不抢回其他扩展的回调；dock 则需临时抑制整层原生浮层，
+					// 保存当前回调并在离开 dock / dispose 时原样还回，不能同时画两个按钮。
+					if (mode === "custom" && yielded.has(renderer)) return;
 					// 只接管可写的实例数据字段；旧版、禁用、只读或 accessor 接口均不修改。
 					const descriptor = Object.getOwnPropertyDescriptor(renderer, "scrollToEndIndicator");
 					if (!descriptor?.writable || typeof descriptor.value !== "function") return;
 					const next: IndicatorPatch = {
+						mode,
 						renderer,
 						original: descriptor.value,
 						active: true,
-						newCount: 0,
 						installed(this: any, ...args: any[]) {
+							const currentMode = next.active ? indicatorMode() : undefined;
+							if (currentMode === "dock") return "";
 							const nativeText = Reflect.apply(next.original, this, args);
-							if (!next.active || !enabled() || typeof nativeText !== "string") return nativeText;
-							const count = next.newCount;
-							const label =
-								count > 0 ? `${count} new message${count === 1 ? "" : "s"}` : "Back to bottom";
+							if (!next.active || currentMode !== "custom" || typeof nativeText !== "string")
+								return nativeText;
 							// 空文案、ANSI-only 和未知文案原样保留，不猜测上游或其他扩展的格式。
-							return nativeText.replace("Jump to latest message", label);
+							return nativeText.replace("Jump to latest message", scrollButtonText(newCount));
 						},
 					};
 					renderer.scrollToEndIndicator = next.installed;
 					patch = next;
 				}
-				// 原生在底部不会调用文案回调；渲染、输入和记账共用这条跟随状态同步路径。
-				if (isFullscreenAtBottom(renderer)) adapter.resetCount();
 			} catch {
+				dockVisible = false;
 				release();
 			}
 		},
 		noteItem() {
 			adapter.reconcile(getToolMouseTui());
-			if (!active || !enabled() || !patch || isFullscreenAtBottom(patch.renderer)) return;
-			patch.newCount += 1;
-			patch.renderer.requestRender?.();
+			if (
+				!active ||
+				!indicatorMode() ||
+				renderer?.mode !== "fullscreen" ||
+				isFullscreenAtBottom(renderer)
+			)
+				return;
+			if (!dockVisible && !patch) return;
+			newCount += 1;
+			renderer.requestRender?.();
 		},
 		resetCount() {
-			if (active && patch) patch.newCount = 0;
+			if (active) newCount = 0;
+		},
+		isDockVisible() {
+			return active && dockScrollButtonActive() && dockVisible;
+		},
+		renderDock(width, theme) {
+			if (!adapter.isDockVisible()) return [];
+			const label = theme.fg(
+				dockState().hovered ? "text" : "accent",
+				`[ ↓ ${scrollButtonText(newCount)} · Ctrl+End ]`,
+			);
+			const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
+			return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
 		},
 		dispose() {
 			active = false;
+			dockVisible = false;
 			release();
 			patchRegistry.dispose(NATIVE_SCROLL_INDICATOR_PATCH, adapter);
 		},
@@ -154,6 +241,6 @@ export function noteNewTranscriptItem(): void {
 	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.noteItem();
 }
 
-export function resetNativeScrollIndicatorCount(): void {
+export function resetScrollIndicatorCount(): void {
 	patchRegistry.get<NativeScrollIndicatorAdapter>(NATIVE_SCROLL_INDICATOR_PATCH)?.resetCount();
 }

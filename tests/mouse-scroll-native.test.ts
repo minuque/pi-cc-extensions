@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { tmpdir } from "node:os";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	getKeybindings,
 	MouseRegion,
-	ScrollView,
+	setKeybindings,
 	stripTerminalSequences,
 	Text,
 	truncateToWidth,
-	VStack,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
@@ -20,7 +19,7 @@ import {
 } from "../extensions/renderer/mouse/interaction.ts";
 import {
 	noteNewTranscriptItem,
-	resetNativeScrollIndicatorCount,
+	resetScrollIndicatorCount,
 } from "../extensions/renderer/mouse/scroll.ts";
 import {
 	disposeStickyPromptPatches,
@@ -30,13 +29,20 @@ import {
 import { sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
-// 使用 Pi 的实际组合根，避免测试再复制一份原生文案、主题或快捷键格式。
-const { createInteractiveTui } = await import(
-	new URL(
-		"./modes/interactive/tui-renderer.js",
-		import.meta.resolve("@earendil-works/pi-coding-agent"),
-	).href
-);
+// Use Pi's actual renderer, chat layout, widget lifecycle and editor presentation.
+const hostModule = (path: string) =>
+	new URL(path, import.meta.resolve("@earendil-works/pi-coding-agent")).href;
+const [
+	{ createInteractiveTui },
+	{ createChatViewport },
+	{ getEditorTheme },
+	{ KeybindingsManager },
+] = await Promise.all([
+	import(hostModule("./modes/interactive/tui-renderer.js")),
+	import(hostModule("./modes/interactive/chat-viewport.js")),
+	import(hostModule("./modes/interactive/theme/theme.js")),
+	import(hostModule("./core/keybindings.js")),
+]);
 initTheme("dark");
 
 const theme = {
@@ -78,10 +84,12 @@ class Card extends Container {
 
 function realFrame(t: TestContext, custom = true, width = 80) {
 	const previous = { ...config };
-	const bindings = getKeybindings().getUserBindings();
-	getKeybindings().setUserBindings({});
+	const bindings = getKeybindings();
+	const keybindings = new KeybindingsManager();
+	setKeybindings(keybindings);
 	config.mode = "on";
-	config.customScrollToEndIndicatorText = custom;
+	config.scrollButtonMode = "native";
+	config.customNativeScrollToEndIndicatorText = custom;
 	const terminal: any = {
 		columns: width,
 		rows: 12,
@@ -115,28 +123,42 @@ function realFrame(t: TestContext, custom = true, width = 80) {
 	const card = new Card();
 	const messages = new Container();
 	messages.addChild(card);
-	const scroll = new ScrollView(messages, { follow: "end", primary: true, scrollbar: "always" });
-	const widgets = new Container();
-	const editor = new Text("> ", 0, 0);
-	renderer.setLayoutRoot(
-		new VStack([
-			{ component: scroll, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: widgets, basis: "auto", grow: 0, shrink: 0 },
-			{ component: editor, basis: "auto", grow: 0, shrink: 0 },
-		]),
-	);
-	let widget: any;
+	// Minimal host state, not a copied layout: renderWidgets owns the default spacer,
+	// and setExtensionWidget owns placement, coexistence and disposal of widgets.
+	const host = Object.assign(Object.create(InteractiveMode.prototype), {
+		ui: tui,
+		widgetContainerAbove: new Container(),
+		widgetContainerBelow: new Container(),
+		extensionWidgetsAbove: new Map(),
+		extensionWidgetsBelow: new Map(),
+	});
+	host.renderWidgets();
+	const editor = new CustomEditor(tui, getEditorTheme(), keybindings, {
+		embedWorkingStatus: true,
+	});
+	const editorContainer = new Container();
+	editorContainer.addChild(editor);
+	const viewport = createChatViewport({
+		document: messages,
+		pendingMessages: new Container(),
+		status: new Container(),
+		widgetsAbove: host.widgetContainerAbove,
+		editor: editorContainer,
+		widgetsBelow: host.widgetContainerBelow,
+		footer: new Container(),
+		scrollbar: "always", // Avoid the native auto-scrollbar's hide timer.
+	});
+	const scroll = viewport.transcript;
+	renderer.setLayoutRoot(viewport.root);
+	renderer.setFocus(editor);
 	let input: ((data: string) => any) | undefined;
 	const ctx = {
 		mode: "tui",
 		hasUI: true,
 		ui: {
 			theme,
-			setWidget(_key: string, factory: any) {
-				widget?.dispose?.();
-				widgets.clear();
-				widget = typeof factory === "function" ? factory(tui, theme) : undefined;
-				if (widget) widgets.addChild(widget);
+			setWidget(key: string, content: any, options?: { placement: "aboveEditor" | "belowEditor" }) {
+				host.setExtensionWidget(key, content, options);
 			},
 			onTerminalInput(handler: typeof input) {
 				input = handler;
@@ -151,9 +173,10 @@ function realFrame(t: TestContext, custom = true, width = 80) {
 	const owner = {};
 	t.after(() => {
 		teardownToolMouseInteraction(owner);
+		host.clearExtensionWidgets();
 		renderer.stop();
 		Object.assign(config, previous);
-		getKeybindings().setUserBindings(bindings);
+		setKeybindings(bindings);
 	});
 	const render = () => {
 		renderer.doRender();
@@ -166,6 +189,7 @@ function realFrame(t: TestContext, custom = true, width = 80) {
 		renderer,
 		tui,
 		editor,
+		widgetsAbove: host.widgetContainerAbove as Container,
 		scroll,
 		card,
 		ctx,
@@ -174,7 +198,7 @@ function realFrame(t: TestContext, custom = true, width = 80) {
 		original,
 		render,
 		get widget() {
-			return widget;
+			return host.extensionWidgetsAbove.get("ccstyle-tool-mouse");
 		},
 		get input() {
 			return input;
@@ -225,7 +249,96 @@ for (const width of [1, 8, 20, 80]) {
 	});
 }
 
+test("real native indicator: preserves the host spacer and vertical geometry for either label setting", (t) => {
+	const frame = realFrame(t, false);
+	assert.deepEqual(
+		frame.widgetsAbove.render(80),
+		[""],
+		"empty host widgets include one spacer row",
+	);
+	assert.equal(frame.editor.render(80).length, 3, "real editor has two borders and an input row");
+	const geometry = () => {
+		const lines = frame.render().map(stripTerminalSequences);
+		const rect = frame.renderer.scrollToEndIndicatorRect;
+		assert.ok(rect);
+		const editorRow = lines.findIndex((line) => line.startsWith("──"));
+		assert.equal(
+			rect.row,
+			frame.scroll.viewportHeight - 1,
+			"indicator stays on the last transcript row",
+		);
+		assert.equal(
+			editorRow - rect.row - 1,
+			1,
+			"host spacer separates the indicator and editor border",
+		);
+		assert.equal(lines[rect.row + 1].trim(), "", "indicator does not paint the host spacer");
+		return {
+			transcriptHeight: frame.scroll.viewportHeight,
+			indicatorRow: rect.row,
+			editorRow,
+			dock: lines.slice(rect.row + 1),
+		};
+	};
+	const baseline = geometry();
+	frame.install();
+	for (const custom of [false, true, false]) {
+		config.customNativeScrollToEndIndicatorText = custom;
+		assert.deepEqual(geometry(), baseline, "label customization never changes vertical layout");
+		assert.deepEqual(
+			frame.widgetsAbove.render(80),
+			[""],
+			"lifecycle widget retains the host spacer",
+		);
+		assert.ok(
+			frame.renderer
+				.scrollToEndIndicator()
+				.includes(custom ? "Back to bottom" : "Jump to latest message"),
+		);
+	}
+});
+
 for (const custom of [true, false]) {
+	test(`real native indicator: remains transcript-anchored above another host widget, custom=${custom}`, (t) => {
+		const frame = realFrame(t, custom);
+		const initialHeight = frame.scroll.viewportHeight;
+		frame.ctx.ui.setWidget("host-widget", ["Above-editor widget", "Second widget line"], {
+			placement: "aboveEditor",
+		});
+		const baseline = frame.render().map(stripTerminalSequences);
+		const widgetLines = frame.widgetsAbove.render(80);
+		frame.install();
+		const lines = frame.render().map(stripTerminalSequences);
+		const rect = frame.renderer.scrollToEndIndicatorRect;
+		assert.ok(rect);
+		assert.equal(
+			frame.scroll.viewportHeight,
+			initialHeight - 2,
+			"only the visible widget takes transcript space",
+		);
+		assert.equal(
+			rect.row,
+			frame.scroll.viewportHeight - 1,
+			"indicator remains inside the transcript",
+		);
+		assert.equal(lines.findIndex((line) => line.startsWith("──")) - rect.row - 1, 3);
+		assert.deepEqual(
+			frame.widgetsAbove.render(80),
+			widgetLines,
+			"installing the lifecycle widget preserves the existing host widget and spacer",
+		);
+		assert.deepEqual(
+			lines.slice(rect.row + 1),
+			baseline.slice(rect.row + 1),
+			"native label never paints the dock",
+		);
+		assert.deepEqual(
+			lines.slice(rect.row + 1, rect.row + 4).map((line) => line.trim()),
+			["", "Above-editor widget", "Second widget line"],
+		);
+		assert.ok(lines[rect.row].includes(custom ? "Back to bottom" : "Jump to latest message"));
+	});
+
 	for (const expanded of [true, false]) {
 		test(`real native indicator: click passes through ${expanded ? "expanded" : "collapsed"} card, custom=${custom}`, (t) => {
 			const frame = realFrame(t, custom);
@@ -260,6 +373,187 @@ for (const custom of [true, false]) {
 		});
 	}
 }
+
+for (const custom of [true, false]) {
+	test(`real scroll modes: dock keeps its row, text and click behavior, native text=${custom}`, (t) => {
+		const frame = realFrame(t, custom);
+		const nativeHeight = frame.scroll.viewportHeight;
+		config.scrollButtonMode = "dock";
+		frame.install();
+		let lines = frame.render().map(stripTerminalSequences);
+		const dockRow = lines.findIndex((line) => line.includes("[ ↓ Back to bottom · Ctrl+End ]"));
+		assert.ok(dockRow >= 0);
+		assert.equal(
+			frame.renderer.scrollToEndIndicatorRect,
+			undefined,
+			"dock suppresses native overlay",
+		);
+		assert.equal(frame.scroll.viewportHeight, nativeHeight - 1, "dock retains its dedicated row");
+		assert.equal(lines[dockRow - 1].trim(), "", "host spacer remains above dock button");
+		assert.equal(
+			lines.findIndex((line) => line.startsWith("──")),
+			dockRow + 1,
+		);
+		noteNewTranscriptItem();
+		noteNewTranscriptItem();
+		const counted = frame.render();
+		assert.match(stripTerminalSequences(counted[dockRow]), /\[ ↓ 2 new messages · Ctrl\+End \]/);
+		config.customNativeScrollToEndIndicatorText = !custom;
+		assert.deepEqual(
+			frame.render(),
+			counted,
+			"native text toggle cannot reset or change dock text",
+		);
+		config.customNativeScrollToEndIndicatorText = custom;
+		lines = frame.render().map(stripTerminalSequences);
+		const column = lines[dockRow].indexOf("[ ↓");
+		frame.tui.handleViewportInput(`\x1b[<35;${column + 1};${dockRow + 1}M`);
+		assert.notEqual(frame.render()[dockRow], counted[dockRow], "dock hover styling is preserved");
+		frame.tui.handleViewportInput(`\x1b[<0;${column + 1};${dockRow + 1}M`);
+		assert.equal(frame.scroll.isFollowingEnd, true, "dock press scrolls to end");
+		frame.render();
+		assert.deepEqual(frame.widgetsAbove.render(80), [""], "only the host spacer remains at end");
+		assert.equal(frame.scroll.viewportHeight, nativeHeight);
+		frame.tui.handleViewportInput(`\x1b[<0;${column + 1};${dockRow + 1}m`);
+		assert.equal(frame.card.toggles, 0);
+	});
+
+	test(`real scroll modes: switching dock/native/off restores each renderer, native text=${custom}`, (t) => {
+		const frame = realFrame(t, custom);
+		frame.install();
+		const nativeHeight = frame.scroll.viewportHeight;
+		for (let cycle = 0; cycle < 2; cycle++) {
+			config.scrollButtonMode = "dock";
+			assert.match(stripTerminalSequences(frame.render().join("\n")), /\[ ↓ Back to bottom/);
+			assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+			noteNewTranscriptItem();
+			assert.match(stripTerminalSequences(frame.render().join("\n")), /\[ ↓ 1 new message/);
+			config.scrollButtonMode = "native";
+			const lines = frame.render().map(stripTerminalSequences);
+			assert.equal(frame.scroll.viewportHeight, nativeHeight);
+			assert.deepEqual(frame.widgetsAbove.render(80), [""]);
+			assert.doesNotMatch(lines.join("\n"), /\[ ↓/);
+			assert.ok(frame.renderer.scrollToEndIndicatorRect);
+			assert.match(
+				frame.renderer.scrollToEndIndicator(),
+				custom ? /Back to bottom/ : /Jump to latest message/,
+			);
+			noteNewTranscriptItem();
+			assert.match(
+				frame.renderer.scrollToEndIndicator(),
+				custom ? /1 new message/ : /Jump to latest message/,
+			);
+		}
+		config.scrollButtonMode = "dock";
+		frame.render();
+		config.mode = "off";
+		frame.render();
+		assert.deepEqual(frame.widgetsAbove.render(80), [""]);
+		assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
+		assert.ok(frame.renderer.scrollToEndIndicatorRect);
+		config.mode = "on";
+		frame.render();
+		assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+		teardownToolMouseInteraction(frame.owner);
+		frame.render();
+		assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
+		assert.deepEqual(frame.widgetsAbove.render(80), [""]);
+		assert.ok(frame.renderer.scrollToEndIndicatorRect);
+	});
+}
+
+test("real dock indicator: a retained foreign wrapper survives widget rebuilds without duplicate buttons", (t) => {
+	const frame = realFrame(t);
+	frame.install();
+	const installed = frame.renderer.scrollToEndIndicator;
+	const foreign = function (this: any) {
+		return installed.call(this);
+	};
+	frame.renderer.scrollToEndIndicator = foreign;
+	config.scrollButtonMode = "dock";
+	frame.render();
+	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+	frame.install(); // session_compact replaces the widget but preserves the foreign callback chain
+	const lines = frame.render().map(stripTerminalSequences);
+	assert.match(lines.join("\n"), /\[ ↓ Back to bottom/);
+	assert.equal(
+		frame.renderer.scrollToEndIndicatorRect,
+		undefined,
+		"native overlay stays suppressed after rebuild",
+	);
+	config.scrollButtonMode = "native";
+	frame.render();
+	assert.equal(
+		frame.renderer.scrollToEndIndicator,
+		foreign,
+		"leaving dock restores the foreign callback itself",
+	);
+	assert.equal(
+		foreign.call(frame.renderer),
+		frame.original(),
+		"native customization does not reclaim a yielded callback",
+	);
+	config.scrollButtonMode = "dock";
+	frame.render();
+	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+	assert.equal(foreign.call(frame.renderer), frame.original());
+});
+
+test("real dock indicator: temporarily suppresses and restores a replacement native callback", (t) => {
+	const frame = realFrame(t);
+	frame.install();
+	const foreign = () => "another extension's native indicator";
+	frame.renderer.scrollToEndIndicator = foreign;
+	config.scrollButtonMode = "dock";
+	frame.render();
+	assert.equal(frame.renderer.scrollToEndIndicatorRect, undefined);
+	assert.equal(frame.widget.render(80).length, 1);
+	config.scrollButtonMode = "native";
+	frame.render();
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+	assert.deepEqual(frame.widget.render(80), []);
+	assert.ok(frame.renderer.scrollToEndIndicatorRect);
+	config.scrollButtonMode = "dock";
+	frame.render();
+	teardownToolMouseInteraction(frame.owner);
+	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
+});
+
+test("real dock indicator: keyboard, submit and programmatic follow reset the shared count", (t) => {
+	const frame = realFrame(t);
+	config.scrollButtonMode = "dock";
+	frame.install();
+	const awayWithItem = () => {
+		frame.scroll.scrollTo(10, { disableFollow: true });
+		frame.render();
+		noteNewTranscriptItem();
+		assert.match(stripTerminalSequences(frame.widget.render(80).join("\n")), /1 new message/);
+	};
+	const assertReset = () => {
+		assert.equal(frame.scroll.isFollowingEnd, true);
+		frame.render();
+		assert.deepEqual(frame.widget.render(80), []);
+		frame.scroll.scrollTo(10, { disableFollow: true });
+		assert.match(stripTerminalSequences(frame.render().join("\n")), /\[ ↓ Back to bottom/);
+	};
+	awayWithItem();
+	getKeybindings().setUserBindings({ "tui.altScreen.bottom": ["ctrl+j"] });
+	frame.renderer.handleTerminalInput("\x1b[1;5F");
+	assertReset();
+	awayWithItem();
+	frame.editor.setText("submit");
+	frame.editor.onSubmit = () => {
+		frame.renderer.scrollToBottom();
+		noteNewTranscriptItem();
+	};
+	frame.renderer.handleTerminalInput("\r");
+	assertReset();
+	awayWithItem();
+	frame.renderer.scrollToBottom();
+	assertReset();
+});
 
 test("real native indicator: clears pending custom collapse before native press/release", (t) => {
 	const frame = realFrame(t);
@@ -330,7 +624,11 @@ for (const custom of [true, false]) {
 			invalidate() {},
 		});
 		frame.install();
-		frame.terminal.rows = 2; // resizing leaves one transcript row above the editor
+		// Leave one transcript row without shrinking away the real editor or host spacer.
+		frame.terminal.rows =
+			1 +
+			frame.editor.render(frame.terminal.columns).length +
+			frame.widgetsAbove.render(frame.terminal.columns).length;
 		const lines = frame.render().map(stripTerminalSequences);
 		assert.equal(frame.scroll.viewportHeight, 1);
 		assert.match(lines[0], /pinned prompt/);
@@ -378,13 +676,14 @@ test("real native indicator: counts reset after native keyboard, wheel, submit a
 	frame.tui.handleViewportInput("\n");
 	assertReset();
 	awayWithItem();
-	frame.scroll.scrollTo(69, { disableFollow: true });
+	frame.scroll.scrollToEnd();
+	frame.scroll.scrollBy(-1); // One wheel step reaches the end at any editor/dock height.
 	frame.render();
 	frame.tui.handleViewportInput("\x1b[<65;75;5M");
 	assertReset();
 	awayWithItem();
-	(frame.editor as any).handleInput = (data: string) => {
-		if (data !== "\r") return;
+	frame.editor.setText("submit");
+	frame.editor.onSubmit = () => {
 		frame.renderer.scrollToBottom();
 		noteNewTranscriptItem(); // submit bookkeeping occurs after viewport input returns
 	};
@@ -402,10 +701,10 @@ test("real native indicator: counts reset after native keyboard, wheel, submit a
 	noteNewTranscriptItem();
 	noteNewTranscriptItem();
 	assert.match(frame.renderer.scrollToEndIndicator(), /3 new messages/);
-	resetNativeScrollIndicatorCount(); // session_tree
+	resetScrollIndicatorCount(); // session_tree
 	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
 	for (const enabled of [false, true, false, true]) {
-		config.customScrollToEndIndicatorText = enabled;
+		config.customNativeScrollToEndIndicatorText = enabled;
 		frame.render();
 		if (enabled) {
 			assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
@@ -505,11 +804,11 @@ test("real native indicator: live foreign wrappers retain custom text until disp
 	noteNewTranscriptItem();
 	assert.match(frame.renderer.scrollToEndIndicator(), /1 new message/);
 	assert.equal(frame.renderer.scrollToEndIndicator, foreign);
-	config.customScrollToEndIndicatorText = false;
+	config.customNativeScrollToEndIndicatorText = false;
 	frame.render();
 	noteNewTranscriptItem();
 	assert.equal(foreign.call(frame.renderer), `foreign:${frame.original()}`);
-	config.customScrollToEndIndicatorText = true;
+	config.customNativeScrollToEndIndicatorText = true;
 	frame.render();
 	assert.match(foreign.call(frame.renderer), /Back to bottom/);
 	assert.equal(frame.renderer.scrollToEndIndicator, foreign, "no rewrapping on option changes");

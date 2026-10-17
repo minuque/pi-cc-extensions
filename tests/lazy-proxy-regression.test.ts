@@ -368,7 +368,13 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 	}
 });
 
-test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
+test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async (t) => {
+	const previousScrollButtonMode = config.scrollButtonMode;
+	config.scrollButtonMode = "native";
+	t.after(() => {
+		installToolMouseInteraction({});
+		config.scrollButtonMode = previousScrollButtonMode;
+	});
 	const tool = createTool("tool-fullscreen");
 	const { terminal, writes } = createTerminalFixture();
 	let renderer = new FullscreenRenderer(tool, null, terminal);
@@ -468,7 +474,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(toolA.expanded, false, "expanding B collapses A");
 	assert.equal(toolB.expanded, true);
 
-	// The lifecycle widget never adds a dock row. Unsupported renderers retain native input.
+	// Native mode adds no dock row. Unsupported renderers retain native input.
 	renderer = new FullscreenRenderer(tool, ui.widget, terminal);
 	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
 	renderer.currentLayout.primaryScrollView.scrollTop = 50;

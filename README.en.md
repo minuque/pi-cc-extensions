@@ -29,7 +29,7 @@ Run `/reload` after installation.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes                                                   | `/ccstyle`                                      |
 | Markdown enhancements       | Mermaid dialects and circled-number conversion                                                                                               | Automatic; turn off with `enableMarkdownEnhance: false` |
-| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and custom native scroll-indicator text                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, a back-to-bottom button, and custom native indicator text                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
@@ -65,7 +65,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "toolLabelClip": 0,                      // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
-  "customScrollToEndIndicatorText": true,  // fullscreen: native indicator label becomes Back to bottom / N new message(s)
+  "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
+  "customNativeScrollToEndIndicatorText": true, // native mode only: customize indicator text; dock unchanged
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
@@ -96,7 +97,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 }
 ```
 
-**Scroll indicator text:** `customScrollToEndIndicatorText` defaults to `true`, replacing Pi’s `Jump to latest message` label with `Back to bottom` or `N new message(s)`. Styling, configured shortcut hints, layout and input remain native, with no extra row. The count uses transcript items (messages and tool cards) received while not following output. Set the option to `false` (or use `mode: "off"`) to keep the original text.
+**Back to bottom:** `scrollButtonMode` defaults to `"dock"`, using the extension’s back-to-bottom row; set it to `"native"` to use Pi’s floating overlay. The independent `customNativeScrollToEndIndicatorText` option defaults to `true` and applies only with `scrollButtonMode: "native"`, replacing Pi’s `Jump to latest message` with the shared dock labels `Back to bottom` or `N new message(s)`. The count uses transcript items (messages and tool cards) received while not following output. Only the native text changes: styling, configured shortcut hints, placement, layout, and input behavior stay unchanged. Set the boolean to `false` (or use `mode: "off"`) to keep the original native text; the toggle never changes dock text, layout, or behavior.
 
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse.
@@ -115,8 +116,7 @@ pi -e .              # one run, does not edit settings.json
 ## Compatibility
 
 - Node.js `>=22.19.0`, Pi `^0.84.0`
-- Native scroll-indicator text is an optional fullscreen enhancement detected by runtime capability, not version. Unsupported, disabled or read-only interfaces and unrecognized native labels remain unchanged; no fallback button is added.
-- Deprecated `scrollButtonMode` migrates from `dock` to `customScrollToEndIndicatorText: true`, and `native` to `false`. An explicit new boolean takes precedence; saved config contains only the new key (default `true`).
+- Native scroll-indicator text is an optional fullscreen enhancement only for `scrollButtonMode: "native"`, detected by runtime capability rather than version. Unsupported, disabled or read-only interfaces and unrecognized native labels remain unchanged; there is no automatic fallback to dock.
 
 ## Recommended companions
 

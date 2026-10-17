@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
-import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
+import { config } from "../extensions/config/config.ts";
 import {
 	concreteToolMouseTui,
 	installNativeScrollIndicator,
@@ -27,7 +26,8 @@ function rendererFixture() {
 function setup(t: TestContext, renderer: any = rendererFixture()) {
 	const previous = { ...config };
 	config.mode = "on";
-	config.customScrollToEndIndicatorText = true;
+	config.scrollButtonMode = "native";
+	config.customNativeScrollToEndIndicatorText = true;
 	let activeRenderer = renderer;
 	const tui = createLazyProxy(() => activeRenderer);
 	setToolMouseTui(tui);
@@ -48,63 +48,57 @@ function setup(t: TestContext, renderer: any = rendererFixture()) {
 	};
 }
 
-test("native indicator: defaults, legacy migration, explicit boolean precedence and short status", () => {
-	assert.equal(normalizeConfig({}).customScrollToEndIndicatorText, true);
-	for (const [legacy, expected] of [
-		["dock", true],
-		["native", false],
-		["invalid", true],
-	] as const) {
-		assert.equal(
-			normalizeConfig({ scrollButtonMode: legacy }).customScrollToEndIndicatorText,
-			expected,
+for (const custom of [true, false]) {
+	test(`scroll indicators: dock text is independent of native customization=${custom}`, (t) => {
+		const { adapter, tui, renderer } = setup(t);
+		config.scrollButtonMode = "dock";
+		config.customNativeScrollToEndIndicatorText = custom;
+		adapter.reconcile(tui);
+		const theme = { fg: (_color: string, text: string) => text };
+		assert.match(adapter.renderDock(80, theme)[0], /\[ ↓ Back to bottom · Ctrl\+End \]/);
+		assert.equal(renderer.scrollToEndIndicator(), "", "dock suppresses the native overlay");
+		for (const label of ["1 new message", "2 new messages"]) {
+			adapter.noteItem();
+			assert.ok(adapter.renderDock(80, theme)[0].includes(`[ ↓ ${label} · Ctrl+End ]`));
+		}
+		config.scrollButtonMode = "native";
+		adapter.reconcile(tui);
+		assert.deepEqual(adapter.renderDock(80, theme), []);
+		assert.match(
+			renderer.scrollToEndIndicator(),
+			custom ? /Back to bottom/ : /Jump to latest message/,
 		);
-		assert.equal(
-			normalizeConfig({ scrollButtonMode: legacy, customScrollToEndIndicatorText: "false" })
-				.customScrollToEndIndicatorText,
-			expected,
-		);
-		for (const value of [true, false]) {
-			const normalized = normalizeConfig({
-				scrollButtonMode: legacy,
-				customScrollToEndIndicatorText: value,
-			});
-			assert.equal(normalized.customScrollToEndIndicatorText, value);
-			assert.ok(!("scrollButtonMode" in normalized));
-			assert.match(
-				formatConfigStatus(normalized),
-				new RegExp(`scrollIndicatorText=${value ? "on" : "off"}`),
-			);
-			assert.doesNotMatch(
-				formatConfigStatus(normalized),
-				/scrollButton=|customScrollToEndIndicatorText=/,
+		for (const label of ["1 new message", "2 new messages"]) {
+			adapter.noteItem();
+			assert.ok(
+				renderer.scrollToEndIndicator().includes(custom ? label : "Jump to latest message"),
 			);
 		}
-	}
-});
+		config.scrollButtonMode = "dock";
+		adapter.reconcile(tui);
+		assert.match(adapter.renderDock(80, theme)[0], /Back to bottom/);
+		renderer.isFollowingOutput = true;
+		adapter.reconcile(tui);
+		assert.deepEqual(adapter.renderDock(80, theme), []);
+	});
+}
 
-test("native indicator: saving migrated config writes only the new boolean", () => {
-	const dir = mkdtempSync(join(tmpdir(), "cc-scroll-config-"));
-	try {
-		const path = join(dir, "pi-cc-extensions.json");
-		writeFileSync(path, JSON.stringify({ scrollButtonMode: "native" }));
-		const env: NodeJS.ProcessEnv = { ...process.env, PI_CODING_AGENT_DIR: dir };
-		delete env.PI_PACKAGE_DIR;
-		execFileSync(
-			process.execPath,
-			[
-				"--input-type=module",
-				"-e",
-				`import { saveConfig } from ${JSON.stringify(new URL("../extensions/config/config.ts", import.meta.url).href)}; saveConfig();`,
-			],
-			{ env },
-		);
-		const saved = JSON.parse(readFileSync(path, "utf8"));
-		assert.equal(saved.customScrollToEndIndicatorText, false);
-		assert.ok(!("scrollButtonMode" in saved));
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
+test("dock suppression does not invoke the hidden native text callback", (t) => {
+	let calls = 0;
+	const renderer = rendererFixture();
+	renderer.scrollToEndIndicator = () => {
+		calls++;
+		return "Jump to latest message";
+	};
+	const { adapter, tui } = setup(t, renderer);
+	config.scrollButtonMode = "dock";
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator(), "");
+	assert.equal(calls, 0);
+	config.scrollButtonMode = "native";
+	adapter.reconcile(tui);
+	assert.equal(renderer.scrollToEndIndicator(), "Back to bottom");
+	assert.equal(calls, 1);
 });
 
 test("native indicator: replaces only the known phrase and preserves the raw callback contract", (t) => {
@@ -212,9 +206,21 @@ test("native indicator: module reload preserves takeover ownership and relinquis
 	adapter.reconcile(tui);
 	const old = renderer.scrollToEndIndicator;
 	const jiti = createJiti(import.meta.url, { moduleCache: false });
-	const reloaded = (await jiti.import(
-		new URL("../extensions/renderer/mouse/scroll.ts", import.meta.url).pathname,
-	)) as typeof import("../extensions/renderer/mouse/scroll.ts");
+	// A reloaded config module reads persisted settings, not this module's in-memory setup.
+	const dir = mkdtempSync(join(tmpdir(), "cc-scroll-reload-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	let reloaded: typeof import("../extensions/renderer/mouse/scroll.ts");
+	try {
+		writeFileSync(join(dir, "pi-cc-extensions.json"), JSON.stringify(config));
+		process.env.PI_CODING_AGENT_DIR = dir;
+		reloaded = (await jiti.import(
+			new URL("../extensions/renderer/mouse/scroll.ts", import.meta.url).pathname,
+		)) as typeof import("../extensions/renderer/mouse/scroll.ts");
+	} finally {
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
 	const next = reloaded.installNativeScrollIndicator();
 	t.after(() => next.dispose());
 	next.reconcile(tui);

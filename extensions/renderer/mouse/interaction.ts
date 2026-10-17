@@ -47,8 +47,15 @@ import {
 } from "./layout.ts";
 import {
 	concreteToolMouseTui,
+	dockScrollButtonActive,
 	fullscreenLazyTui,
+	getScrollButtonVisible,
+	getScrollButtonWidget,
 	installNativeScrollIndicator,
+	isScrollBottomInput,
+	resetScrollIndicatorCount,
+	setScrollButtonHovered,
+	setScrollButtonWidget,
 	setToolMouseTui,
 	getToolMouseTui,
 	toolMouseInteractionActive,
@@ -377,6 +384,13 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	// 面板内工具行命中时 release 统一由扩展结算。
 	const card = target.group ?? target.owner ?? component;
 	const pressComponent = target.owner ?? component;
+	// dock 仍按组件引用命中，保留独占行的点击行为。
+	if (getScrollButtonVisible() && component === getScrollButtonWidget()) {
+		clearPendingCollapsePress();
+		tui.scrollToBottom?.();
+		resetScrollIndicatorCount();
+		return true;
+	}
 	const line = hit.box.lines?.[hit.localRow];
 	if (typeof line !== "string" || /\x1b]8;[^;]*;/.test(line)) return false;
 	const isTool = isToolExecutionComponent(component);
@@ -494,7 +508,11 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	const hit = fullscreenLeafAt(layout, x, y);
 	if (hit) {
 		const line = hit.box.lines?.[hit.localRow];
-		if (typeof line === "string" && !/\x1b]8;/.test(line)) {
+		if (typeof line === "string" && getScrollButtonVisible() && line.includes("[ ↓")) {
+			const plain = stripTerminalSequencesPreservingLayout(line);
+			const start = plain.indexOf("[ ↓");
+			if (x >= start && x < plain.length) target = { kind: "button" };
+		} else if (typeof line === "string" && !/\x1b]8;/.test(line)) {
 			const width = Math.max(1, Number(tui.terminal?.columns) || 80);
 			const contentWidth = fullscreenContentWidth(hit.box, width);
 			// 与点击共用同一定位算法，避免 hover 自建行段与真实组件树错位。
@@ -960,8 +978,16 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!getToolMouseTui()) return undefined;
-	// fullscreen 的视口输入（包括已配置的导航键）交给 Pi。
-	if (fullscreenLazyTui(getToolMouseTui())) return undefined;
+	// dock 保留原来的 Ctrl+End；native 的导航键完全交给 Pi。
+	if (fullscreenLazyTui(getToolMouseTui())) {
+		if (dockScrollButtonActive() && isScrollBottomInput(data)) {
+			getToolMouseTui().scrollToBottom?.();
+			resetScrollIndicatorCount();
+			toolMouseWidget?.reconcile();
+			return { consume: true };
+		}
+		return undefined;
+	}
 	// Off mode restores native input: wheel keeps scrolling through Pi's normal
 	// dispatcher, while hover/click affordances are entirely inactive.
 	if (!toolMouseInteractionActive()) return undefined;
@@ -1118,7 +1144,7 @@ export function installToolMouseInteraction(
 	toolMouseUi = ctx.ui;
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen
 	// 由官方 LayoutFrame 命中，并由扩展补齐 hover 所需的 all-motion 上报。
-	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any) => {
+	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		if (!patchRegistry.owns(TOOL_MOUSE_OWNER_KEY, owner))
 			return { render: () => [], invalidate() {} };
 		toolMouseWidget?.dispose();
@@ -1142,9 +1168,10 @@ export function installToolMouseInteraction(
 		};
 		const widget = {
 			reconcile,
-			render() {
+			render(width: number) {
+				if (disposed) return [];
 				reconcile();
-				return [];
+				return indicator.renderDock(width, theme);
 			},
 			invalidate() {},
 			dispose() {
@@ -1152,9 +1179,14 @@ export function installToolMouseInteraction(
 				disposed = true;
 				indicator.dispose();
 				disposeViewportInput?.();
+				if (getScrollButtonWidget() === widget) {
+					setScrollButtonWidget(null);
+					setScrollButtonHovered(false);
+				}
 			},
 		};
 		toolMouseWidget = widget;
+		setScrollButtonWidget(widget);
 		reconcile();
 		if (!isLazyProxyTui(tui) && toolMouseInteractionActive())
 			tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
