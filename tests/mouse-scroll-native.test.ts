@@ -5,6 +5,7 @@ import { CustomEditor, initTheme, InteractiveMode } from "@earendil-works/pi-cod
 import {
 	Container,
 	getKeybindings,
+	Input,
 	MouseRegion,
 	setKeybindings,
 	stripTerminalSequences,
@@ -331,4 +332,39 @@ test("one-row sticky prompt paints after native and wins clicks", (t) => {
 	frame.tui.handleViewportInput(frame.packet(0));
 	assert.equal(frame.scroll.scrollTop, 0, "the sticky row handles the overlapping click");
 	assert.equal(frame.scroll.isFollowingEnd, false);
+});
+
+test("rebound bottom key stays with a focused overlay and only Pi's binding follows output", async (t) => {
+	const frame = realFrame(t);
+	config.scrollButtonMode = "dock";
+	getKeybindings().setUserBindings({ "tui.altScreen.bottom": "end" });
+	frame.install();
+	const dockRow = () =>
+		frame
+			.render()
+			.map(stripTerminalSequences)
+			.find((line) => line.includes("Back to bottom"))
+			?.trim();
+	const settle = () => new Promise((resolve) => process.nextTick(resolve));
+	frame.renderer.handleTerminalInput("\x1b[<64;2;2M"); // Wheel up through the real input chain.
+	await settle();
+	assert.equal(dockRow(), "[ ↓ Back to bottom · End ]");
+
+	const input = new Input();
+	input.setValue("abc");
+	input.handleInput("\x1b[H"); // Home: cursor before abc.
+	const overlay = frame.renderer.showOverlay(input, { width: 30, maxHeight: 1 });
+	frame.render();
+	frame.renderer.handleTerminalInput("\x1b[F"); // End
+	frame.renderer.handleTerminalInput("z");
+	assert.equal(input.getValue(), "abcz", "Pi defers End to the focused overlay input");
+	assert.equal(frame.scroll.isFollowingEnd, false, "the transcript underneath does not move");
+	overlay.hide();
+
+	frame.renderer.handleTerminalInput("\x1b[1;5F"); // Ctrl+End
+	assert.equal(frame.scroll.isFollowingEnd, false, "the old default is not a hidden shortcut");
+	frame.renderer.handleTerminalInput("\x1b[F"); // End
+	await settle();
+	assert.equal(frame.scroll.isFollowingEnd, true, "the rebound key follows output");
+	assert.equal(dockRow(), undefined, "the dock row hides at the bottom");
 });

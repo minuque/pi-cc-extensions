@@ -219,11 +219,6 @@ function scrollBottomShortcutText(): string {
 		.join("/");
 }
 
-/** 与标签读同一份绑定：用户改绑后，显示的键就是生效的键。 */
-export function isScrollBottomInput(data: string): boolean {
-	return getKeybindings().matches(data, SCROLL_BOTTOM_KEYBINDING);
-}
-
 function isScrollNavigationInput(data: string): boolean {
 	if (
 		matchesKey(data, "pageUp") ||

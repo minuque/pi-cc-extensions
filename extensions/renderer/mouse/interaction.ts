@@ -52,7 +52,6 @@ import {
 	restoreOfficialScrollToEnd,
 	restoreNativeScrollIndicatorText,
 	syncOfficialScrollToEnd,
-	isScrollBottomInput,
 	renderScrollButton,
 	resetScrollButtonState,
 	scheduleScrollButtonSync,
@@ -1006,13 +1005,9 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!getToolMouseTui()) return undefined;
 	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
 	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。
+	// 回底键归 Pi viewport（tui.altScreen.bottom，overlay 聚焦时让给 overlay），不在此重复处理。
 	if (fullscreenLazyTui(getToolMouseTui())) {
 		scheduleScrollButtonSync(getToolMouseTui(), data);
-		if (isScrollBottomInput(data)) {
-			getToolMouseTui().scrollToBottom?.();
-			hideScrollButton(getToolMouseTui());
-			return { consume: true };
-		}
 		return undefined;
 	}
 	updateScrollButtonFromInput(getToolMouseTui(), data);

@@ -568,9 +568,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	tui.handleViewportInput("\x1b[5~"); // PageUp
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "PageUp away from bottom shows the button");
-	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
-	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
-	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
 });
 

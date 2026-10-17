@@ -12,7 +12,6 @@ import {
 	disableOfficialScrollToEnd,
 	getScrollButtonNewCount,
 	hideScrollButton,
-	isScrollBottomInput,
 	noteNewTranscriptItem,
 	renderScrollButton,
 	resetScrollButtonState,
@@ -45,7 +44,6 @@ function fakeTheme() {
 
 // SGR 滚轮包（code 65 = 向下滚动），不依赖键绑定表，纯字符串解析即可命中。
 const WHEEL_DOWN_INPUT = "\x1b[<65;1;1M";
-const CTRL_END_INPUT = "\x1b[1;5F";
 
 // Pi 原生浮层的快捷键文案来源（未从包入口导出）。
 const { keyDisplayText } = await import(
@@ -290,7 +288,7 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	setToolMouseTui(null);
 });
 
-// dock 标签与回底按键读同一份 tui.altScreen.bottom 绑定，与 Pi 原生浮层同源。
+// dock 标签读 tui.altScreen.bottom 绑定，与 Pi 原生浮层同源；按键本身由 Pi viewport 处理。
 test("scroll button: dock shortcut follows the tui.altScreen.bottom binding", async (t) => {
 	const previousBindings = getKeybindings();
 	const { tui } = lazyFullscreenTui();
@@ -305,19 +303,14 @@ test("scroll button: dock shortcut follows the tui.altScreen.bottom binding", as
 	const dockRow = () => renderScrollButton(80, fakeTheme()).map((line) => line.trim());
 
 	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+End ]"]);
-	assert.equal(isScrollBottomInput(CTRL_END_INPUT), true);
 
 	setKeybindings(
 		new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": ["ctrl+g", "ctrl+b"] }),
 	);
 	assert.equal(keyDisplayText("tui.altScreen.bottom"), "Ctrl+G/Ctrl+B");
 	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+G/Ctrl+B ]"], "标签与 Pi 原生文案一致");
-	assert.equal(isScrollBottomInput("\x07"), true, "ctrl+g 回底");
-	assert.equal(isScrollBottomInput("\x02"), true, "ctrl+b 回底");
-	assert.equal(isScrollBottomInput(CTRL_END_INPUT), false, "改绑后不再拦截 ctrl+end");
 
 	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": [] }));
 	assert.equal(keyDisplayText("tui.altScreen.bottom"), "");
 	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom ]"], "未绑定时与 Pi 一样省略快捷键");
-	assert.equal(isScrollBottomInput(CTRL_END_INPUT), false);
 });
