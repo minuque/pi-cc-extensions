@@ -271,6 +271,22 @@ test("native text toggle changes only the real native label and preserves host g
 	);
 });
 
+test("native indicator over a collapsed tool hint follows output without expanding the card", (t) => {
+	const frame = realFrame(t, false); // Original native text: the click fix is independent of seeding.
+	frame.install();
+	frame.render();
+	assert.equal(frame.scroll.isFollowingEnd, false);
+	assert.equal(frame.card.expanded, false);
+	frame.tui.handleViewportInput(frame.packet(0));
+	assert.equal(
+		frame.card.expanded,
+		false,
+		"the hidden tool hint must not receive the indicator press",
+	);
+	assert.equal(frame.card.toggles, 0);
+	assert.equal(frame.scroll.isFollowingEnd, true, "Pi receives the press and follows output again");
+});
+
 test("native indicator clears a pending card press and still yields to an overlay", (t) => {
 	const frame = realFrame(t);
 	frame.card.expanded = true;
