@@ -66,10 +66,8 @@ export type Config = {
 	showStartupHeader: boolean;
 	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
 	stickyUserMessage: boolean;
-	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层。 */
+	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层；两者文案相同。 */
 	scrollButtonMode: ScrollButtonMode;
-	/** 仅 native 模式：定制原生回到底部指示器文案，不影响 dock。 */
-	customNativeScrollToEndIndicatorText: boolean;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -155,7 +153,6 @@ export const DEFAULT_CONFIG: Config = {
 	showStartupHeader: true,
 	stickyUserMessage: true,
 	scrollButtonMode: "dock",
-	customNativeScrollToEndIndicatorText: true,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -290,7 +287,6 @@ export function normalizeConfig(input: unknown): Config {
 			SCROLL_BUTTON_MODES,
 			DEFAULT_CONFIG.scrollButtonMode,
 		),
-		customNativeScrollToEndIndicatorText: source.customNativeScrollToEndIndicatorText !== false,
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -363,7 +359,6 @@ export function formatConfigStatus(source: Config = config): string {
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
 		`scrollButton=${source.scrollButtonMode}`,
-		`nativeScrollIndicatorText=${source.customNativeScrollToEndIndicatorText ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,

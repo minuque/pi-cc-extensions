@@ -145,7 +145,7 @@ export function restoreOfficialScrollToEnd(tui: any): void {
 	tui[OFFICIAL_SCROLL_TO_END_KEY] = undefined;
 }
 
-/** dock 模式替换官方浮层；native 或 ccstyle off 时保留 Pi 原生 Jump to latest。 */
+/** dock 模式替换官方浮层；native 保留 Pi 原生浮层并换上 dock 文案；ccstyle off 还原 Pi 原样。 */
 export function syncOfficialScrollToEnd(tui: any): void {
 	if (!nativeScrollTextEnabled(tui)) restoreNativeScrollIndicatorText();
 	if (dockScrollButtonActive()) {
@@ -169,14 +169,11 @@ let nativeScrollTextPatch: { renderer: any; original: () => string } | undefined
 
 function nativeScrollTextEnabled(tui: any): boolean {
 	return (
-		toolMouseInteractionActive() &&
-		config.scrollButtonMode === "native" &&
-		config.customNativeScrollToEndIndicatorText &&
-		fullscreenLazyTui(tui)
+		toolMouseInteractionActive() && config.scrollButtonMode === "native" && fullscreenLazyTui(tui)
 	);
 }
 
-/** widget 销毁、关闭文案选项或离开 native 模式时还原 Pi 的原始回调。 */
+/** widget 销毁或离开 native 模式时还原 Pi 的原始回调。 */
 export function restoreNativeScrollIndicatorText(): void {
 	if (!nativeScrollTextPatch) return;
 	const { renderer, original } = nativeScrollTextPatch;

@@ -74,14 +74,13 @@ class Card extends Container {
 	}
 }
 
-function realFrame(t: TestContext, custom = true) {
+function realFrame(t: TestContext) {
 	const previous = { ...config };
 	const bindings = getKeybindings();
 	const keybindings = new KeybindingsManager();
 	setKeybindings(keybindings);
 	config.mode = "on";
 	config.scrollButtonMode = "native";
-	config.customNativeScrollToEndIndicatorText = custom;
 	const terminal: any = {
 		columns: WIDTH,
 		rows: 12,
@@ -193,19 +192,8 @@ function realFrame(t: TestContext, custom = true) {
 	};
 }
 
-test("native text toggle changes only the real native label and preserves host geometry", (t) => {
-	const frame = realFrame(t, false);
-	const mainNativeFrame = frame.render();
-	frame.install();
-	assert.deepEqual(
-		frame.render(),
-		mainNativeFrame,
-		"disabled option preserves the unmodified native frame",
-	);
-	assert.deepEqual(frame.widget.render(WIDTH), [], "the lifecycle widget adds no rows");
-	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""], "Pi's Spacer(1) remains installed");
-	assert.equal(frame.editor.render(WIDTH).length, 3, "the real editor keeps its three rows");
-
+test("native mode changes only the real native label and preserves host geometry", (t) => {
+	const frame = realFrame(t);
 	const geometry = () => {
 		const lines = frame.render();
 		const plain = lines.map(stripTerminalSequences);
@@ -218,26 +206,25 @@ test("native text toggle changes only the real native label and preserves host g
 		return { lines, rect, editorRow, viewportHeight: frame.scroll.viewportHeight };
 	};
 
+	// Unmodified Pi, before the extension installs.
 	const baseline = geometry();
 	assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
 	assert.match(frame.original.call(frame.renderer), /Jump to latest message/);
 
-	config.customNativeScrollToEndIndicatorText = true;
-	const custom = geometry();
+	frame.install();
+	const seeded = geometry();
+	assert.deepEqual(frame.widget.render(WIDTH), [], "the lifecycle widget adds no rows");
+	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""], "Pi's Spacer(1) remains installed");
+	assert.equal(frame.editor.render(WIDTH).length, 3, "the real editor keeps its three rows");
 	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
-	assert.equal(custom.rect.row, baseline.rect.row);
-	assert.equal(custom.editorRow, baseline.editorRow);
-	assert.equal(custom.viewportHeight, baseline.viewportHeight);
+	assert.equal(seeded.rect.row, baseline.rect.row);
+	assert.equal(seeded.editorRow, baseline.editorRow);
+	assert.equal(seeded.viewportHeight, baseline.viewportHeight);
 	assert.deepEqual(
-		custom.lines.filter((_line, row) => row !== custom.rect.row),
+		seeded.lines.filter((_line, row) => row !== seeded.rect.row),
 		baseline.lines.filter((_line, row) => row !== baseline.rect.row),
 		"only the native indicator row changes",
 	);
-
-	config.customNativeScrollToEndIndicatorText = false;
-	const restored = geometry();
-	assert.equal(frame.renderer.scrollToEndIndicator, frame.original);
-	assert.deepEqual(restored.lines, baseline.lines);
 
 	config.scrollButtonMode = "dock";
 	frame.render();
@@ -247,32 +234,26 @@ test("native text toggle changes only the real native label and preserves host g
 		"dock uses main's overlay suppression",
 	);
 	config.scrollButtonMode = "native";
-	assert.deepEqual(frame.render(), baseline.lines);
-	const originalAfterDock = frame.renderer.scrollToEndIndicator;
-	config.customNativeScrollToEndIndicatorText = true;
-	frame.render();
-	assert.notEqual(frame.renderer.scrollToEndIndicator, originalAfterDock);
-	config.customNativeScrollToEndIndicatorText = false;
-	assert.deepEqual(frame.render(), baseline.lines);
-	assert.equal(frame.renderer.scrollToEndIndicator, originalAfterDock);
+	assert.deepEqual(frame.render(), seeded.lines);
 
-	config.customNativeScrollToEndIndicatorText = true;
-	frame.render();
 	config.mode = "off";
-	frame.render();
-	assert.equal(frame.renderer.scrollToEndIndicator, originalAfterDock);
+	assert.deepEqual(frame.render(), baseline.lines, "ccstyle off restores Pi's original label");
+	const originalAfterOff = frame.renderer.scrollToEndIndicator;
+	assert.match(originalAfterOff(), /Jump to latest message/);
 	config.mode = "on";
+	assert.deepEqual(frame.render(), seeded.lines);
+	assert.notEqual(frame.renderer.scrollToEndIndicator, originalAfterOff);
 	frame.render();
 	teardownToolMouseInteraction(frame.owner);
 	assert.equal(
 		frame.renderer.scrollToEndIndicator,
-		originalAfterDock,
+		originalAfterOff,
 		"widget disposal restores only native text",
 	);
 });
 
 test("native indicator over a collapsed tool hint follows output without expanding the card", (t) => {
-	const frame = realFrame(t, false); // Original native text: the click fix is independent of seeding.
+	const frame = realFrame(t);
 	frame.install();
 	frame.render();
 	assert.equal(frame.scroll.isFollowingEnd, false);
@@ -323,8 +304,8 @@ test("native indicator clears a pending card press and still yields to an overla
 	handle.hide();
 });
 
-test("one-row sticky prompt paints after native and wins clicks for either text setting", (t) => {
-	const frame = realFrame(t, false);
+test("one-row sticky prompt paints after native and wins clicks", (t) => {
+	const frame = realFrame(t);
 	config.stickyUserMessage = true;
 	setStickyPromptTheme(theme);
 	assert.equal(installStickyPromptFramePatch(), true);
@@ -340,20 +321,14 @@ test("one-row sticky prompt paints after native and wins clicks for either text 
 	frame.terminal.rows =
 		1 + frame.editor.render(WIDTH).length + frame.widgetsAbove.render(WIDTH).length;
 
-	for (const custom of [false, true]) {
-		config.customNativeScrollToEndIndicatorText = custom;
-		frame.scroll.scrollTo(10, { disableFollow: true });
-		const lines = frame.render().map(stripTerminalSequences);
-		assert.equal(frame.scroll.viewportHeight, 1);
-		assert.match(lines[0], /pinned prompt/);
-		assert.doesNotMatch(lines[0], /Back to bottom|Jump to latest message/);
-		assert.ok(frame.renderer.scrollToEndIndicatorRect);
-		assert.match(
-			frame.renderer.scrollToEndIndicator(),
-			custom ? /Back to bottom/ : /Jump to latest message/,
-		);
-		frame.tui.handleViewportInput(frame.packet(0));
-		assert.equal(frame.scroll.scrollTop, 0, "the sticky row handles the overlapping click");
-		assert.equal(frame.scroll.isFollowingEnd, false);
-	}
+	frame.scroll.scrollTo(10, { disableFollow: true });
+	const lines = frame.render().map(stripTerminalSequences);
+	assert.equal(frame.scroll.viewportHeight, 1);
+	assert.match(lines[0], /pinned prompt/);
+	assert.doesNotMatch(lines[0], /Back to bottom|Jump to latest message/);
+	assert.ok(frame.renderer.scrollToEndIndicatorRect);
+	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+	frame.tui.handleViewportInput(frame.packet(0));
+	assert.equal(frame.scroll.scrollTop, 0, "the sticky row handles the overlapping click");
+	assert.equal(frame.scroll.isFollowingEnd, false);
 });

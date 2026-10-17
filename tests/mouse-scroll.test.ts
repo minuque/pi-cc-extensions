@@ -41,16 +41,6 @@ const WHEEL_DOWN_INPUT = "\x1b[<65;1;1M";
 
 test("scroll button: config defaults to dock and accepts native", () => {
 	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
-	for (const scrollButtonMode of ["dock", "native"]) {
-		assert.equal(normalizeConfig({ scrollButtonMode }).customNativeScrollToEndIndicatorText, true);
-		const normalized = normalizeConfig({
-			scrollButtonMode,
-			customNativeScrollToEndIndicatorText: false,
-		});
-		assert.equal(normalized.scrollButtonMode, scrollButtonMode);
-		assert.equal(normalized.customNativeScrollToEndIndicatorText, false);
-		assert.match(formatConfigStatus(normalized), /nativeScrollIndicatorText=off/);
-	}
 	assert.equal(normalizeConfig({ scrollButtonMode: "native" }).scrollButtonMode, "native");
 	assert.equal(normalizeConfig({ scrollButtonMode: "invalid" }).scrollButtonMode, "dock");
 	assert.match(
@@ -64,7 +54,6 @@ test("native text: absent native callback stays absent without a fallback button
 	const { tui } = lazyFullscreenTui();
 	try {
 		config.scrollButtonMode = "native";
-		config.customNativeScrollToEndIndicatorText = true;
 		setToolMouseTui(tui);
 		syncOfficialScrollToEnd(tui);
 		noteNewTranscriptItem();
@@ -160,12 +149,7 @@ test("scroll button: off mode restores official overlay", () => {
 	}
 });
 
-test("scroll button: native mode restores Pi overlay and omits dock row", async (t) => {
-	const previousCustomText = config.customNativeScrollToEndIndicatorText;
-	config.customNativeScrollToEndIndicatorText = false;
-	t.after(() => {
-		config.customNativeScrollToEndIndicatorText = previousCustomText;
-	});
+test("scroll button: native mode seeds dock text into Pi overlay and omits dock row", async () => {
 	const previousMode = config.mode;
 	const previousScrollButtonMode = config.scrollButtonMode;
 	const { tui, count } = lazyFullscreenTui();
@@ -180,16 +164,22 @@ test("scroll button: native mode restores Pi overlay and omits dock row", async 
 
 		config.scrollButtonMode = "native";
 		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, indicator);
+		assert.equal(tui.scrollToEndIndicator(), "Back to bottom", "native 浮层换上 dock 文案");
 		scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(count(), 0, "native 模式不调度 dock 按钮重绘");
 		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
 
+		config.mode = "off";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, indicator, "ccstyle off 还原 Pi 原始回调");
+
+		config.mode = "on";
 		config.scrollButtonMode = "dock";
 		syncOfficialScrollToEnd(tui);
 		assert.equal(tui.scrollToEndIndicator, undefined);
 	} finally {
+		restoreNativeScrollIndicatorText();
 		config.mode = previousMode;
 		config.scrollButtonMode = previousScrollButtonMode;
 		resetScrollButtonState();
@@ -228,15 +218,6 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	assert.ok(text.includes("[ ↓ 3 new messages · Ctrl+End ]"), `多条用复数：${text}`);
 	assert.ok(!text.includes("Back to bottom"), "有计数时不再显示原正文");
 	dockPhrases.push(phrase(text));
-	const previousCustomText = config.customNativeScrollToEndIndicatorText;
-	config.customNativeScrollToEndIndicatorText = !previousCustomText;
-	syncOfficialScrollToEnd(tui);
-	assert.equal(
-		renderScrollButton(80, fakeTheme()).join("\n"),
-		text,
-		"native 文案开关不改变 dock 的计数或文案",
-	);
-	config.customNativeScrollToEndIndicatorText = previousCustomText;
 
 	// 滚回底部：按钮隐藏且计数清零；再离开底部时从 0 重新计数。
 	tui.isFollowingOutput = true;
@@ -272,7 +253,6 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	const previous = { ...config };
 	try {
 		config.scrollButtonMode = "native";
-		config.customNativeScrollToEndIndicatorText = true;
 		tui.isFollowingOutput = false;
 		tui.scrollToEndIndicator = () => "Jump to latest message";
 		syncOfficialScrollToEnd(tui);

@@ -66,7 +66,6 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
   "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
-  "customNativeScrollToEndIndicatorText": true, // fullscreen native only: reuse dock text
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
@@ -100,7 +99,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 > [!TIP]
 > **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse.
 >
-> With `scrollButtonMode: "native"`, `customNativeScrollToEndIndicatorText` (default `true`) uses the same `Back to bottom` / `N new message(s)` text as dock mode. Set it to `false` for Pi’s original text. Dock mode is unaffected.
+> Both `scrollButtonMode` values show the same `Back to bottom` / `N new message(s)` text: `dock` draws it in a dedicated row, `native` in Pi’s floating overlay.
 
 > [!NOTE]
 > **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.

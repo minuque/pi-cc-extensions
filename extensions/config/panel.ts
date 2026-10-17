@@ -608,17 +608,9 @@ export async function showCcstylePanel(
 			description:
 				config.scrollButtonMode === "dock"
 					? "Fullscreen: show the extension's dedicated Back to bottom row."
-					: "Fullscreen: use Pi's native floating Jump to latest overlay.",
+					: "Fullscreen: show the same Back to bottom text in Pi's native floating overlay.",
 			currentValue: config.scrollButtonMode,
 			values: [...SCROLL_BUTTON_MODES],
-		};
-		const nativeScrollIndicatorTextSetting = {
-			id: "customNativeScrollToEndIndicatorText",
-			label: "Custom native scroll indicator text",
-			description:
-				"Native mode only: on uses the dock labels; off keeps Pi's original text. Dock is unchanged.",
-			currentValue: config.customNativeScrollToEndIndicatorText ? "on" : "off",
-			values: ["on", "off"],
 		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
@@ -1028,15 +1020,8 @@ export async function showCcstylePanel(
 					scrollButtonSetting.description =
 						config.scrollButtonMode === "dock"
 							? "Fullscreen: show the extension's dedicated Back to bottom row."
-							: "Fullscreen: use Pi's native floating Jump to latest overlay.";
+							: "Fullscreen: show the same Back to bottom text in Pi's native floating overlay.";
 					break;
-				}
-				case "customNativeScrollToEndIndicatorText": {
-					updateConfig({ customNativeScrollToEndIndicatorText: value === "on" });
-					// 文案开关只需下一帧同步，不重建 transcript 或重置工具展开状态。
-					tui.requestRender();
-					ctx.ui.notify(`Updated ${id}: ${value}`, "info");
-					return;
 				}
 				case "showStartupHeader": {
 					const enabled = value === "on";
@@ -1085,7 +1070,6 @@ export async function showCcstylePanel(
 					toolLabelClipSetting,
 					stickyUserMessageSetting,
 					scrollButtonSetting,
-					nativeScrollIndicatorTextSetting,
 					startupHeaderSetting,
 					editorPrefixSetting,
 				],
