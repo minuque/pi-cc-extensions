@@ -66,7 +66,7 @@ export type Config = {
 	showStartupHeader: boolean;
 	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
 	stickyUserMessage: boolean;
-	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层。 */
+	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层；两者文案相同。 */
 	scrollButtonMode: ScrollButtonMode;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;

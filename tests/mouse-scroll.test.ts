@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+	getKeybindings,
+	KeybindingsManager,
+	setKeybindings,
+	TUI_KEYBINDINGS,
+} from "@earendil-works/pi-tui";
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import {
 	disableOfficialScrollToEnd,
@@ -10,6 +16,7 @@ import {
 	renderScrollButton,
 	resetScrollButtonState,
 	restoreOfficialScrollToEnd,
+	restoreNativeScrollIndicatorText,
 	scheduleScrollButtonSync,
 	setToolMouseTui,
 	syncOfficialScrollToEnd,
@@ -38,6 +45,14 @@ function fakeTheme() {
 // SGR 滚轮包（code 65 = 向下滚动），不依赖键绑定表，纯字符串解析即可命中。
 const WHEEL_DOWN_INPUT = "\x1b[<65;1;1M";
 
+// Pi 原生浮层的快捷键文案来源（未从包入口导出）。
+const { keyDisplayText } = await import(
+	new URL(
+		"./modes/interactive/components/keybinding-hints.js",
+		import.meta.resolve("@earendil-works/pi-coding-agent"),
+	).href
+);
+
 test("scroll button: config defaults to dock and accepts native", () => {
 	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
 	assert.equal(normalizeConfig({ scrollButtonMode: "native" }).scrollButtonMode, "native");
@@ -46,6 +61,24 @@ test("scroll button: config defaults to dock and accepts native", () => {
 		formatConfigStatus(normalizeConfig({ scrollButtonMode: "native" })),
 		/scrollButton=native/,
 	);
+});
+
+test("native text: absent native callback stays absent without a fallback button", () => {
+	const previous = { ...config };
+	const { tui } = lazyFullscreenTui();
+	try {
+		config.scrollButtonMode = "native";
+		setToolMouseTui(tui);
+		syncOfficialScrollToEnd(tui);
+		noteNewTranscriptItem();
+		assert.equal(tui.scrollToEndIndicator, undefined);
+		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
+	} finally {
+		restoreNativeScrollIndicatorText();
+		resetScrollButtonState();
+		setToolMouseTui(null);
+		Object.assign(config, previous);
+	}
 });
 
 // 滚动按钮状态机：调度后立即 teardown（/reload 中途）不得残留渲染或状态，
@@ -130,7 +163,7 @@ test("scroll button: off mode restores official overlay", () => {
 	}
 });
 
-test("scroll button: native mode restores Pi overlay and omits dock row", async () => {
+test("scroll button: native mode seeds dock text into Pi overlay and omits dock row", async () => {
 	const previousMode = config.mode;
 	const previousScrollButtonMode = config.scrollButtonMode;
 	const { tui, count } = lazyFullscreenTui();
@@ -145,16 +178,22 @@ test("scroll button: native mode restores Pi overlay and omits dock row", async 
 
 		config.scrollButtonMode = "native";
 		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator, indicator);
+		assert.equal(tui.scrollToEndIndicator(), "Back to bottom", "native 浮层换上 dock 文案");
 		scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(count(), 0, "native 模式不调度 dock 按钮重绘");
 		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
 
+		config.mode = "off";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, indicator, "ccstyle off 还原 Pi 原始回调");
+
+		config.mode = "on";
 		config.scrollButtonMode = "dock";
 		syncOfficialScrollToEnd(tui);
 		assert.equal(tui.scrollToEndIndicator, undefined);
 	} finally {
+		restoreNativeScrollIndicatorText();
 		config.mode = previousMode;
 		config.scrollButtonMode = previousScrollButtonMode;
 		resetScrollButtonState();
@@ -164,6 +203,8 @@ test("scroll button: native mode restores Pi overlay and omits dock row", async 
 
 // 计数：仅在离开底部期间累加，文案从 Back to bottom 切成 N new message(s)，回底清零。
 test("scroll button: accumulates new content count while scrolled up", async () => {
+	const dockPhrases: string[] = [];
+	const phrase = (text: string) => text.trim().replace(/^\[ ↓ | · Ctrl\+End \]$/g, "");
 	const { tui } = lazyFullscreenTui();
 	setToolMouseTui(tui);
 
@@ -178,16 +219,19 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
 		"无新内容时保持 Back to bottom 文案",
 	);
+	dockPhrases.push(phrase(renderScrollButton(80, fakeTheme())[0]));
 
 	noteNewTranscriptItem();
 	let text = renderScrollButton(80, fakeTheme()).join("\n");
 	assert.ok(text.includes("[ ↓ 1 new message · Ctrl+End ]"), `单条用单数：${text}`);
+	dockPhrases.push(phrase(text));
 
 	noteNewTranscriptItem();
 	noteNewTranscriptItem();
 	text = renderScrollButton(80, fakeTheme()).join("\n");
 	assert.ok(text.includes("[ ↓ 3 new messages · Ctrl+End ]"), `多条用复数：${text}`);
 	assert.ok(!text.includes("Back to bottom"), "有计数时不再显示原正文");
+	dockPhrases.push(phrase(text));
 
 	// 滚回底部：按钮隐藏且计数清零；再离开底部时从 0 重新计数。
 	tui.isFollowingOutput = true;
@@ -219,6 +263,54 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	assert.equal(getScrollButtonNewCount(), 0, "已跟随底部时不计入新内容");
 	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "校正后按钮隐藏");
 
+	// 同一组 0 / 1 / N 项通过 native 回调发出，必须与 dock 的正文完全相同。
+	const previous = { ...config };
+	try {
+		config.scrollButtonMode = "native";
+		tui.isFollowingOutput = false;
+		tui.scrollToEndIndicator = () => "Jump to latest message";
+		syncOfficialScrollToEnd(tui);
+		const nativePhrases = [tui.scrollToEndIndicator()];
+		noteNewTranscriptItem();
+		nativePhrases.push(tui.scrollToEndIndicator());
+		noteNewTranscriptItem();
+		noteNewTranscriptItem();
+		nativePhrases.push(tui.scrollToEndIndicator());
+		assert.deepEqual(nativePhrases, dockPhrases);
+		tui.isFollowingOutput = true;
+		syncOfficialScrollToEnd(tui);
+		assert.equal(getScrollButtonNewCount(), 0, "native 跟随输出时同样清零");
+	} finally {
+		restoreNativeScrollIndicatorText();
+		Object.assign(config, previous);
+	}
 	resetScrollButtonState();
 	setToolMouseTui(null);
+});
+
+// dock 标签读 tui.altScreen.bottom 绑定，与 Pi 原生浮层同源；按键本身由 Pi viewport 处理。
+test("scroll button: dock shortcut follows the tui.altScreen.bottom binding", async (t) => {
+	const previousBindings = getKeybindings();
+	const { tui } = lazyFullscreenTui();
+	setToolMouseTui(tui);
+	t.after(() => {
+		setKeybindings(previousBindings);
+		resetScrollButtonState();
+		setToolMouseTui(null);
+	});
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	const dockRow = () => renderScrollButton(80, fakeTheme()).map((line) => line.trim());
+
+	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+End ]"]);
+
+	setKeybindings(
+		new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": ["ctrl+g", "ctrl+b"] }),
+	);
+	assert.equal(keyDisplayText("tui.altScreen.bottom"), "Ctrl+G/Ctrl+B");
+	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+G/Ctrl+B ]"], "标签与 Pi 原生文案一致");
+
+	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": [] }));
+	assert.equal(keyDisplayText("tui.altScreen.bottom"), "");
+	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom ]"], "未绑定时与 Pi 一样省略快捷键");
 });

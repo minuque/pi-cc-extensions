@@ -19,6 +19,7 @@ import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
 import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
 import { getScrollButtonVisible } from "../extensions/renderer/mouse/scroll.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
@@ -41,34 +42,6 @@ import { insetComponent } from "../extensions/renderer/tool/result.ts";
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
 
 initTheme("dark");
-
-/** 精确模拟 Pi 0.84.1 createInteractiveTuiReference 的 renderer 重绑语义。 */
-function createLazyProxy<T extends object>(getRenderer: () => T): T {
-	return new Proxy({} as T, {
-		get: (_target, property) => {
-			const tui = getRenderer();
-			const value = Reflect.get(tui, property, tui);
-			if (typeof value !== "function") return value;
-			let methodTui = tui;
-			let method = value;
-			return (...args: any[]) => {
-				const currentTui = getRenderer();
-				if (currentTui !== methodTui) {
-					const currentMethod = Reflect.get(currentTui, property, currentTui);
-					if (typeof currentMethod !== "function") {
-						throw new TypeError(`not callable: ${String(property)}`);
-					}
-					methodTui = currentTui;
-					method = currentMethod;
-				}
-				return Reflect.apply(method, methodTui, args);
-			};
-		},
-		set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
-		has: (_target, property) => Reflect.has(getRenderer(), property),
-		getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
-	});
-}
 
 function runtime() {
 	const events = new Map<string, Function>();
@@ -595,9 +568,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	tui.handleViewportInput("\x1b[5~"); // PageUp
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "PageUp away from bottom shows the button");
-	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
-	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
-	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
 });
 

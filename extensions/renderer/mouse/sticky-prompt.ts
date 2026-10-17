@@ -296,7 +296,7 @@ export function renderStickyPromptScreen(
 }
 
 /** 行与列都落在本帧画出的粘性条内。滚动条那一列在条外。 */
-function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
+export function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
 	if (!stickyPromptActive() || !state.visible || state.layout !== tui?.currentLayout) return false;
 	if (packet.row - 1 !== state.row) return false;
