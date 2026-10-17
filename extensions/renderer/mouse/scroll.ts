@@ -17,7 +17,7 @@ import {
 
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
-const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
+const SCROLL_BOTTOM_KEYBINDING = "tui.altScreen.bottom";
 
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export function getToolMouseTui(): any {
@@ -202,17 +202,26 @@ export function isFullscreenAtBottom(tui: any): boolean {
 	return Boolean(following);
 }
 
-function formatShortcut(shortcut: string): string {
-	return shortcut
-		.split("+")
-		.map((part) =>
-			part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
+/** 与 Pi 原生浮层同源（keyDisplayText）：用户实际绑定，首字母大写，macOS 上 alt 显示为 option。 */
+function scrollBottomShortcutText(): string {
+	return getKeybindings()
+		.getKeys(SCROLL_BOTTOM_KEYBINDING)
+		.map((key) =>
+			key
+				.split("+")
+				.map((part) => {
+					const display =
+						process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+					return display.charAt(0).toUpperCase() + display.slice(1);
+				})
+				.join("+"),
 		)
-		.join("+");
+		.join("/");
 }
 
+/** 与标签读同一份绑定：用户改绑后，显示的键就是生效的键。 */
 export function isScrollBottomInput(data: string): boolean {
-	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
+	return getKeybindings().matches(data, SCROLL_BOTTOM_KEYBINDING);
 }
 
 function isScrollNavigationInput(data: string): boolean {
@@ -310,9 +319,11 @@ export function renderScrollButton(width: number, theme: any): string[] {
 		!fullscreenLazyTui(getToolMouseTui())
 	)
 		return [];
+	// 未绑定时与 Pi 原生一样省略快捷键段。
+	const shortcut = scrollBottomShortcutText();
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",
-		`[ ↓ ${scrollButtonText()} · ${formatShortcut(SCROLL_BOTTOM_SHORTCUT)} ]`,
+		`[ ↓ ${scrollButtonText()}${shortcut ? ` · ${shortcut}` : ""} ]`,
 	);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
