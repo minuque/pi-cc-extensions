@@ -1055,7 +1055,7 @@ function compactStopStatusLine(status: string, pad = 0): any {
  * 只去掉动作词，`(N more lines)` 这类计数保留。
  */
 /** 展开入口的动作词：我们的 `click to show more`、pi 的 `<key> to expand`（键名可能取不到）。 */
-const EXPAND_ACTION = String.raw`(?:click to show more|(?:[\w/+]+\s+)?to (?:show more|expand))`;
+const EXPAND_ACTION = String.raw`(?:click to show more|(?:[\w/+]{1,32}\s+)?to (?:show more|expand))`;
 
 const SLOT_HINT_PATTERNS: RegExp[] = [
 	// 卡在括号里：`(9 more lines, click to show more)` / `(195 earlier lines, ctrl+o to expand)`，
