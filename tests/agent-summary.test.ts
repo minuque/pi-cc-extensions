@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { initTheme } from "@earendil-works/pi-coding-agent";
 import agentSummaryFeature, {
 	AGENT_SUMMARY_ENTRY_TYPE,
 } from "../extensions/feature/agent-summary/index.ts";
@@ -8,7 +7,7 @@ import {
 	AgentRunSummary,
 	bindAgentSummary,
 	classifyTool,
-	summaryMarkdown,
+	summaryLine,
 	type AgentSummaryData,
 } from "../extensions/feature/agent-summary/core.ts";
 
@@ -45,6 +44,7 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 	assert.equal(summary.toolCount, 10);
 	const data = summary.snapshot(61_000);
 	assert.deepEqual(data, {
+		toolCount: 10,
 		commands: 3,
 		reads: 2,
 		edits: 1,
@@ -52,27 +52,46 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 		others: 1,
 		failed: 1,
 		durationMs: 60_000,
+		doneAt: 61_000,
 	} satisfies AgentSummaryData);
 });
 
-test("summaryMarkdown renders the agent summary entry", () => {
+test("summaryLine：单行拼接工具段与完成段", () => {
+	const doneAt = new Date(2026, 9, 21, 18, 51).getTime();
 	const data: AgentSummaryData = {
+		toolCount: 7,
 		commands: 3,
 		reads: 2,
 		edits: 1,
 		writes: 1,
 		others: 0,
 		failed: 0,
-		durationMs: 42_000,
+		durationMs: 11_000,
+		doneAt,
 	};
 	assert.equal(
-		summaryMarkdown(data),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+		summaryLine(data),
+		"✻ Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · Completed for 11s · done 6:51 PM",
 	);
-	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
+	assert.equal(
+		summaryLine({ ...data, failed: 2 }),
+		"✻ Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 2 failed · Completed for 11s · done 6:51 PM",
+	);
+	// 工具不足 2 次：只保留完成段
+	assert.equal(
+		summaryLine({
+			...data,
+			toolCount: 1,
+			commands: 1,
+			reads: 0,
+			edits: 0,
+			writes: 0,
+		}),
+		"✻ Completed for 11s · done 6:51 PM",
+	);
 });
 
-test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", async () => {
+test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 写出摘要", async () => {
 	const handlers = new Map<string, Function>();
 	const fakePi = {
 		on: (event: string, handler: Function) => handlers.set(event, handler),
@@ -85,36 +104,31 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 	await handlers.get("tool_execution_start")!({ toolName: "read", args: { path: "a.ts" } });
 	await handlers.get("tool_execution_end")!({ isError: false });
 	await handlers.get("agent_end")!();
-	assert.equal(calls.length, 0); // toolCount < 2
-
-	await handlers.get("tool_execution_start")!({ toolName: "bash", args: { command: "ls" } });
-	await handlers.get("tool_execution_end")!({ isError: true });
-	await handlers.get("agent_end")!();
 	assert.equal(calls.length, 1);
-	assert.equal(calls[0].commands, 1);
-	assert.equal(calls[0].failed, 1);
-	assert.equal(calls[0].reads, 1);
+	assert.equal(calls[0].toolCount, 1);
+	assert.match(summaryLine(calls[0]), /^✻ Completed for /);
 
 	await handlers.get("agent_start")!();
-	await handlers.get("tool_execution_start")!({ toolName: "bash", args: {} });
-	await handlers.get("tool_execution_end")!({ isError: false });
+	await handlers.get("tool_execution_start")!({ toolName: "bash", args: { command: "ls" } });
+	await handlers.get("tool_execution_end")!({ isError: true });
 	await handlers.get("tool_execution_start")!({ toolName: "grep", args: {} });
 	await handlers.get("tool_execution_end")!({ isError: false });
 	await handlers.get("agent_end")!();
 	assert.equal(calls.length, 2);
 	assert.deepEqual(calls[1], {
+		toolCount: 2,
 		commands: 1,
 		reads: 0,
 		edits: 0,
 		writes: 0,
 		others: 1,
-		failed: 0,
+		failed: 1,
 		durationMs: calls[1].durationMs,
+		doneAt: calls[1].doneAt,
 	});
 });
 
-test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
-	initTheme("dark");
+test("agent-summary 注册 renderer，输出单行摘要", async () => {
 	const renderers = new Map<string, Function>();
 	const appended: unknown[] = [];
 	const events = new Map<string, Function>();
@@ -136,31 +150,35 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 
 	assert.equal(appended.length, 1);
 	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE)!;
-	const component = renderer(
-		{ data: (appended[0] as any).data },
-		{ expanded: false },
-		{ getFgAnsi: (color: string) => (color === "success" ? "\x1b[32m" : "\x1b[31m") },
-	);
-	const plain = stripAnsi((component as any).render(120).map(String).join("\n"));
+	const theme = { fg: (_color: string, text: string) => text };
+	const component = renderer({ data: (appended[0] as any).data }, { expanded: false }, theme);
+	const plain = stripAnsi((component as any).render(160).map(String).join("\n")).trim();
+	assert.match(plain, /^✻ Ran 1 command, read 1 file · Completed for \d+s · done /);
+	assert.doesNotMatch(plain, />/);
 	assert.doesNotMatch(plain, /[┌├└]/);
 	assert.doesNotMatch(plain, /TIP/);
-	assert.match(plain, /Ran 1 command, read 1 file/);
-	assert.equal(
-		renderer(
-			{
-				data: {
-					commands: 0,
-					reads: 0,
-					edits: 0,
-					writes: 0,
-					others: 0,
-					failed: 0,
-					durationMs: 0,
-				},
+
+	// 工具不足 2 次：只有完成段
+	const completionOnly = renderer(
+		{
+			data: {
+				toolCount: 0,
+				commands: 0,
+				reads: 0,
+				edits: 0,
+				writes: 0,
+				others: 0,
+				failed: 0,
+				durationMs: 0,
+				doneAt: Date.now(),
 			},
-			{ expanded: false },
-			{ getFgAnsi: () => "" },
-		),
-		undefined,
+		},
+		{ expanded: false },
+		theme,
 	);
+	const completionPlain = stripAnsi(
+		(completionOnly as any).render(160).map(String).join("\n"),
+	).trim();
+	assert.match(completionPlain, /^✻ Completed for 0s · done /);
+	assert.doesNotMatch(completionPlain, /Ran/);
 });

@@ -1,11 +1,13 @@
 /**
- * Agent 回合摘要：统计一次 agent 运行的工具使用并格式化成摘要文本。
+ * Agent 回合摘要：统计一次 agent 运行的工具使用，生成单行摘要。
  *
  * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
  * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
- * 失败单独累计；另记回合耗时。
+ * 失败单独累计；另记回合耗时与完成时刻。
  *
- * 呈现：`summaryLine` 纯文本，`summaryMarkdown` Markdown（可 box 引用块）。
+ * 呈现：
+ * - 工具 ≥2 次：`✻ Ran 4 commands · Read 2 files · Completed for 11s · done 6:51 PM`
+ * - 工具 <2 次：`✻ Completed for 11s · done 6:51 PM`
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -16,6 +18,7 @@ export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
 
 /** 一次 agent 回合的统计快照。 */
 export type AgentSummaryData = {
+	toolCount: number;
 	commands: number;
 	reads: number;
 	edits: number;
@@ -23,6 +26,7 @@ export type AgentSummaryData = {
 	others: number;
 	failed: number;
 	durationMs: number;
+	doneAt: number;
 };
 
 export function classifyTool(toolName: string): AgentToolCategory {
@@ -88,6 +92,7 @@ export class AgentRunSummary {
 
 	snapshot(now = Date.now()): AgentSummaryData {
 		return {
+			toolCount: this.toolCount,
 			commands: this.commandCount,
 			reads: this.readFiles.size,
 			edits: this.editFiles.size,
@@ -95,6 +100,7 @@ export class AgentRunSummary {
 			others: this.otherCount,
 			failed: this.failedCount,
 			durationMs: now - this.startedAt,
+			doneAt: now,
 		};
 	}
 }
@@ -113,32 +119,41 @@ function summaryParts(data: AgentSummaryData): string[] {
 	return parts;
 }
 
-export function summaryMarkdown(
-	data: AgentSummaryData,
-	colors: { success: string; failed: string } = { success: "", failed: "" },
-): string {
+/** 工具段：逗号分隔，只把第一个动词首字母大写。 */
+function toolText(data: AgentSummaryData): string {
 	const parts = summaryParts(data);
 	if (parts.length === 0) return "";
-	const capitalizeFirst = (part: string, first: boolean) => {
-		const verb = part.match(/^[a-z]+/)?.[0] ?? "";
-		return first && verb ? verb[0].toUpperCase() + verb.slice(1) + part.slice(verb.length) : part;
-	};
-	const paintNumber = (code: string, part: string) =>
-		code ? part.replace(/(\d+)/, `${code}$1\x1b[0m`) : part;
-	const text = parts
-		.map((part, index) => capitalizeFirst(part, index === 0))
-		.map((part) => paintNumber(part.endsWith("failed") ? colors.failed : colors.success, part))
-		.join(", ");
-	const duration = formatDuration(data.durationMs);
-	const line = duration ? `${text} · ${duration}` : text;
-	return `> *${line}*`;
+	const [first, ...rest] = parts;
+	return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(", ");
+}
+
+/** `6:51 PM`，固定 en-US，和 Claude Code 的显示一致。 */
+export function formatDoneClock(doneAt: number): string {
+	const date = new Date(doneAt);
+	if (Number.isNaN(date.getTime())) return "";
+	return date
+		.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+		.replace(/\u202f/g, " ");
+}
+
+/** 单行摘要；工具 <2 次时只保留完成段。 */
+export function summaryLine(data: AgentSummaryData): string {
+	const parts: string[] = [];
+	if (data.toolCount >= 2) {
+		const tools = toolText(data);
+		if (tools) parts.push(tools);
+	}
+	const duration = formatDuration(data.durationMs) || "0s";
+	const done = formatDoneClock(data.doneAt);
+	parts.push(`Completed for ${duration}${done ? ` · done ${done}` : ""}`);
+	return `✻ ${parts.join(" · ")}`;
 }
 
 /**
  * 绑定 pi 事件到摘要统计：
  * - agent_start 重置
  * - tool_execution_start / end 累计
- * - agent_end 回调（toolCount < minToolCount 跳过）
+ * - agent_end 写出一条摘要
  */
 export function bindAgentSummary(
 	pi: ExtensionAPI,
@@ -155,6 +170,6 @@ export function bindAgentSummary(
 		summary.recordToolResult(event.isError === true);
 	});
 	pi.on("agent_end", async () => {
-		if (summary.toolCount >= 2) onSummary(summary.snapshot());
+		onSummary(summary.snapshot());
 	});
 }
