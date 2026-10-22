@@ -1055,7 +1055,15 @@ function compactStopStatusLine(status: string, pad = 0): any {
  * 只去掉动作词，`(N more lines)` 这类计数保留。
  */
 /** 展开入口的动作词：我们的 `click to show more`、pi 的 `<key> to expand`（键名可能取不到）。 */
-const EXPAND_ACTION = String.raw`(?:click to show more|(?:[\w/+]{1,32}\s+)?to (?:show more|expand))`;
+const EXPAND_ACTION = String.raw`(?:click to show more|(?:[\w/+]+\s+)?to (?:show more|expand))`;
+
+/**
+ * 展开入口只挂在行尾：正则只看行尾这一段，单行代价与行长无关。
+ * 图片负载（kitty 图形数据的 Base64）一行可达数百 KB，整行过正则会拖住渲染帧。
+ */
+const SLOT_HINT_WINDOW = 200;
+/** 窗口里出现这些词才可能有展开入口，其余行（负载、代码）直接放过正则。 */
+const SLOT_HINT_MARKERS = ["to expand", "to show more"];
 
 const SLOT_HINT_PATTERNS: RegExp[] = [
 	// 卡在括号里：`(9 more lines, click to show more)` / `(195 earlier lines, ctrl+o to expand)`，
@@ -1066,13 +1074,18 @@ const SLOT_HINT_PATTERNS: RegExp[] = [
 	new RegExp(String.raw`\s*(?:[•·]\s*)?${EXPAND_ACTION}\s*$`),
 ];
 
-function stripSlotHint(line: string): string {
-	const plain = stripTerminalSequencesPreservingLayout(line);
+/** 导出供单测：窗口边界与键名长度是性能与裁剪行为的关键，需要逐条钉住。 */
+export function stripSlotHint(line: string): string {
+	// 切点可能落在转义序列中间，残片只当作窗口头部文本；两个模式都锚在行尾，不受影响。
+	const head = line.slice(0, Math.max(0, line.length - SLOT_HINT_WINDOW));
+	const tail = line.slice(head.length);
+	const plain = stripTerminalSequencesPreservingLayout(tail);
+	if (!SLOT_HINT_MARKERS.some((marker) => plain.includes(marker))) return line;
 	for (const re of SLOT_HINT_PATTERNS) {
 		const match = re.exec(plain);
 		if (!match) continue;
 		// 删除区间而非截断后拼纯文本：收尾括号留在原样式里（dim），不会掉回默认前景色。
-		return removeStyledRange(line, match.index, match.index + match[0].length);
+		return head + removeStyledRange(tail, match.index, match.index + match[0].length);
 	}
 	return line;
 }

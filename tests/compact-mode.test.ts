@@ -28,6 +28,7 @@ import {
 	markCompactRoundToolExpanded,
 	refreshCompactModeComponents,
 	setHoveredCompactAssistant,
+	stripSlotHint,
 	styleCompactThinkingText,
 } from "../extensions/renderer/compact-mode.ts";
 import { componentAtLocalRow } from "../extensions/renderer/mouse/layout.ts";
@@ -1860,6 +1861,26 @@ test("compact live: 槽位卡内不重复展开入口，摘要行自己的 hint 
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("compact live: 展开入口只取行尾窗口，长负载行不进正则", () => {
+	const payload = `\x1b[2m${"a".repeat(260 * 1024)}\x1b[22m`;
+	const startedAt = performance.now();
+	assert.equal(stripSlotHint(payload), payload, "无入口的图片负载行原样返回");
+	const elapsed = performance.now() - startedAt;
+	// 全行回溯的旧实现在这条输入上要几十秒；这里留足余量，只拦量级回归。
+	assert.ok(elapsed < 500, `负载行裁剪应为常数代价，实际 ${elapsed.toFixed(1)} ms`);
+
+	// 长行行尾真挂了入口时照旧剥离，前面的负载不动。
+	const body = "a".repeat(260 * 1024);
+	assert.equal(stripSlotHint(`${body}· click to show more`), body);
+
+	// 键名长度边界：32 与 33 字符都整段剥离，行首不留残字。
+	assert.equal(stripSlotHint(`${"x".repeat(32)} to expand`), "");
+	assert.equal(stripSlotHint(`${"x".repeat(33)} to expand`), "");
+
+	// 括注形式只去动作词，隐藏行计数与收尾括号保留。
+	assert.equal(stripSlotHint("(195 earlier lines, ctrl+o to expand)"), "(195 earlier lines)");
 });
 
 test("compact 展开卡：thinking 二次展开只多 1 行内卡 padding，工具卡不再叠内层底色", () => {
