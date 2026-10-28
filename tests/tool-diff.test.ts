@@ -548,10 +548,11 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 	const path = join(directory, "target.txt");
 	const store = new WriteExecutionMetadataStore();
 	let abortReads = 0;
+	// 成功路径读 5 次 aborted：官方 mkdir 前后、快照前后、写完之后。第 6 次才算取消。
 	const signal = {
 		get aborted() {
 			abortReads++;
-			return abortReads >= 4;
+			return abortReads >= 6;
 		},
 	} as AbortSignal;
 	try {
@@ -566,7 +567,7 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 		assert.equal(await readFile(path, "utf8"), "你好");
 		assert.equal(store.get("completed")?.previousContent, "before");
 		assert.match(result.content[0]?.text ?? "", /6 bytes/);
-		assert.equal(abortReads, 3);
+		assert.equal(abortReads, 5);
 
 		const empty = await executeWriteWithMetadata(
 			store,
@@ -589,15 +590,40 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 	}
 });
 
+test("写前快照期间 abort 不落盘也不报成功", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-snapshot-abort-"));
+	const path = join(directory, "target.txt");
+	const store = new WriteExecutionMetadataStore();
+	let reads = 0;
+	// 第 4 次读是快照返回后、真正 writeFile 之前。读盘期间的取消会落在这次检查上。
+	const signal = {
+		get aborted() {
+			reads++;
+			return reads >= 4;
+		},
+	} as AbortSignal;
+	try {
+		await writeFile(path, "before");
+		await assert.rejects(
+			executeWriteWithMetadata(store, "snapshot", { path, content: "after" }, signal, directory),
+			/aborted/,
+		);
+		assert.equal(await readFile(path, "utf8"), "before");
+		assert.equal(store.get("snapshot"), undefined);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test("写已完成后官方那次 abort 检查不把写报成失败", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-late-abort-"));
 	const store = new WriteExecutionMetadataStore();
 	let reads = 0;
-	// 第 3 次读（官方写之后那次检查）才报 aborted。
+	// 第 5 次读才是官方写之后那次检查。快照前后两次必须先放过。
 	const signal = {
 		get aborted() {
 			reads++;
-			return reads >= 3;
+			return reads >= 5;
 		},
 	} as AbortSignal;
 	try {
