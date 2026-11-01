@@ -31,6 +31,7 @@ import {
 	FOOTER_GIT_KEY,
 	FOOTER_MODEL_KEY,
 	FOOTER_RATE_KEY,
+	FOOTER_TOKENS_KEY,
 	PI_USAGE_KEY,
 	isBuiltinFooterKey,
 	isSkippedFooterStatusKey,
@@ -39,6 +40,7 @@ import {
 	type FooterChipLayout,
 } from "./footer-layout.ts";
 import { createGitStatsRefresher, readGitStats, type GitStats } from "./git-stats.ts";
+import { createSessionTokenReader, formatSessionTokenTotal } from "./session-tokens.ts";
 import { MCP_STATUS_KEY, buildMcpChip } from "./mcp-chip.ts";
 import { inputTextIndent } from "./prompt-editor.ts";
 import { currentTtftMs, displayTokenRate, formatTokenRate } from "./token-rate.ts";
@@ -49,6 +51,8 @@ const GIT_REFRESH_INTERVAL_MS = 10_000;
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 // 后台连接 MCP 服务器不会触发 footer 重绘，靠这个兜底轮询把芯片刷出来
 const MCP_REFRESH_INTERVAL_MS = 5_000;
+// jsonl 只在消息落盘后变化，工具/回合结束时主动刷新，这个只兜底。
+const SESSION_TOKENS_REFRESH_INTERVAL_MS = 2_000;
 const USAGE_TIMEOUT_MS = 15_000;
 // zentui NERD_DEFAULT_ICONS：git / cacheHit。无 Nerd Font 时留空，只保留文字。
 export const FOOTER_NERD_ICON_GIT = "";
@@ -231,6 +235,7 @@ export function refreshFooterGitStats(): void {
 }
 let refreshCurrentUsage: (() => void) | undefined;
 let refreshCurrentMcpChip: (() => void) | undefined;
+let refreshCurrentSessionTokens: (() => void) | undefined;
 /** 工具/命令列表在 pi API 上，而 footer 工厂只拿得到 ctx，加载时记下来。 */
 let extensionApi: Pick<ExtensionAPI, "getAllTools" | "getCommands"> | undefined;
 
@@ -241,6 +246,7 @@ const createCustomFooterFactory =
 		const joinChips = (parts: string[]) => parts.filter(Boolean).join(sep);
 		let gitStats: GitStats | undefined;
 		let localUsageChip = "";
+		let sessionTokens = 0;
 		let usageGeneration = 0;
 		let usageAbort: AbortController | undefined;
 		let disposed = false;
@@ -336,6 +342,27 @@ const createCustomFooterFactory =
 		refreshUsage();
 		const usageRefreshTimer = setInterval(refreshUsage, USAGE_REFRESH_INTERVAL_MS);
 		usageRefreshTimer.unref?.();
+
+		// 累计 token 只从会话 jsonl 读，增量解析；文件在第一条消息落盘后才存在。
+		const tokenReader = createSessionTokenReader();
+		const refreshSessionTokens = () => {
+			if (disposed) return;
+			// 宿主：旧版 ctx 可能没有 getSessionFile，没有文件就当 0。
+			const manager = ctx.sessionManager as { getSessionFile?: () => string | undefined };
+			const file =
+				typeof manager?.getSessionFile === "function" ? manager.getSessionFile() : undefined;
+			const next = tokenReader.refresh(file);
+			if (next === sessionTokens) return;
+			sessionTokens = next;
+			tui.requestRender();
+		};
+		refreshCurrentSessionTokens = refreshSessionTokens;
+		refreshSessionTokens();
+		const sessionTokensRefreshTimer = setInterval(
+			refreshSessionTokens,
+			SESSION_TOKENS_REFRESH_INTERVAL_MS,
+		);
+		sessionTokensRefreshTimer.unref?.();
 
 		// 内置 MCP 的状态不经 setStatus 暴露，只能轮询 pi API 与 mcp.json 推算
 		const refreshMcp = () => {
@@ -471,6 +498,7 @@ const createCustomFooterFactory =
 			const costChip = costLabel
 				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
 				: "";
+			const tokensLabel = config.footerSessionTokens ? formatSessionTokenTotal(sessionTokens) : "";
 
 			const gitColor = theme.getThinkingBorderColor("medium");
 			let place = theme.fg("accent", cwdLabel);
@@ -508,6 +536,7 @@ const createCustomFooterFactory =
 				[FOOTER_CACHE_KEY, cacheLabel ? theme.fg("dim", cacheLabel) : ""],
 				[FOOTER_RATE_KEY, rateLabel ? theme.fg("dim", rateLabel) : ""],
 				[FOOTER_COST_KEY, costChip],
+				[FOOTER_TOKENS_KEY, tokensLabel ? theme.fg("dim", tokensLabel) : ""],
 				[FOOTER_CWD_KEY, place],
 				[FOOTER_GIT_KEY, gitChip],
 			]);
@@ -547,12 +576,14 @@ const createCustomFooterFactory =
 				clearInterval(gitRefreshTimer);
 				clearInterval(usageRefreshTimer);
 				clearInterval(mcpRefreshTimer);
+				clearInterval(sessionTokensRefreshTimer);
 				unsubBranch();
 				if (currentTui === tui) {
 					currentTui = undefined;
 					refreshCurrentGitStats = undefined;
 					refreshCurrentUsage = undefined;
 					refreshCurrentMcpChip = undefined;
+					refreshCurrentSessionTokens = undefined;
 				}
 			},
 		};
@@ -587,7 +618,11 @@ export default function (pi: ExtensionAPI) {
 		refreshCurrentGitStats?.();
 		// 懒连接的 MCP 服务器可能刚被调用过
 		refreshCurrentMcpChip?.();
+		// 工具结果已落盘，累计 token 跟着跳一次
+		refreshCurrentSessionTokens?.();
 	});
+	// assistant 消息落盘在 message_end 之后，turn_end 时读到的就是完整的一条。
+	pi.on("turn_end", () => refreshCurrentSessionTokens?.());
 
 	// 启动 / /reload / 新建会话 时按配置恢复
 	pi.on("session_start", (_event, ctx) => {

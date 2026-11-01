@@ -143,6 +143,7 @@ test("normalizeFooterChipLayout migrates old plugin-only lines and keeps an expl
 		"cache",
 		"rate",
 		"cost",
+		"tokens",
 		"usage",
 		"ponytail",
 	]);
@@ -153,7 +154,7 @@ test("normalizeFooterChipLayout migrates old plugin-only lines and keeps an expl
 		footerLine1Keys: ["usage"],
 		footerLine3Keys: ["model", "git"],
 	});
-	assert.deepEqual(explicit.footerLine1Keys, ["usage"]);
+	assert.deepEqual(explicit.footerLine1Keys, ["usage", "tokens"]);
 	assert.deepEqual(explicit.footerLine2Keys, []);
 	assert.deepEqual(explicit.footerLine3Keys, ["model", "git"]);
 });
@@ -170,6 +171,7 @@ test("normalizeFooterChipLayout rewrites legacy localUsage and piUsage keys to p
 		"cache",
 		"rate",
 		"cost",
+		"tokens",
 		PI_USAGE_KEY,
 		"usage",
 	]);

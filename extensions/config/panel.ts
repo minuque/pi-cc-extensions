@@ -111,6 +111,12 @@ function footerTokenRateTtftDescription(enabled: boolean): string {
 		: "Time to first token hidden. The rate chip shows tok/s only.";
 }
 
+function footerSessionTokensDescription(enabled: boolean): string {
+	return enabled
+		? "Cumulative tokens used in this conversation, summed from the session .jsonl usage.totalTokens. Turn off to hide it."
+		: "Conversation token total hidden.";
+}
+
 function footerGitStatsDescription(mode: FooterGitStatsMode): string {
 	return mode === "branch"
 		? "Net changes since the merge base, including uncommitted edits. Base: origin/HEAD, then local main/master. Untracked files excluded; unavailable stats hidden."
@@ -781,6 +787,13 @@ export async function showCcstylePanel(
 			currentValue: config.footerTokenRateTtft ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const footerSessionTokensSetting = {
+			id: "footerSessionTokens",
+			label: "Conversation tokens",
+			description: footerSessionTokensDescription(config.footerSessionTokens),
+			currentValue: config.footerSessionTokens ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Footer chips",
@@ -876,6 +889,14 @@ export async function showCcstylePanel(
 				updateConfig({ footerTokenRateTtft: enabled });
 				footerTokenRateTtftSetting.currentValue = enabled ? "on" : "off";
 				footerTokenRateTtftSetting.description = footerTokenRateTtftDescription(enabled);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerSessionTokens") {
+				const enabled = value === "on";
+				updateConfig({ footerSessionTokens: enabled });
+				footerSessionTokensSetting.currentValue = enabled ? "on" : "off";
+				footerSessionTokensSetting.description = footerSessionTokensDescription(enabled);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1104,6 +1125,7 @@ export async function showCcstylePanel(
 					footerTokenRateSetting,
 					footerTokenRateModeSetting,
 					footerTokenRateTtftSetting,
+					footerSessionTokensSetting,
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,

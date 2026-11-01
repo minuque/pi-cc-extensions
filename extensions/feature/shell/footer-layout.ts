@@ -13,6 +13,8 @@ export const FOOTER_CONTEXT_KEY = "context";
 export const FOOTER_CACHE_KEY = "cache";
 export const FOOTER_RATE_KEY = "rate";
 export const FOOTER_COST_KEY = "cost";
+/** 本次对话累计消耗 token（统计会话 jsonl 的 usage.totalTokens）。 */
+export const FOOTER_TOKENS_KEY = "tokens";
 export const FOOTER_CWD_KEY = "cwd";
 export const FOOTER_GIT_KEY = "git";
 
@@ -23,6 +25,7 @@ export const DEFAULT_FOOTER_LINE1_KEYS = [
 	FOOTER_CACHE_KEY,
 	FOOTER_RATE_KEY,
 	FOOTER_COST_KEY,
+	FOOTER_TOKENS_KEY,
 	PI_USAGE_KEY,
 ] as const;
 
@@ -40,7 +43,18 @@ const LEGACY_FIXED_FOOTER_KEYS = [
 	FOOTER_GIT_KEY,
 ] as const;
 
-const BUILTIN_FOOTER_KEYS = new Set<string>(LEGACY_FIXED_FOOTER_KEYS);
+/**
+ * 后加的内置芯片：老配置里不会出现，读取时补到默认行上 `after` 那个芯片后面。
+ * 与 LEGACY_FIXED_FOOTER_KEYS 分开，旧配置的「只排插件芯片」迁移判断才不会误判。
+ */
+const ADDED_FOOTER_KEYS: ReadonlyArray<{ key: string; after: string }> = [
+	{ key: FOOTER_TOKENS_KEY, after: FOOTER_COST_KEY },
+];
+
+const BUILTIN_FOOTER_KEYS = new Set<string>([
+	...LEGACY_FIXED_FOOTER_KEYS,
+	...ADDED_FOOTER_KEYS.map((item) => item.key),
+]);
 
 export function isBuiltinFooterKey(key: string): boolean {
 	return BUILTIN_FOOTER_KEYS.has(key);
@@ -113,7 +127,12 @@ function ensureBuiltinKeys(
 	if (LEGACY_FIXED_FOOTER_KEYS.some((key) => seen.has(key))) {
 		return { footerLine1Keys: line1, footerLine2Keys: line2, footerLine3Keys: line3 };
 	}
-	const line1Builtins = DEFAULT_FOOTER_LINE1_KEYS.filter((key) => key !== PI_USAGE_KEY);
+	const line1Builtins = LEGACY_FIXED_FOOTER_KEYS.filter(
+		(key) => defaultFooterLine(key) === 1 && key !== FOOTER_RATE_KEY,
+	);
+	// rate 历史上排在 cost 之前，保持迁移后的顺序不变。
+	const costAt = line1Builtins.indexOf(FOOTER_COST_KEY);
+	if (costAt >= 0) line1Builtins.splice(costAt, 0, FOOTER_RATE_KEY);
 	const usageAt = line1.indexOf(PI_USAGE_KEY);
 	const footerLine1Keys =
 		usageAt >= 0
@@ -124,6 +143,35 @@ function ensureBuiltinKeys(
 		footerLine2Keys: [...DEFAULT_FOOTER_LINE2_KEYS, ...line2],
 		footerLine3Keys: line3,
 	};
+}
+
+function ensureAddedBuiltins(layout: FooterChipLayout): FooterChipLayout {
+	const present = new Set([
+		...layout.footerLine1Keys,
+		...layout.footerLine2Keys,
+		...layout.footerLine3Keys,
+		...layout.footerHiddenKeys,
+	]);
+	const missing = ADDED_FOOTER_KEYS.filter((item) => !present.has(item.key));
+	if (missing.length === 0) return layout;
+	const line1 = [...layout.footerLine1Keys];
+	const line2 = [...layout.footerLine2Keys];
+	for (const item of missing) {
+		if (defaultFooterLine(item.key) !== 1) {
+			line2.push(item.key);
+			continue;
+		}
+		// 贴着锚点芯片放（如 tokens 跟 cost）
+		let at = line1.indexOf(item.after);
+		if (at >= 0) at += 1;
+		else {
+			// 没有锚点就接在旧内置项后面，不把已有插件顺序打散
+			const lastBuiltin = line1.findLastIndex((key) => isBuiltinFooterKey(key));
+			at = lastBuiltin >= 0 ? lastBuiltin + 1 : line1.length;
+		}
+		line1.splice(at, 0, item.key);
+	}
+	return { ...layout, footerLine1Keys: line1, footerLine2Keys: line2 };
 }
 
 /** 跨行去重（line1 → line2 → line3）；旧配置补上内置芯片。 */
@@ -144,10 +192,10 @@ export function normalizeFooterChipLayout(source: Record<string, unknown>): Foot
 	const line1 = takeUnique(normalizeFooterKeyList(source.footerLine1Keys), seen);
 	const line2 = takeUnique(normalizeFooterKeyList(source.footerLine2Keys), seen);
 	const line3 = takeUnique(normalizeFooterKeyList(source.footerLine3Keys), seen);
-	return {
+	return ensureAddedBuiltins({
 		footerHiddenKeys: normalizeFooterKeyList(source.footerHiddenKeys),
 		...ensureBuiltinKeys(line1, line2, line3),
-	};
+	});
 }
 
 const BUILTIN_FOOTER_LABEL: Record<string, string> = {
@@ -156,6 +204,7 @@ const BUILTIN_FOOTER_LABEL: Record<string, string> = {
 	[FOOTER_CACHE_KEY]: "Cache hit rate",
 	[FOOTER_RATE_KEY]: "Output rate",
 	[FOOTER_COST_KEY]: "Session cost",
+	[FOOTER_TOKENS_KEY]: "Tokens used in this conversation",
 	[FOOTER_CWD_KEY]: "Working directory and session name",
 	[FOOTER_GIT_KEY]: "Branch and change stats",
 };
