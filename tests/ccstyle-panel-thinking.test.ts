@@ -45,7 +45,8 @@ test("Completed preview accepts custom numbers and follow while retaining preset
 		refreshCurrentTranscript() {},
 	});
 	try {
-		// Style -> Feature -> UI -> Diff -> Thinking, then select Completed preview.
+		// Tab order is Style / Features / UI / Diff / Thinking: inserting or reordering a tab
+		// before Thinking means updating the 4 Tab presses and 2 arrow downs below.
 		for (let i = 0; i < 4; i++) panel.handleInput("\t");
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\x1b[B");
@@ -67,7 +68,7 @@ test("Completed preview accepts custom numbers and follow while retaining preset
 		panel.handleInput("abc");
 		panel.handleInput("\r");
 		assert.equal(config.completedPreviewLines, 7, "invalid input preserves the current value");
-		assert.match(panel.render(120).join("\n"), /Invalid number/);
+		assert.match(panel.render(120).join("\n"), /Invalid value/);
 		panel.handleInput("\x1b");
 
 		panel.handleInput("\r");

@@ -371,7 +371,7 @@ function buildValueInputSubmenu(
 	};
 }
 
-/** 数值项：预填当前值，空输入取消，非数字留下错误。 */
+/** 数值项：预填当前值，空输入取消，非法输入留下错误；allowFollow 时额外接受 follow。 */
 function buildNumberInputSubmenu(
 	theme: any,
 	setting: { label: string; currentValue: string },
@@ -392,7 +392,7 @@ function buildNumberInputSubmenu(
 					: (allowFollow && raw === "follow") || Number.isFinite(Number(raw))
 						? raw
 						: null,
-			invalid: (raw) => `Invalid number: "${raw}"`,
+			invalid: (raw) => `${allowFollow ? "Invalid value" : "Invalid number"}: "${raw}"`,
 		},
 		closeSubmenu,
 	);
