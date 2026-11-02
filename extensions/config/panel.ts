@@ -370,14 +370,22 @@ function buildNumberInputSubmenu(
 	theme: any,
 	setting: { label: string; currentValue: string },
 	closeSubmenu: (selected?: string) => void,
+	allowFollow = false,
 ) {
 	return buildValueInputSubmenu(
 		theme,
 		{
 			prompt: `  ${setting.label} — custom value:`,
 			initial: setting.currentValue,
-			hint: "  Enter to apply · Esc to go back",
-			accept: (raw) => (raw === "" ? undefined : Number.isFinite(Number(raw)) ? raw : null),
+			hint: allowFollow
+				? "  Enter to apply · Esc to go back · follow = Preview lines"
+				: "  Enter to apply · Esc to go back",
+			accept: (raw) =>
+				raw === ""
+					? undefined
+					: (allowFollow && raw === "follow") || Number.isFinite(Number(raw))
+						? raw
+						: null,
 			invalid: (raw) => `Invalid number: "${raw}"`,
 		},
 		closeSubmenu,
@@ -586,10 +594,13 @@ export async function showCcstylePanel(
 		const completedThinkingPreviewSetting = {
 			id: "completedPreviewLines",
 			label: "Completed preview",
-			description: "Thinking preview lines once the run finishes; follow = same as Preview lines.",
+			description:
+				"Thinking preview lines once the run finishes; follow = same as Preview lines. Enter to type a custom value or follow.",
 			currentValue:
 				config.completedPreviewLines === null ? "follow" : String(config.completedPreviewLines),
 			values: [...COMPLETED_THINKING_PREVIEW_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, completedThinkingPreviewSetting, closeSubmenu, true),
 		};
 		const thinkingAnimationSetting = {
 			id: "animationIntervalMs",

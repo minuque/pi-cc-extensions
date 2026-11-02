@@ -407,6 +407,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`toolLabelClip=${source.toolLabelClip}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
+		`thinkingPreviewDone=${source.completedPreviewLines ?? "follow"}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,

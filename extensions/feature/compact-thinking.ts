@@ -41,8 +41,8 @@ type AssistantMessageComponentLike = InstanceType<typeof AssistantMessageCompone
 export type CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
-	/** 思考完成后的折叠预览行数；缺省/null = 跟随 previewLines（保持旧行为）。 */
-	completedPreviewLines?: number | null;
+	/** 思考完成后的折叠预览行数；null = 跟随 previewLines（保持旧行为）。 */
+	completedPreviewLines: number | null;
 	animationIntervalMs: number;
 };
 
@@ -357,9 +357,9 @@ export class ThinkingPreviewBlock implements Component {
 		padding: number,
 		messageTimestamp: number,
 		style: (text: string) => string,
-		theme?: Theme,
-		runStartIndex = 0,
-		active = false,
+		theme: Theme | undefined,
+		runStartIndex: number,
+		active: boolean,
 	) {
 		this.heading = heading;
 		this.text = text;
@@ -730,6 +730,8 @@ function compactThinking(pi: ExtensionAPI) {
 			}
 			const runEndIndex = i - 1;
 			i--;
+			// Keep this run-scoped snapshot: a timestamp-only render query would mark
+			// earlier thinking runs active when one message alternates text and thinking.
 			const active = isActiveRun(message, runStartIndex, runEndIndex);
 			// OpenAI can spend several seconds reasoning before it emits the first
 			// summary token. Keep an empty active block visible as animated
