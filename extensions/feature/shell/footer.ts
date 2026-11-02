@@ -4,7 +4,7 @@
  * 默认第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · pi-usage · 其余 line1 芯片
  * 默认第二行：cwd in session ·  branch (+16 −1) · 其余 line2 芯片
  * 第三行：仅当 line3 有可见芯片时出现
- * model / context / cache / rate / cost / cwd / git 与插件芯片同一套排布，可换行、调序、隐藏
+ * model / context / cache / rate / cost / tokens / cwd / git 与插件芯片同一套排布，可换行、调序、隐藏
  *
  *  - line1 短芯片，· 分隔；缓存用 zentui 󰆼，费用 success
  *  - line2 用 zentui 句式 in / on + 
@@ -31,6 +31,7 @@ import {
 	FOOTER_GIT_KEY,
 	FOOTER_MODEL_KEY,
 	FOOTER_RATE_KEY,
+	FOOTER_TOKENS_KEY,
 	PI_USAGE_KEY,
 	isBuiltinFooterKey,
 	isSkippedFooterStatusKey,
@@ -39,6 +40,7 @@ import {
 	type FooterChipLayout,
 } from "./footer-layout.ts";
 import { createGitStatsRefresher, readGitStats, type GitStats } from "./git-stats.ts";
+import { formatSessionTokenTotal, sessionEntryTokens } from "./session-tokens.ts";
 import { MCP_STATUS_KEY, buildMcpChip } from "./mcp-chip.ts";
 import { inputTextIndent } from "./prompt-editor.ts";
 import { currentTtftMs, displayTokenRate, formatTokenRate } from "./token-rate.ts";
@@ -391,7 +393,12 @@ const createCustomFooterFactory =
 		let statsMemoKey = "";
 		let statsMemoAt = 0;
 		let statsMemo:
-			| { contextUsage: ReturnType<typeof ctx.getContextUsage>; cost: number; cachePct: number }
+			| {
+					contextUsage: ReturnType<typeof ctx.getContextUsage>;
+					cost: number;
+					tokens: number;
+					cachePct: number;
+			  }
 			| undefined;
 		const sessionStats = () => {
 			const model = ctx.model;
@@ -404,19 +411,28 @@ const createCustomFooterFactory =
 				return statsMemo;
 			}
 			let cost = 0;
+			let tokens = 0;
 			for (const entry of ctx.sessionManager.getEntries()) {
 				if (entry.type === "message") {
 					const m = entry.message;
 					if (m.role === "assistant") cost += m.usage?.cost?.total || 0;
 					else if (m.role === "toolResult" && m.usage) cost += m.usage.cost?.total || 0;
 				} else if (
-					(entry.type === "branch_summary" || entry.type === "compaction") &&
+					(entry.type === "branch_summary" ||
+						entry.type === "compaction" ||
+						entry.type === "usage") &&
 					entry.usage
 				) {
-					cost += entry.usage.cost?.total || 0;
+					cost += entry.usage.cost.total || 0;
 				}
+				tokens += sessionEntryTokens(entry);
 			}
-			statsMemo = { contextUsage: ctx.getContextUsage(), cost, cachePct: getCachePct() };
+			statsMemo = {
+				contextUsage: ctx.getContextUsage(),
+				cost,
+				tokens,
+				cachePct: getCachePct(),
+			};
 			statsMemoKey = key;
 			statsMemoAt = performance.now();
 			return statsMemo;
@@ -424,7 +440,7 @@ const createCustomFooterFactory =
 
 		const render = (width: number): string[] => {
 			const model = ctx.model;
-			const { contextUsage, cost, cachePct } = sessionStats();
+			const { contextUsage, cost, tokens, cachePct } = sessionStats();
 			const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
 			const percent = contextUsage?.percent;
 
@@ -471,6 +487,7 @@ const createCustomFooterFactory =
 			const costChip = costLabel
 				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
 				: "";
+			const tokensLabel = config.footerSessionTokens ? formatSessionTokenTotal(tokens) : "";
 
 			const gitColor = theme.getThinkingBorderColor("medium");
 			let place = theme.fg("accent", cwdLabel);
@@ -508,6 +525,7 @@ const createCustomFooterFactory =
 				[FOOTER_CACHE_KEY, cacheLabel ? theme.fg("dim", cacheLabel) : ""],
 				[FOOTER_RATE_KEY, rateLabel ? theme.fg("dim", rateLabel) : ""],
 				[FOOTER_COST_KEY, costChip],
+				[FOOTER_TOKENS_KEY, tokensLabel ? theme.fg("dim", tokensLabel) : ""],
 				[FOOTER_CWD_KEY, place],
 				[FOOTER_GIT_KEY, gitChip],
 			]);

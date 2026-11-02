@@ -13,6 +13,8 @@ export const FOOTER_CONTEXT_KEY = "context";
 export const FOOTER_CACHE_KEY = "cache";
 export const FOOTER_RATE_KEY = "rate";
 export const FOOTER_COST_KEY = "cost";
+/** 本次对话累计消耗 token（累加会话条目的 usage.totalTokens）。 */
+export const FOOTER_TOKENS_KEY = "tokens";
 export const FOOTER_CWD_KEY = "cwd";
 export const FOOTER_GIT_KEY = "git";
 
@@ -23,6 +25,7 @@ export const DEFAULT_FOOTER_LINE1_KEYS = [
 	FOOTER_CACHE_KEY,
 	FOOTER_RATE_KEY,
 	FOOTER_COST_KEY,
+	FOOTER_TOKENS_KEY,
 	PI_USAGE_KEY,
 ] as const;
 
@@ -40,7 +43,18 @@ const LEGACY_FIXED_FOOTER_KEYS = [
 	FOOTER_GIT_KEY,
 ] as const;
 
-const BUILTIN_FOOTER_KEYS = new Set<string>(LEGACY_FIXED_FOOTER_KEYS);
+/**
+ * 后加的内置芯片：老配置里不会出现，读取时补到默认行上 `after` 那个芯片后面。
+ * 与 LEGACY_FIXED_FOOTER_KEYS 分开，旧配置的「只排插件芯片」迁移判断才不会误判。
+ */
+const ADDED_FOOTER_KEYS: ReadonlyArray<{ key: string; after: string }> = [
+	{ key: FOOTER_TOKENS_KEY, after: FOOTER_COST_KEY },
+];
+
+const BUILTIN_FOOTER_KEYS = new Set<string>([
+	...LEGACY_FIXED_FOOTER_KEYS,
+	...ADDED_FOOTER_KEYS.map((item) => item.key),
+]);
 
 export function isBuiltinFooterKey(key: string): boolean {
 	return BUILTIN_FOOTER_KEYS.has(key);
@@ -62,9 +76,12 @@ export const DEFAULT_FOOTER_CHIP_LAYOUT: FooterChipLayout = {
 	footerLine3Keys: [],
 };
 
-/** 别的扩展写的 model 状态与本扩展的模型芯片重名，不当插件芯片接纳。配置里的 model 不受影响。 */
+/**
+ * 别的扩展写的 model / tokens 状态与本扩展的内置芯片重名，不当插件芯片接纳。
+ * 配置里的同名内置 key 不受影响。
+ */
 export function isSkippedFooterStatusKey(key: string): boolean {
-	return key === FOOTER_MODEL_KEY;
+	return key === FOOTER_MODEL_KEY || key === FOOTER_TOKENS_KEY;
 }
 
 /** 未单独配置时的默认行：内置项按原来的行，usage 类在 line1，其余 line2。不会默认进 line3。 */
@@ -113,7 +130,10 @@ function ensureBuiltinKeys(
 	if (LEGACY_FIXED_FOOTER_KEYS.some((key) => seen.has(key))) {
 		return { footerLine1Keys: line1, footerLine2Keys: line2, footerLine3Keys: line3 };
 	}
-	const line1Builtins = DEFAULT_FOOTER_LINE1_KEYS.filter((key) => key !== PI_USAGE_KEY);
+	// tokens 属于后加芯片，由 ensureAddedBuiltins 负责插入。
+	const line1Builtins = DEFAULT_FOOTER_LINE1_KEYS.filter(
+		(key) => key !== PI_USAGE_KEY && key !== FOOTER_TOKENS_KEY,
+	);
 	const usageAt = line1.indexOf(PI_USAGE_KEY);
 	const footerLine1Keys =
 		usageAt >= 0
@@ -124,6 +144,32 @@ function ensureBuiltinKeys(
 		footerLine2Keys: [...DEFAULT_FOOTER_LINE2_KEYS, ...line2],
 		footerLine3Keys: line3,
 	};
+}
+
+function ensureAddedBuiltins(layout: FooterChipLayout): FooterChipLayout {
+	const present = new Set([
+		...layout.footerLine1Keys,
+		...layout.footerLine2Keys,
+		...layout.footerLine3Keys,
+		...layout.footerHiddenKeys,
+	]);
+	const missing = ADDED_FOOTER_KEYS.filter((item) => !present.has(item.key));
+	if (missing.length === 0) return layout;
+	const next: FooterChipLayout = {
+		...layout,
+		footerLine1Keys: [...layout.footerLine1Keys],
+		footerLine2Keys: [...layout.footerLine2Keys],
+		footerLine3Keys: [...layout.footerLine3Keys],
+	};
+	for (const item of missing) {
+		// 贴着锚点芯片所在的行放（如 tokens 跟 cost）。
+		const line = footerLineOfKey(next, item.after);
+		// 锚点被用户移除时不补，免得凭空多出一行或一个孤立芯片。
+		if (!line) continue;
+		const keys = keysOnLine(next, line);
+		keys.splice(keys.indexOf(item.after) + 1, 0, item.key);
+	}
+	return next;
 }
 
 /** 跨行去重（line1 → line2 → line3）；旧配置补上内置芯片。 */
@@ -144,10 +190,10 @@ export function normalizeFooterChipLayout(source: Record<string, unknown>): Foot
 	const line1 = takeUnique(normalizeFooterKeyList(source.footerLine1Keys), seen);
 	const line2 = takeUnique(normalizeFooterKeyList(source.footerLine2Keys), seen);
 	const line3 = takeUnique(normalizeFooterKeyList(source.footerLine3Keys), seen);
-	return {
+	return ensureAddedBuiltins({
 		footerHiddenKeys: normalizeFooterKeyList(source.footerHiddenKeys),
 		...ensureBuiltinKeys(line1, line2, line3),
-	};
+	});
 }
 
 const BUILTIN_FOOTER_LABEL: Record<string, string> = {
@@ -156,6 +202,7 @@ const BUILTIN_FOOTER_LABEL: Record<string, string> = {
 	[FOOTER_CACHE_KEY]: "Cache hit rate",
 	[FOOTER_RATE_KEY]: "Output rate",
 	[FOOTER_COST_KEY]: "Session cost",
+	[FOOTER_TOKENS_KEY]: "Tokens used in this conversation",
 	[FOOTER_CWD_KEY]: "Working directory and session name",
 	[FOOTER_GIT_KEY]: "Branch and change stats",
 };

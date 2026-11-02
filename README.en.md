@@ -33,7 +33,7 @@ Run `/reload` after installation.
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
-| Status bar                  | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle`                                      |
+| Status bar                  | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle`                                      |
 | Theme                       | Bundled CC Dark and CC Light themes                                                                                                          | `/settings` → Theme                             |
 
 Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)
@@ -85,12 +85,13 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerTokenRate": true,                 // output rate chip; false hides it
   "footerTokenRateMode": "average",        // average: whole-prompt avg; live: trailing 1s rate
   "footerTokenRateTtft": true,             // append TTFT to the rate chip; false shows tok/s only
+  "footerSessionTokens": false,            // conversation token total chip (∑); sums usage.totalTokens from session entries. Off by default
   "footerCurrency": "USD",                 // display currency for the footer cost
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
   "footerHiddenKeys": [],                  // hidden chip keys
-  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // chip order per line; builtins and plugins share one layout
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout
   "footerLine2Keys": ["cwd", "git"],       // cwd: directory and session; git: branch and changes. Either can move to any line
   "footerLine3Keys": [],                   // painted only when a chip is visible
 }
