@@ -22,7 +22,9 @@ import {
 	DEFAULT_FOOTER_CHIP_LAYOUT,
 	DEFAULT_FOOTER_LINE1_KEYS,
 	DEFAULT_FOOTER_LINE2_KEYS,
+	FOOTER_COST_KEY,
 	FOOTER_GIT_KEY,
+	FOOTER_TOKENS_KEY,
 	isBuiltinFooterKey,
 	PI_USAGE_KEY,
 	PI_USAGE_SOURCE,
@@ -64,6 +66,9 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 		formatConfigStatus(normalizeConfig({ footerTokenRateTtft: false })),
 		/footerTokenRateTtft=off/,
 	);
+	assert.equal(normalizeConfig({}).footerSessionTokens, false);
+	assert.equal(normalizeConfig({ footerSessionTokens: true }).footerSessionTokens, true);
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerSessionTokens=off/);
 });
 
 test("footerGitStatsMode defaults to working and accepts only known modes", () => {
@@ -154,9 +159,49 @@ test("normalizeFooterChipLayout migrates old plugin-only lines and keeps an expl
 		footerLine1Keys: ["usage"],
 		footerLine3Keys: ["model", "git"],
 	});
-	assert.deepEqual(explicit.footerLine1Keys, ["usage", "tokens"]);
+	// cost 被用户从所有行移走时不补 tokens，避免凭空多出芯片
+	assert.deepEqual(explicit.footerLine1Keys, ["usage"]);
 	assert.deepEqual(explicit.footerLine2Keys, []);
 	assert.deepEqual(explicit.footerLine3Keys, ["model", "git"]);
+});
+
+test("normalizeFooterChipLayout inserts tokens next to cost on whichever line cost lives", () => {
+	const onLine1 = normalizeFooterChipLayout({
+		footerLine1Keys: ["model", FOOTER_COST_KEY, "ponytail"],
+		footerLine2Keys: [FOOTER_GIT_KEY],
+	});
+	assert.deepEqual(onLine1.footerLine1Keys, [
+		"model",
+		FOOTER_COST_KEY,
+		FOOTER_TOKENS_KEY,
+		"ponytail",
+	]);
+
+	const onLine2 = normalizeFooterChipLayout({
+		footerLine1Keys: ["model"],
+		footerLine2Keys: ["cwd", FOOTER_COST_KEY, FOOTER_GIT_KEY],
+	});
+	assert.deepEqual(onLine2.footerLine1Keys, ["model"]);
+	assert.deepEqual(onLine2.footerLine2Keys, [
+		"cwd",
+		FOOTER_COST_KEY,
+		FOOTER_TOKENS_KEY,
+		FOOTER_GIT_KEY,
+	]);
+});
+
+test("normalizeFooterChipLayout leaves an explicitly empty line1 empty and keeps hidden tokens out", () => {
+	const emptyLine1 = normalizeFooterChipLayout({ footerLine2Keys: ["cwd", "git"] });
+	assert.deepEqual(emptyLine1.footerLine1Keys, []);
+	assert.deepEqual(emptyLine1.footerLine2Keys, ["cwd", "git"]);
+
+	const hidden = normalizeFooterChipLayout({
+		footerHiddenKeys: [FOOTER_TOKENS_KEY],
+		footerLine1Keys: ["model", FOOTER_COST_KEY],
+		footerLine2Keys: ["cwd", "git"],
+	});
+	assert.deepEqual(hidden.footerHiddenKeys, [FOOTER_TOKENS_KEY]);
+	assert.deepEqual(hidden.footerLine1Keys, ["model", FOOTER_COST_KEY]);
 });
 
 test("normalizeFooterChipLayout rewrites legacy localUsage and piUsage keys to pi-usage", () => {
@@ -208,6 +253,8 @@ test("disabled custom footer leaves another extension's footer untouched", () =>
 
 test("defaultFooterLine sends usage-like keys to line1, git to line2, and skips extension model status", () => {
 	assert.equal(isSkippedFooterStatusKey("model"), true);
+	// usage 类插件常用 tokens 这个名字，不能让它覆盖内置芯片
+	assert.equal(isSkippedFooterStatusKey(FOOTER_TOKENS_KEY), true);
 	assert.equal(defaultFooterLine("usage"), 1);
 	assert.equal(defaultFooterLine("pi-grok-usage"), 1);
 	assert.equal(defaultFooterLine("cloud-quota"), 1);

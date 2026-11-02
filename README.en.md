@@ -85,7 +85,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerTokenRate": true,                 // output rate chip; false hides it
   "footerTokenRateMode": "average",        // average: whole-prompt avg; live: trailing 1s rate
   "footerTokenRateTtft": true,             // append TTFT to the rate chip; false shows tok/s only
-  "footerSessionTokens": true,             // conversation token total chip (∑); sums usage.totalTokens from the session .jsonl. false hides it
+  "footerSessionTokens": false,            // conversation token total chip (∑); sums usage.totalTokens from session entries. Off by default
   "footerCurrency": "USD",                 // display currency for the footer cost
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text

@@ -85,7 +85,7 @@ export type Config = {
 	footerTokenRateMode: FooterTokenRateMode;
 	/** 速率芯片是否带 TTFT。关则只显示速率。 */
 	footerTokenRateTtft: boolean;
-	/** 会话累计 token 芯片（统计会话 jsonl 的 usage.totalTokens）。关则不显示。 */
+	/** 会话累计 token 芯片（累加会话条目的 usage.totalTokens）。默认关。 */
 	footerSessionTokens: boolean;
 	/** ISO 4217 显示币种。USD 时不换算。 */
 	footerCurrency: string;
@@ -168,7 +168,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerTokenRate: true,
 	footerTokenRateMode: "average",
 	footerTokenRateTtft: true,
-	footerSessionTokens: true,
+	footerSessionTokens: false,
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
@@ -307,7 +307,7 @@ export function normalizeConfig(input: unknown): Config {
 			DEFAULT_CONFIG.footerTokenRateMode,
 		),
 		footerTokenRateTtft: source.footerTokenRateTtft !== false,
-		footerSessionTokens: source.footerSessionTokens !== false,
+		footerSessionTokens: source.footerSessionTokens === true,
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,

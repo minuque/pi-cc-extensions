@@ -4,7 +4,7 @@
  * 默认第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · pi-usage · 其余 line1 芯片
  * 默认第二行：cwd in session ·  branch (+16 −1) · 其余 line2 芯片
  * 第三行：仅当 line3 有可见芯片时出现
- * model / context / cache / rate / cost / cwd / git 与插件芯片同一套排布，可换行、调序、隐藏
+ * model / context / cache / rate / cost / tokens / cwd / git 与插件芯片同一套排布，可换行、调序、隐藏
  *
  *  - line1 短芯片，· 分隔；缓存用 zentui 󰆼，费用 success
  *  - line2 用 zentui 句式 in / on + 
@@ -40,7 +40,7 @@ import {
 	type FooterChipLayout,
 } from "./footer-layout.ts";
 import { createGitStatsRefresher, readGitStats, type GitStats } from "./git-stats.ts";
-import { createSessionTokenReader, formatSessionTokenTotal } from "./session-tokens.ts";
+import { formatSessionTokenTotal, sessionEntryTokens } from "./session-tokens.ts";
 import { MCP_STATUS_KEY, buildMcpChip } from "./mcp-chip.ts";
 import { inputTextIndent } from "./prompt-editor.ts";
 import { currentTtftMs, displayTokenRate, formatTokenRate } from "./token-rate.ts";
@@ -51,8 +51,6 @@ const GIT_REFRESH_INTERVAL_MS = 10_000;
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 // 后台连接 MCP 服务器不会触发 footer 重绘，靠这个兜底轮询把芯片刷出来
 const MCP_REFRESH_INTERVAL_MS = 5_000;
-// jsonl 只在消息落盘后变化，工具/回合结束时主动刷新，这个只兜底。
-const SESSION_TOKENS_REFRESH_INTERVAL_MS = 2_000;
 const USAGE_TIMEOUT_MS = 15_000;
 // zentui NERD_DEFAULT_ICONS：git / cacheHit。无 Nerd Font 时留空，只保留文字。
 export const FOOTER_NERD_ICON_GIT = "";
@@ -235,7 +233,6 @@ export function refreshFooterGitStats(): void {
 }
 let refreshCurrentUsage: (() => void) | undefined;
 let refreshCurrentMcpChip: (() => void) | undefined;
-let refreshCurrentSessionTokens: (() => void) | undefined;
 /** 工具/命令列表在 pi API 上，而 footer 工厂只拿得到 ctx，加载时记下来。 */
 let extensionApi: Pick<ExtensionAPI, "getAllTools" | "getCommands"> | undefined;
 
@@ -246,7 +243,6 @@ const createCustomFooterFactory =
 		const joinChips = (parts: string[]) => parts.filter(Boolean).join(sep);
 		let gitStats: GitStats | undefined;
 		let localUsageChip = "";
-		let sessionTokens = 0;
 		let usageGeneration = 0;
 		let usageAbort: AbortController | undefined;
 		let disposed = false;
@@ -343,27 +339,6 @@ const createCustomFooterFactory =
 		const usageRefreshTimer = setInterval(refreshUsage, USAGE_REFRESH_INTERVAL_MS);
 		usageRefreshTimer.unref?.();
 
-		// 累计 token 只从会话 jsonl 读，增量解析；文件在第一条消息落盘后才存在。
-		const tokenReader = createSessionTokenReader();
-		const refreshSessionTokens = () => {
-			if (disposed) return;
-			// 宿主：旧版 ctx 可能没有 getSessionFile，没有文件就当 0。
-			const manager = ctx.sessionManager as { getSessionFile?: () => string | undefined };
-			const file =
-				typeof manager?.getSessionFile === "function" ? manager.getSessionFile() : undefined;
-			const next = tokenReader.refresh(file);
-			if (next === sessionTokens) return;
-			sessionTokens = next;
-			tui.requestRender();
-		};
-		refreshCurrentSessionTokens = refreshSessionTokens;
-		refreshSessionTokens();
-		const sessionTokensRefreshTimer = setInterval(
-			refreshSessionTokens,
-			SESSION_TOKENS_REFRESH_INTERVAL_MS,
-		);
-		sessionTokensRefreshTimer.unref?.();
-
 		// 内置 MCP 的状态不经 setStatus 暴露，只能轮询 pi API 与 mcp.json 推算
 		const refreshMcp = () => {
 			if (disposed) return;
@@ -418,7 +393,12 @@ const createCustomFooterFactory =
 		let statsMemoKey = "";
 		let statsMemoAt = 0;
 		let statsMemo:
-			| { contextUsage: ReturnType<typeof ctx.getContextUsage>; cost: number; cachePct: number }
+			| {
+					contextUsage: ReturnType<typeof ctx.getContextUsage>;
+					cost: number;
+					tokens: number;
+					cachePct: number;
+			  }
 			| undefined;
 		const sessionStats = () => {
 			const model = ctx.model;
@@ -431,19 +411,28 @@ const createCustomFooterFactory =
 				return statsMemo;
 			}
 			let cost = 0;
+			let tokens = 0;
 			for (const entry of ctx.sessionManager.getEntries()) {
 				if (entry.type === "message") {
 					const m = entry.message;
 					if (m.role === "assistant") cost += m.usage?.cost?.total || 0;
 					else if (m.role === "toolResult" && m.usage) cost += m.usage.cost?.total || 0;
 				} else if (
-					(entry.type === "branch_summary" || entry.type === "compaction") &&
+					(entry.type === "branch_summary" ||
+						entry.type === "compaction" ||
+						entry.type === "usage") &&
 					entry.usage
 				) {
-					cost += entry.usage.cost?.total || 0;
+					cost += entry.usage.cost.total || 0;
 				}
+				tokens += sessionEntryTokens(entry);
 			}
-			statsMemo = { contextUsage: ctx.getContextUsage(), cost, cachePct: getCachePct() };
+			statsMemo = {
+				contextUsage: ctx.getContextUsage(),
+				cost,
+				tokens,
+				cachePct: getCachePct(),
+			};
 			statsMemoKey = key;
 			statsMemoAt = performance.now();
 			return statsMemo;
@@ -451,7 +440,7 @@ const createCustomFooterFactory =
 
 		const render = (width: number): string[] => {
 			const model = ctx.model;
-			const { contextUsage, cost, cachePct } = sessionStats();
+			const { contextUsage, cost, tokens, cachePct } = sessionStats();
 			const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
 			const percent = contextUsage?.percent;
 
@@ -498,7 +487,7 @@ const createCustomFooterFactory =
 			const costChip = costLabel
 				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
 				: "";
-			const tokensLabel = config.footerSessionTokens ? formatSessionTokenTotal(sessionTokens) : "";
+			const tokensLabel = config.footerSessionTokens ? formatSessionTokenTotal(tokens) : "";
 
 			const gitColor = theme.getThinkingBorderColor("medium");
 			let place = theme.fg("accent", cwdLabel);
@@ -576,14 +565,12 @@ const createCustomFooterFactory =
 				clearInterval(gitRefreshTimer);
 				clearInterval(usageRefreshTimer);
 				clearInterval(mcpRefreshTimer);
-				clearInterval(sessionTokensRefreshTimer);
 				unsubBranch();
 				if (currentTui === tui) {
 					currentTui = undefined;
 					refreshCurrentGitStats = undefined;
 					refreshCurrentUsage = undefined;
 					refreshCurrentMcpChip = undefined;
-					refreshCurrentSessionTokens = undefined;
 				}
 			},
 		};
@@ -618,11 +605,7 @@ export default function (pi: ExtensionAPI) {
 		refreshCurrentGitStats?.();
 		// 懒连接的 MCP 服务器可能刚被调用过
 		refreshCurrentMcpChip?.();
-		// 工具结果已落盘，累计 token 跟着跳一次
-		refreshCurrentSessionTokens?.();
 	});
-	// assistant 消息落盘在 message_end 之后，turn_end 时读到的就是完整的一条。
-	pi.on("turn_end", () => refreshCurrentSessionTokens?.());
 
 	// 启动 / /reload / 新建会话 时按配置恢复
 	pi.on("session_start", (_event, ctx) => {

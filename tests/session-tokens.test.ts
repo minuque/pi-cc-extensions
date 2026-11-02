@@ -1,36 +1,10 @@
 import assert from "node:assert/strict";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import {
-	createSessionTokenReader,
 	formatSessionTokenTotal,
 	sessionEntryTokens,
-	sumSessionTokens,
 	usageTokenTotal,
 } from "../extensions/feature/shell/session-tokens.ts";
-
-const assistant = (totalTokens: number, extra: Record<string, number> = {}) =>
-	JSON.stringify({
-		type: "message",
-		id: `m${totalTokens}`,
-		parentId: null,
-		timestamp: "2026-01-01T00:00:00.000Z",
-		message: {
-			role: "assistant",
-			content: [],
-			usage: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				...extra,
-			},
-		},
-	});
 
 test("usageTokenTotal prefers totalTokens and falls back to the four buckets", () => {
 	assert.equal(usageTokenTotal({ totalTokens: 120, input: 1, output: 2 }), 120);
@@ -58,80 +32,20 @@ test("sessionEntryTokens counts assistant, toolResult, compaction, branch_summar
 	assert.equal(sessionEntryTokens(null), 0);
 });
 
-test("sumSessionTokens skips blank and unparsable lines", () => {
-	const text = [
-		JSON.stringify({ type: "session", id: "s" }),
-		assistant(10),
-		"",
-		"{not json",
-		assistant(5),
-	].join("\n");
-	assert.equal(sumSessionTokens(text), 15);
-	assert.equal(sumSessionTokens(""), 0);
-});
-
-test("the reader accumulates whole lines and keeps a half-written tail for later", (t) => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-session-tokens-"));
-	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	const file = join(dir, "session.jsonl");
-	writeFileSync(file, `${assistant(10)}\n${assistant(20)}\n`);
-	const reader = createSessionTokenReader();
-	assert.equal(reader.refresh(file), 30);
-
-	// 同一路径重复读：不重复累加
-	assert.equal(reader.refresh(file), 30);
-	assert.equal(reader.total(), 30);
-
-	// 追加一整个条目
-	appendFileSync(file, `${assistant(15)}\n`);
-	assert.equal(reader.refresh(file), 45);
-
-	// 尾行只写了一半：保留已读偏移，等下一次刷新
-	appendFileSync(file, assistant(7).slice(0, 40));
-	assert.equal(reader.refresh(file), 45);
-	appendFileSync(file, `${assistant(7).slice(40)}\n`);
-	assert.equal(reader.refresh(file), 52);
-
-	// 没有换行结尾的完整 JSON 仍算未完成，不进入累计
-	appendFileSync(file, assistant(3));
-	assert.equal(reader.refresh(file), 52);
-	appendFileSync(file, "\n");
-	assert.equal(reader.refresh(file), 55);
-});
-
-test("the reader recounts from scratch when the file is replaced or shrinks", (t) => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-session-tokens-"));
-	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	const file = join(dir, "session.jsonl");
-	writeFileSync(file, `${assistant(100)}\n`);
-	const reader = createSessionTokenReader();
-	assert.equal(reader.refresh(file), 100);
-
-	// SessionManager 在版本迁移时会整份重写：文件变小必须从头算，而不是把差额当新数据
-	writeFileSync(file, `${assistant(5)}\n`);
-	assert.equal(reader.refresh(file), 5);
-
-	// 换成另一个会话文件
-	const other = join(dir, "other.jsonl");
-	writeFileSync(other, `${assistant(11)}\n`);
-	assert.equal(reader.refresh(other), 11);
-	assert.equal(reader.refresh(file), 5);
-});
-
-test("the reader keeps the last total while the session file does not exist yet", (t) => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-session-tokens-"));
-	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	const file = join(dir, "session.jsonl");
-	const reader = createSessionTokenReader();
-	// 新会话要等第一条消息才落盘
-	assert.equal(reader.refresh(file), 0);
-	assert.equal(reader.refresh(undefined), 0);
-	writeFileSync(file, `${assistant(42)}\n`);
-	assert.equal(reader.refresh(file), 42);
-	// 宿主暂时取不到路径（会话切换中）不清零
-	assert.equal(reader.refresh(undefined), 0);
-	reader.reset();
-	assert.equal(reader.total(), 0);
+test("session token total adds up entries and skips ones without usage", () => {
+	const entries = [
+		{ type: "message", message: { role: "assistant", usage: { totalTokens: 10 } } },
+		{ type: "message", message: { role: "user", content: "hi" } },
+		{ type: "message", message: { role: "toolResult", usage: { totalTokens: 20 } } },
+		{ type: "compaction", usage: { totalTokens: 5 } },
+		{ type: "usage", usage: { totalTokens: 15 } },
+		{ type: "model_change" },
+		null,
+	];
+	assert.equal(
+		entries.reduce<number>((sum, entry) => sum + sessionEntryTokens(entry), 0),
+		50,
+	);
 });
 
 test("formatSessionTokenTotal abbreviates and hides when empty", () => {

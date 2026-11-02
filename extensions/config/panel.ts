@@ -113,7 +113,7 @@ function footerTokenRateTtftDescription(enabled: boolean): string {
 
 function footerSessionTokensDescription(enabled: boolean): string {
 	return enabled
-		? "Cumulative tokens used in this conversation, summed from the session .jsonl usage.totalTokens. Turn off to hide it."
+		? "Cumulative tokens used in this conversation, summed from the session's usage.totalTokens. Turn off to hide it."
 		: "Conversation token total hidden.";
 }
 

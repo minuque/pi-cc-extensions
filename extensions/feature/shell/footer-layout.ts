@@ -13,7 +13,7 @@ export const FOOTER_CONTEXT_KEY = "context";
 export const FOOTER_CACHE_KEY = "cache";
 export const FOOTER_RATE_KEY = "rate";
 export const FOOTER_COST_KEY = "cost";
-/** 本次对话累计消耗 token（统计会话 jsonl 的 usage.totalTokens）。 */
+/** 本次对话累计消耗 token（累加会话条目的 usage.totalTokens）。 */
 export const FOOTER_TOKENS_KEY = "tokens";
 export const FOOTER_CWD_KEY = "cwd";
 export const FOOTER_GIT_KEY = "git";
@@ -76,9 +76,12 @@ export const DEFAULT_FOOTER_CHIP_LAYOUT: FooterChipLayout = {
 	footerLine3Keys: [],
 };
 
-/** 别的扩展写的 model 状态与本扩展的模型芯片重名，不当插件芯片接纳。配置里的 model 不受影响。 */
+/**
+ * 别的扩展写的 model / tokens 状态与本扩展的内置芯片重名，不当插件芯片接纳。
+ * 配置里的同名内置 key 不受影响。
+ */
 export function isSkippedFooterStatusKey(key: string): boolean {
-	return key === FOOTER_MODEL_KEY;
+	return key === FOOTER_MODEL_KEY || key === FOOTER_TOKENS_KEY;
 }
 
 /** 未单独配置时的默认行：内置项按原来的行，usage 类在 line1，其余 line2。不会默认进 line3。 */
@@ -127,12 +130,10 @@ function ensureBuiltinKeys(
 	if (LEGACY_FIXED_FOOTER_KEYS.some((key) => seen.has(key))) {
 		return { footerLine1Keys: line1, footerLine2Keys: line2, footerLine3Keys: line3 };
 	}
-	const line1Builtins = LEGACY_FIXED_FOOTER_KEYS.filter(
-		(key) => defaultFooterLine(key) === 1 && key !== FOOTER_RATE_KEY,
+	// tokens 属于后加芯片，由 ensureAddedBuiltins 负责插入。
+	const line1Builtins = DEFAULT_FOOTER_LINE1_KEYS.filter(
+		(key) => key !== PI_USAGE_KEY && key !== FOOTER_TOKENS_KEY,
 	);
-	// rate 历史上排在 cost 之前，保持迁移后的顺序不变。
-	const costAt = line1Builtins.indexOf(FOOTER_COST_KEY);
-	if (costAt >= 0) line1Builtins.splice(costAt, 0, FOOTER_RATE_KEY);
 	const usageAt = line1.indexOf(PI_USAGE_KEY);
 	const footerLine1Keys =
 		usageAt >= 0
@@ -154,24 +155,21 @@ function ensureAddedBuiltins(layout: FooterChipLayout): FooterChipLayout {
 	]);
 	const missing = ADDED_FOOTER_KEYS.filter((item) => !present.has(item.key));
 	if (missing.length === 0) return layout;
-	const line1 = [...layout.footerLine1Keys];
-	const line2 = [...layout.footerLine2Keys];
+	const next: FooterChipLayout = {
+		...layout,
+		footerLine1Keys: [...layout.footerLine1Keys],
+		footerLine2Keys: [...layout.footerLine2Keys],
+		footerLine3Keys: [...layout.footerLine3Keys],
+	};
 	for (const item of missing) {
-		if (defaultFooterLine(item.key) !== 1) {
-			line2.push(item.key);
-			continue;
-		}
-		// 贴着锚点芯片放（如 tokens 跟 cost）
-		let at = line1.indexOf(item.after);
-		if (at >= 0) at += 1;
-		else {
-			// 没有锚点就接在旧内置项后面，不把已有插件顺序打散
-			const lastBuiltin = line1.findLastIndex((key) => isBuiltinFooterKey(key));
-			at = lastBuiltin >= 0 ? lastBuiltin + 1 : line1.length;
-		}
-		line1.splice(at, 0, item.key);
+		// 贴着锚点芯片所在的行放（如 tokens 跟 cost）。
+		const line = footerLineOfKey(next, item.after);
+		// 锚点被用户移除时不补，免得凭空多出一行或一个孤立芯片。
+		if (!line) continue;
+		const keys = keysOnLine(next, line);
+		keys.splice(keys.indexOf(item.after) + 1, 0, item.key);
 	}
-	return { ...layout, footerLine1Keys: line1, footerLine2Keys: line2 };
+	return next;
 }
 
 /** 跨行去重（line1 → line2 → line3）；旧配置补上内置芯片。 */
