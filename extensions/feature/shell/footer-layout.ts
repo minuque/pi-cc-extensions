@@ -163,11 +163,12 @@ function ensureAddedBuiltins(layout: FooterChipLayout): FooterChipLayout {
 	};
 	for (const item of missing) {
 		// 贴着锚点芯片所在的行放（如 tokens 跟 cost）。
-		const line = footerLineOfKey(next, item.after);
-		// 锚点被用户移除时不补，免得凭空多出一行或一个孤立芯片。
-		if (!line) continue;
+		const line = footerLineOfKey(next, item.after) ?? defaultFooterLine(item.key);
 		const keys = keysOnLine(next, line);
-		keys.splice(keys.indexOf(item.after) + 1, 0, item.key);
+		const anchorAt = keys.indexOf(item.after);
+		// 锚点被用户删掉时接到该行末尾：芯片留在布局里，面板菜单与开关才管得到。
+		// 默认关闭，不渲染就不占位，多出来的 key 不会让底栏多一行。
+		keys.splice(anchorAt >= 0 ? anchorAt + 1 : keys.length, 0, item.key);
 	}
 	return next;
 }

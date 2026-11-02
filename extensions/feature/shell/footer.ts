@@ -423,7 +423,7 @@ const createCustomFooterFactory =
 						entry.type === "usage") &&
 					entry.usage
 				) {
-					cost += entry.usage.cost.total || 0;
+					cost += entry.usage.cost?.total || 0;
 				}
 				tokens += sessionEntryTokens(entry);
 			}

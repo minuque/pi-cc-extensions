@@ -159,8 +159,8 @@ test("normalizeFooterChipLayout migrates old plugin-only lines and keeps an expl
 		footerLine1Keys: ["usage"],
 		footerLine3Keys: ["model", "git"],
 	});
-	// cost 被用户从所有行移走时不补 tokens，避免凭空多出芯片
-	assert.deepEqual(explicit.footerLine1Keys, ["usage"]);
+	// cost 被移走后 tokens 落到默认行末尾，芯片仍在布局里
+	assert.deepEqual(explicit.footerLine1Keys, ["usage", "tokens"]);
 	assert.deepEqual(explicit.footerLine2Keys, []);
 	assert.deepEqual(explicit.footerLine3Keys, ["model", "git"]);
 });
@@ -190,9 +190,9 @@ test("normalizeFooterChipLayout inserts tokens next to cost on whichever line co
 	]);
 });
 
-test("normalizeFooterChipLayout leaves an explicitly empty line1 empty and keeps hidden tokens out", () => {
+test("normalizeFooterChipLayout backfills tokens on the default line and keeps hidden tokens out", () => {
 	const emptyLine1 = normalizeFooterChipLayout({ footerLine2Keys: ["cwd", "git"] });
-	assert.deepEqual(emptyLine1.footerLine1Keys, []);
+	assert.deepEqual(emptyLine1.footerLine1Keys, ["tokens"]);
 	assert.deepEqual(emptyLine1.footerLine2Keys, ["cwd", "git"]);
 
 	const hidden = normalizeFooterChipLayout({
