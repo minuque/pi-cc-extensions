@@ -254,6 +254,25 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	}
 });
 
+test("completed thinking preview normalization and status preserve follow and numeric values", () => {
+	assert.equal(normalizeConfig({}).completedPreviewLines, null);
+	assert.equal(normalizeConfig({ completedPreviewLines: null }).completedPreviewLines, null);
+	assert.equal(normalizeConfig({ completedPreviewLines: "" }).completedPreviewLines, null);
+	assert.equal(normalizeConfig({ completedPreviewLines: "abc" }).completedPreviewLines, null);
+	assert.equal(normalizeConfig({ completedPreviewLines: -1 }).completedPreviewLines, 0);
+	assert.equal(normalizeConfig({ completedPreviewLines: 3.7 }).completedPreviewLines, 3);
+	assert.equal(normalizeConfig({ completedPreviewLines: "7" }).completedPreviewLines, 7);
+	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingPreviewDone=follow/);
+	assert.match(
+		formatConfigStatus(normalizeConfig({ completedPreviewLines: 0 })),
+		/thinkingPreviewDone=0/,
+	);
+	assert.match(
+		formatConfigStatus(normalizeConfig({ completedPreviewLines: 7 })),
+		/thinkingPreviewDone=7/,
+	);
+});
+
 test("tool path summaries relativize cwd paths and preserve filenames when clipped", () => {
 	const previous = config.toolLabelClip;
 	const args = {
@@ -678,6 +697,7 @@ test("expanded running round keeps thinking and tools in transcript order", () =
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -746,6 +766,7 @@ test("compact 整回合展开卡内工具可单击二次展开", () => {
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -830,6 +851,7 @@ test("compact 面板收起时，卡内被点开的工具一起收回", async () 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -896,6 +918,7 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -1038,6 +1061,7 @@ test("compact live: a superseding round folds the previous one immediately", () 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -1826,6 +1850,7 @@ test("compact live: 槽位卡内不重复展开入口，摘要行自己的 hint 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -1912,6 +1937,7 @@ test("compact 展开卡：thinking 二次展开只多 1 行内卡 padding，工�
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2011,6 +2037,7 @@ test("compact 展开卡：助手文本不进面板，工具卡保留底色", () 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2079,6 +2106,7 @@ test("compact 展开面板留在摘要行原位，不跳到 write/edit 上方", 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2163,6 +2191,7 @@ test("compact 展开卡：助手文本排在 thinking 前面，不被思考块�
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2224,6 +2253,7 @@ test("compact 面板收起后重钉视口，不跳回展开前的位置", () => 
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2306,6 +2336,7 @@ test("compact 折叠态工具卡复用 ccstyle 默认样式", () => {
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
@@ -2956,6 +2987,7 @@ test("refreshMountedTranscript asserts compact ownership before redraw (resume w
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 		});
 		await emit("session_start", {}, ctx);
@@ -2994,6 +3026,7 @@ test("session_start and session_tree keep the compact patch outermost over compa
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 		});
 		await emit("session_start", {}, ctx);
@@ -3045,6 +3078,7 @@ test("isStreaming survives the compact + compact-thinking patch chain (mermaid f
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 		});
 		// 真实链序：compact-thinking 先装，compact-mode 在其外层再装。
@@ -3227,6 +3261,7 @@ test("compact 展开卡为内联图片留出全部占位行", () => {
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 	});
 	emit("session_start", {}, ctx);
