@@ -33,6 +33,7 @@ import { applyStartupHeader, clearStartupHeader } from "../feature/shell/startup
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
 	config,
+	COMPLETED_THINKING_PREVIEW_LINES_VALUES,
 	DEFAULT_CONFIG,
 	DIFF_COLLAPSED_LINES_VALUES,
 	DIFF_INDICATOR_MODES,
@@ -45,6 +46,7 @@ import {
 	FOOTER_TOKEN_RATE_MODES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
+	pickCompletedPreviewLines,
 	pickPositiveInt,
 	pickPositiveNumber,
 	pickToolLabelClip,
@@ -374,14 +376,22 @@ function buildNumberInputSubmenu(
 	theme: any,
 	setting: { label: string; currentValue: string },
 	closeSubmenu: (selected?: string) => void,
+	allowFollow = false,
 ) {
 	return buildValueInputSubmenu(
 		theme,
 		{
 			prompt: `  ${setting.label} — custom value:`,
 			initial: setting.currentValue,
-			hint: "  Enter to apply · Esc to go back",
-			accept: (raw) => (raw === "" ? undefined : Number.isFinite(Number(raw)) ? raw : null),
+			hint: allowFollow
+				? "  Enter to apply · Esc to go back · follow = Preview lines"
+				: "  Enter to apply · Esc to go back",
+			accept: (raw) =>
+				raw === ""
+					? undefined
+					: (allowFollow && raw === "follow") || Number.isFinite(Number(raw))
+						? raw
+						: null,
 			invalid: (raw) => `Invalid number: "${raw}"`,
 		},
 		closeSubmenu,
@@ -581,11 +591,22 @@ export async function showCcstylePanel(
 		const thinkingPreviewSetting = {
 			id: "previewLines",
 			label: "Preview lines",
-			description: "Thinking preview lines; 0 hides the preview body.",
+			description: "Thinking preview lines while a run is in progress; 0 hides the preview body.",
 			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingPreviewSetting, closeSubmenu),
+		};
+		const completedThinkingPreviewSetting = {
+			id: "completedPreviewLines",
+			label: "Completed preview",
+			description:
+				"Thinking preview lines once the run finishes; follow = same as Preview lines. Enter to type a custom value or follow.",
+			currentValue:
+				config.completedPreviewLines === null ? "follow" : String(config.completedPreviewLines),
+			values: [...COMPLETED_THINKING_PREVIEW_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, completedThinkingPreviewSetting, closeSubmenu, true),
 		};
 		const thinkingAnimationSetting = {
 			id: "animationIntervalMs",
@@ -1028,6 +1049,13 @@ export async function showCcstylePanel(
 					updateConfig({ previewLines: pickPositiveInt(value, DEFAULT_CONFIG.previewLines, 0) });
 					thinkingPreviewSetting.currentValue = String(config.previewLines);
 					break;
+				case "completedPreviewLines":
+					updateConfig({
+						completedPreviewLines: value === "follow" ? null : pickCompletedPreviewLines(value),
+					});
+					completedThinkingPreviewSetting.currentValue =
+						config.completedPreviewLines === null ? "follow" : String(config.completedPreviewLines);
+					break;
 				case "animationIntervalMs":
 					updateConfig({
 						animationIntervalMs: pickPositiveNumber(value, DEFAULT_CONFIG.animationIntervalMs),
@@ -1115,7 +1143,12 @@ export async function showCcstylePanel(
 			{
 				id: "thinking",
 				label: "Thinking",
-				items: [thinkingTitleSetting, thinkingPreviewSetting, thinkingAnimationSetting],
+				items: [
+					thinkingTitleSetting,
+					thinkingPreviewSetting,
+					completedThinkingPreviewSetting,
+					thinkingAnimationSetting,
+				],
 			},
 			{
 				id: "footer",
