@@ -9,5 +9,6 @@ Thumbs.db
 nul
 
 .pi/
+.claude/
 .tmp/
 .temp/
