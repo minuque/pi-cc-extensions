@@ -78,7 +78,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview lines while thinking; 0 hides
-  "completedPreviewLines": null,           // preview lines once thinking completes; null follows previewLines, 0 hides
+  "completedPreviewLines": null,           // completed preview lines; null follows previewLines, 0 hides. Panel accepts any number or follow
   "animationIntervalMs": 90,               // title animation interval (ms)
 
   // footer
