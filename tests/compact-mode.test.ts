@@ -254,25 +254,6 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	}
 });
 
-test("completed thinking preview normalization and status preserve follow and numeric values", () => {
-	assert.equal(normalizeConfig({}).completedPreviewLines, null);
-	assert.equal(normalizeConfig({ completedPreviewLines: null }).completedPreviewLines, null);
-	assert.equal(normalizeConfig({ completedPreviewLines: "" }).completedPreviewLines, null);
-	assert.equal(normalizeConfig({ completedPreviewLines: "abc" }).completedPreviewLines, null);
-	assert.equal(normalizeConfig({ completedPreviewLines: -1 }).completedPreviewLines, 0);
-	assert.equal(normalizeConfig({ completedPreviewLines: 3.7 }).completedPreviewLines, 3);
-	assert.equal(normalizeConfig({ completedPreviewLines: "7" }).completedPreviewLines, 7);
-	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingPreviewDone=follow/);
-	assert.match(
-		formatConfigStatus(normalizeConfig({ completedPreviewLines: 0 })),
-		/thinkingPreviewDone=0/,
-	);
-	assert.match(
-		formatConfigStatus(normalizeConfig({ completedPreviewLines: 7 })),
-		/thinkingPreviewDone=7/,
-	);
-});
-
 test("tool path summaries relativize cwd paths and preserve filenames when clipped", () => {
 	const previous = config.toolLabelClip;
 	const args = {

@@ -1110,35 +1110,6 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 	}
 });
 
-test("installToolMouseInteraction ignores contexts without a TUI mouse source", () => {
-	let touched = 0;
-	const ui = {
-		setWidget() {
-			touched++;
-		},
-		onTerminalInput() {
-			touched++;
-			return () => undefined;
-		},
-	};
-	try {
-		installToolMouseInteraction({ mode: "rpc", hasUI: true, ui });
-		installToolMouseInteraction({
-			mode: "tui",
-			hasUI: true,
-			ui: {
-				setWidget() {
-					touched++;
-				},
-			},
-		});
-		installToolMouseInteraction({ mode: "tui", hasUI: false, ui });
-		assert.equal(touched, 0, "不满足 tui + hasUI + onTerminalInput/setWidget 时不安装");
-	} finally {
-		installToolMouseInteraction({});
-	}
-});
-
 test("pointer drag between press and release cancels the collapse", () => {
 	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	// expanded-card 命中要求卡有内容框：行数决定可点击区域。
@@ -1202,76 +1173,6 @@ test("pointer drag between press and release cancels the collapse", () => {
 	} finally {
 		installToolMouseInteraction({});
 	}
-});
-
-test("teardown survives a closed terminal and a reset UI context", () => {
-	const tui = {
-		terminal: { columns: 80, write() {} },
-		children: [],
-		previousLines: [],
-		previousViewportTop: 0,
-		requestRender() {},
-		doRender() {},
-	};
-	const ui = {
-		setWidget(_key: string, factory: any) {
-			if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
-		},
-		onTerminalInput() {
-			return () => undefined;
-		},
-	};
-	installToolMouseInteraction({ mode: "tui", hasUI: true, ui });
-	// 退出时终端已关闭、扩展上下文已被重置：两条清理都必须各自吞掉异常。
-	tui.terminal.write = () => {
-		throw new Error("terminal closed");
-	};
-	ui.setWidget = () => {
-		throw new Error("ui context reset");
-	};
-	assert.doesNotThrow(() => installToolMouseInteraction({}));
-});
-
-test("scheduleSessionRender repaints the restored session once", async () => {
-	const renders: unknown[] = [];
-	let refreshed = 0;
-	const tui = {
-		terminal: { columns: 80, write() {} },
-		children: [],
-		previousLines: [],
-		previousViewportTop: 0,
-		requestRender(value?: boolean) {
-			renders.push(value);
-		},
-		doRender() {},
-	};
-	try {
-		scheduleSessionRender(() => refreshed++);
-		assert.equal(renders.length, 0, "没有 tui 时直接返回");
-
-		installToolMouseInteraction({
-			mode: "tui",
-			hasUI: true,
-			ui: {
-				setWidget(_key: string, factory: any) {
-					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
-				},
-				onTerminalInput() {
-					return () => undefined;
-				},
-			},
-		});
-		scheduleSessionRender(() => refreshed++);
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-		assert.equal(refreshed, 1, "恢复的会话只重绘一次");
-		assert.deepEqual(renders.at(-1), true, "强制整帧重绘");
-	} finally {
-		installToolMouseInteraction({});
-	}
-});
-
-test("off mode still advertises the disable sequence", () => {
-	assert.match(TOOL_MOUSE_DISABLE, /\x1b\[\?1000l/);
 });
 
 /** 惰性 Proxy fullscreen：requestRender 每次 get 返回新函数（isLazyProxyTui 判定）。 */

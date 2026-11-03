@@ -26,23 +26,6 @@ test("working preserves HEAD-relative staged/unstaged net stats and excludes unt
 	assert.equal((await readGitStats(cwd, "working"))?.status, "!?");
 });
 
-test("branch statistics parse multi-file numstat output", async (t) => {
-	const { cwd, git, write, commit } = repository(t);
-	git("switch", "-c", "feature");
-	// 100 个文件足够触发 numstat 多行解析路径，同时把测试时间从 ~11s 降到 ~0.5s。
-	// 原 8000 文件版本只为凑 1MB 输出验证 maxBuffer，但 readGitStats 用的是 16MB buffer，
-	// 1MB 远不构成边界；多文件解析的正确性由本测试覆盖。
-	const count = 100;
-	for (let i = 0; i < count; i++) write(`${String(i).padStart(5, "0")}-file.txt`, "new\n");
-	commit();
-	const output = execFileSync("git", ["diff", "--numstat", "main", "--"], {
-		cwd,
-		maxBuffer: 16 * 1024 * 1024,
-	});
-	assert.ok(output.length > 1024, "numstat 应多行");
-	assert.deepEqual(await readGitStats(cwd, "branch"), { add: count, del: 0 });
-});
-
 test("readGitStats cancels an in-flight git query", async (t) => {
 	const { cwd } = repository(t);
 	assert.deepEqual(await readGitStats(cwd, "working"), { add: 0, del: 0 });

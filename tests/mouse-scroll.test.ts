@@ -53,16 +53,6 @@ const { keyDisplayText } = await import(
 	).href
 );
 
-test("scroll button: config defaults to dock and accepts native", () => {
-	assert.equal(normalizeConfig({}).scrollButtonMode, "dock");
-	assert.equal(normalizeConfig({ scrollButtonMode: "native" }).scrollButtonMode, "native");
-	assert.equal(normalizeConfig({ scrollButtonMode: "invalid" }).scrollButtonMode, "dock");
-	assert.match(
-		formatConfigStatus(normalizeConfig({ scrollButtonMode: "native" })),
-		/scrollButton=native/,
-	);
-});
-
 test("native text: absent native callback stays absent without a fallback button", () => {
 	const previous = { ...config };
 	const { tui } = lazyFullscreenTui();

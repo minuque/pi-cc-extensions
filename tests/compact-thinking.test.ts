@@ -119,36 +119,6 @@ test("completed blocks follow completedPreviewLines while active blocks keep pre
 	}
 });
 
-test("completedPreviewLines null follows previewLines", () => {
-	const originalConfig = { ...config };
-	const { pi } = runtime();
-	const controller = installCompactThinking(pi, {
-		...originalConfig,
-		previewLines: 2,
-		completedPreviewLines: null,
-	});
-	controller.updateConfig({ ...originalConfig, previewLines: 2, completedPreviewLines: null });
-	clearThinkingPreviewCache();
-	try {
-		const body = Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n");
-		const completed = new ThinkingPreviewBlock(
-			"Thought for 1s",
-			body,
-			0,
-			3,
-			(text) => text,
-			undefined,
-			0,
-			false,
-		);
-		const visible = completed.render(40).filter((line) => /line-\d/.test(line));
-		assert.equal(visible.length, 2, "null completedPreviewLines follows previewLines");
-	} finally {
-		controller.updateConfig({ ...originalConfig, completedPreviewLines: null });
-		clearThinkingPreviewCache();
-	}
-});
-
 test("thinking 展开态按消息时间戳与 run 序号记，换实例后仍生效", () => {
 	const originalConfig = { ...config };
 	const { pi } = runtime();

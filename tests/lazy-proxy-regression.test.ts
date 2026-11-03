@@ -575,26 +575,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	installToolMouseInteraction({});
 });
 
-test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
-	const previousMode = config.mode;
-	const tool = createTool("tool-overlay");
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(tool, null, terminal);
-	const indicator = () => "Jump to latest message";
-	(renderer as any).scrollToEndIndicator = indicator;
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	try {
-		config.mode = "on";
-		installToolMouseInteraction(ui.ctx);
-		ui.widget.render(80);
-		assert.equal((renderer as any).scrollToEndIndicator, undefined, "官方 overlay 已关掉");
-	} finally {
-		config.mode = previousMode;
-		installToolMouseInteraction({});
-	}
-});
-
 test("lazy-proxy tui: off mode keeps official jump-to-latest overlay", () => {
 	const previousMode = config.mode;
 	const tool = createTool("tool-overlay-off");

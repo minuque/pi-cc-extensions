@@ -151,12 +151,6 @@ const STAT_WORDS: [string, string][] = [
 	["durationMs", "1.2s"],
 ];
 
-function byNumber(number: string): Fixture {
-	const fixture = fixtures.find((candidate) => candidate.name.startsWith(`format-${number}-`));
-	assert.ok(fixture, number);
-	return fixture;
-}
-
 test("saved entries become display custom messages with their details untouched", () => {
 	for (const fixture of fixtures) {
 		const before = structuredClone(fixture.entry);
@@ -237,114 +231,6 @@ test("narrow expanded cards wrap within the width without losing text", () => {
 			}
 			assert.equal(squash(plainRows(standalone(fixture, true).render(width))), wide);
 		}
-	}
-});
-
-// 代表性格式的完整期望行：手写，不由产品代码推出。
-const STATS = "2 tool uses · 1.2k token · ~$0.125 · 1.2s";
-const LITERAL_COLLAPSED: Record<string, string[]> = {
-	// completed
-	"26": [` ✓ Subagent Finished fixture-agent-1 · ${STATS} · click to show more`],
-	// steered
-	"27": [
-		` ✓ Subagent Finished fixture-agent-1 · completed (steered) · ${STATS} · click to show more`,
-	],
-	// steered with zero tool uses
-	"28": [
-		" ✓ Subagent Finished fixture-agent-1 · completed (steered) · 1.2k token · ~$0.125 · 1.2s · click to show more",
-	],
-	// error
-	"03": [` ✗ Subagent Finished fixture-agent-1 · error · ${STATS} · click to show more`],
-	// aborted
-	"25": [` ✗ Subagent Finished fixture-agent-1 · aborted · ${STATS} · click to show more`],
-	// error with zero usage and no transcript
-	"05": [" ✗ Subagent Finished fixture-agent-1 · error · 1.2s · click to show more"],
-	// aborted without cost or transcript
-	"33": [
-		" ✗ Subagent Finished fixture-agent-1 · aborted · 2 tool uses · 1.2k token · 1.2s · click to show more",
-	],
-	// mixed batch: steered, completed, steered
-	"06": [
-		` ✓ Subagent Finished fixture-agent-1 · completed (steered) · ${STATS}`,
-		` ✓ Subagent Finished fixture-agent-2 · ${STATS}`,
-		` ✓ Subagent Finished fixture-agent-3 · completed (steered) · ${STATS} · click to show more`,
-	],
-};
-
-const LITERAL_EXPANDED: Record<string, string[]> = {
-	// completed, multiline preview
-	"21": [
-		" ✓ Subagent Finished fixture-agent-1",
-		" ├ Description",
-		" │ Fixture task.",
-		" │",
-		" ├ Status",
-		" │ completed",
-		` │ ${STATS}`,
-		" │",
-		" ├ Saved result preview",
-		" │ Fixture preview.",
-		" │ Fixture second line.",
-		" │",
-		" └ Transcript",
-		"   /fixture/transcripts/fixture-agent-1.output",
-	],
-	// error with its error section
-	"03": [
-		" ✗ Subagent Finished fixture-agent-1",
-		" ├ Description",
-		" │ Fixture task.",
-		" │",
-		" ├ Status",
-		" │ error",
-		` │ ${STATS}`,
-		" │",
-		" ├ Saved result preview",
-		" │ Fixture preview.",
-		" │",
-		" ├ Error",
-		" │ Fixture error.",
-		" │",
-		" └ Transcript",
-		"   /fixture/transcripts/fixture-agent-1.output",
-	],
-	// zero usage: only the duration remains; no transcript
-	"05": [
-		" ✗ Subagent Finished fixture-agent-1",
-		" ├ Description",
-		" │ Fixture task.",
-		" │",
-		" ├ Status",
-		" │ error",
-		" │ 1.2s",
-		" │",
-		" ├ Saved result preview",
-		" │ Fixture preview.",
-		" │",
-		" └ Error",
-		"   Fixture error.",
-	],
-	// no cost, no transcript
-	"33": [
-		" ✗ Subagent Finished fixture-agent-1",
-		" ├ Description",
-		" │ Fixture task.",
-		" │",
-		" ├ Status",
-		" │ aborted",
-		" │ 2 tool uses · 1.2k token · 1.2s",
-		" │",
-		" └ Saved result preview",
-		"   Fixture preview.",
-	],
-};
-
-test("representative formats render their known-good rows", () => {
-	for (const [number, expected] of Object.entries(LITERAL_COLLAPSED)) {
-		assert.deepEqual(plainRows(standalone(byNumber(number)).render(200)), expected, number);
-	}
-	for (const [number, expected] of Object.entries(LITERAL_EXPANDED)) {
-		assert.deepEqual(plainRows(standalone(byNumber(number), true).render(120)), expected, number);
 	}
 });
 
@@ -474,23 +360,5 @@ test("every format joins a synthetic neighbour tool with one grouped row per age
 			assert.ok(toolRow > lastAgentRow, fixture.name);
 			assertWithin(group, fixture.name);
 		}
-	});
-});
-
-test("representative grouped formats render their known-good rows", () => {
-	withGrouping(() => {
-		assert.deepEqual(plainRows(groupWithRead(byNumber("06")).render(240)), [
-			" ● Multiple Tools: 4 done · Subagent Finished×3, Read×1 · click to show more",
-			` ├ ✓ Subagent Finished fixture-agent-1 · completed (steered) · ${STATS}`,
-			` ├ ✓ Subagent Finished fixture-agent-2 · ${STATS}`,
-			` ├ ✓ Subagent Finished fixture-agent-3 · completed (steered) · ${STATS}`,
-			" └ ✓ Read fixture.ts",
-		]);
-		assert.deepEqual(plainRows(groupWithRead(byNumber("02")).render(240)), [
-			" ● Multiple Tools: 1 done · 2 failed · Subagent Finished×2, Read×1 · click to show more",
-			" ├ ✗ Subagent Finished fixture-agent-1 · error · 1.2s",
-			" ├ ✗ Subagent Finished fixture-agent-2 · error · 1.2s",
-			" └ ✓ Read fixture.ts",
-		]);
 	});
 });

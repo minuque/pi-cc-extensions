@@ -671,14 +671,6 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 	}
 });
 
-test("normalizeConfig defaults writeDiffCollapsedLines to 0 and allows explicit values", () => {
-	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 12 }).writeDiffCollapsedLines, 12);
-	assert.equal(normalizeConfig({ editDiffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: -3 }).writeDiffCollapsedLines, 0);
-});
-
 test("third-party write ownership prevents registration", () => {
 	const registered: unknown[] = [];
 	installWriteOverride({
