@@ -8,7 +8,8 @@
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
  * edit/write 与 ask_user_question 留在外层：不进摘要计数，折叠态也单独成行。
  * 外层行一旦在消息里出现，当前回合就地完结（不计静默期），后续消息另起回合：
- * 摘要行因此只折叠连续的一段工具调用，展开/收起不再跨外层行搬位置。
+ * 摘要行因此只折叠连续的一段工具调用。收尾后本回合的外层行排在摘要行之下，
+ * 摘要行覆盖的是它们之前的工具段；回合还在跑时它们留在原位，摘要行钉在可写底缘。
  * 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合
  * 就地收口、后续消息另起一回合。custom 通知/summary 类组件既不是成员也不算外来行，
  * 原地留在两段之间，不打断统计也不被挪位。
@@ -1211,6 +1212,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		liveSlotToolIds: Set<string>;
 		/** 收尾后的静默期截止时间戳；期间仍按围观态渲染，到点才收拢。 */
 		settleUntil?: number;
+		/** 已请求收尾但回合还有活干（消息仍在流式、工具还在跑）：活干完再兑现。 */
+		endRequest?: { endTimestamp?: number };
 		/** 消息已有 toolCall、工具组件还没到：等它一 updateDisplay 就重画槽位。 */
 		pendingLiveTool?: boolean;
 		foldTimer?: ReturnType<typeof setTimeout>;
@@ -1234,6 +1237,19 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	let uiRef: { requestRender?: (force?: boolean) => void } | undefined;
 	let idleRef: (() => boolean) | undefined = deps.isIdle;
 	let roundTickTimer: ReturnType<typeof setInterval> | undefined;
+
+	/** 本进程见过的回合：活动回合、本次 pass 建起的、收尾静默期的、还挂着尾行的。 */
+	const allRounds = (): CompactRound[] => {
+		const rounds = new Set<CompactRound>();
+		if (activeRound) rounds.add(activeRound);
+		for (const round of liveRounds) rounds.add(round);
+		for (const round of pendingFoldRounds) rounds.add(round);
+		for (const tail of mountedTails) {
+			const round = tail.round as CompactRound | undefined;
+			if (round) rounds.add(round);
+		}
+		return [...rounds];
+	};
 
 	/** 会话是否空闲：回合活性的事实来源，取不到就当没空闲（宁可保留 Running）。 */
 	const sessionIdle = (): boolean => {
@@ -1263,14 +1279,23 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		roundTickTimer = undefined;
 	};
 
+	/** 还有回合要盯就得继续 tick：活动回合的时长要跳，挂起的收尾请求要等活干完。 */
+	const roundTickNeeded = (): boolean => {
+		for (const round of allRounds()) {
+			if (round.active || round.endRequest !== undefined) return true;
+		}
+		return false;
+	};
+
 	// 自备 tick：getter 在 render 重算挂钟；兼驱动 Running 扫光（setCompactSummaryActive）。
 	const ensureRoundTick = (): void => {
 		if (roundTickTimer) return;
 		roundTickTimer = setInterval(() => {
-			if (!patch.active || !activeRound?.active) {
+			if (!patch.active || !roundTickNeeded()) {
 				stopRoundTick();
 				return;
 			}
+			for (const round of allRounds()) retryDeferredFinalize(round);
 			settleStrandedRounds();
 			try {
 				// 非 force：保留 fullscreen 布局缓存和差分绘制。
@@ -1302,9 +1327,15 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		value <= Date.now() + 60_000;
 
 	/** 结束回合活动态；不做任何重绘。更晚的消息 timestamp 用来保住回放时长；
-	 * 同一条消息的 timestamp 不动，活回合改用本进程挂钟，避免把历史 timestamp 收到「现在」。 */
-	const finalizeRound = (round: CompactRound, endTimestamp?: number): void => {
+	 * 同一条消息的 timestamp 不动，活回合改用本进程挂钟，避免把历史 timestamp 收到「现在」。
+	 * 回合还有活干时只记下收尾请求：提前翻成 Ran for 会把仍在跑的工具报成已结束。 */
+	const finalizeRound = (round: CompactRound, endTimestamp?: number): boolean => {
 		clearFoldTimer(round);
+		if (roundHasLiveWork(round)) {
+			round.endRequest ??= { endTimestamp };
+			return false;
+		}
+		round.endRequest = undefined;
 		round.active = false;
 		if (round.endedAt === undefined) {
 			let fallback = 0;
@@ -1321,22 +1352,26 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		if (activeRound === round) {
 			activeRound = undefined;
-			deps.query?.setCompactSummaryActive?.(false);
-			stopRoundTick();
+			// 还有回合在跑（另一个活动回合或挂起的收尾）：扫光与 tick 不能跟着一起停。
+			const stillLive = roundTickNeeded();
+			deps.query?.setCompactSummaryActive?.(stillLive);
+			if (!stillLive) stopRoundTick();
 		}
+		return true;
 	};
 
 	/**
 	 * 结束回合活动态；render=true 时走静默期，延迟 FOLD_SETTLE_MS 再收拢。
 	 * 分组语义不受影响：activeRound 立即让位，新消息不会被并进已收尾的回合。
+	 * 还有活干时整段跳过：回合保持 live，等活干完再收尾。
 	 */
 	const endRound = (round: CompactRound, render = false, endTimestamp?: number): void => {
-		if (!render || !round.active) {
-			finalizeRound(round, endTimestamp);
+		const wasActive = round.active;
+		if (!finalizeRound(round, endTimestamp)) return;
+		if (!render || !wasActive) {
 			if (render) renderRound(round);
 			return;
 		}
-		finalizeRound(round, endTimestamp);
 		if (round.foldTimer !== undefined) return;
 		round.settleUntil = Date.now() + FOLD_SETTLE_MS;
 		pendingFoldRounds.add(round);
@@ -1349,9 +1384,22 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	/**
+	 * 兑现挂起的收尾请求：活干完了当场收尾并重绘，摘要行从 Running 翻成 Ran for。
+	 * 挂在工具收尾与 tick 上，不另建定时器。
+	 */
+	const retryDeferredFinalize = (round: CompactRound): boolean => {
+		const request = round.endRequest;
+		if (!request || roundHasLiveWork(round)) return false;
+		endRound(round, true, request.endTimestamp);
+		renderRound(round);
+		return true;
+	};
+
+	/**
 	 * 外层行（edit/write/ask）切出的段落封口：跳过静默期直接定稿。
 	 * 静默期是为"正文 token 先于 toolCall 到达"的双重转场准备的；外层边界
 	 * 出现时摘要段内容已完整，立即收拢让 Ran for 当场落位，槽位卡一并撤走。
+	 * 本回合还有工具在跑时只挂起收尾：摘要行继续 Running，活干完再定稿。
 	 */
 	const sealRound = (round: CompactRound, endTimestamp?: number): void => {
 		finalizeRound(round, endTimestamp);
@@ -1426,6 +1474,24 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			}
 		}
 		return ids;
+	};
+
+	/**
+	 * 回合还有活干：成员消息仍在流式，或本回合的工具还没拿到最终结果。
+	 * 收尾要么按事实等活干完，要么摘要行就会把仍在跑的工具报成 Ran for。
+	 */
+	const roundHasLiveWork = (round: CompactRound): boolean => {
+		for (const component of round.messages.keys()) {
+			if (component?.isStreaming === true) return true;
+		}
+		const ids = roundToolCallIds(round);
+		if (ids.size === 0) return false;
+		for (const tool of trackedToolComponents) {
+			if (typeof tool?.toolCallId === "string" && ids.has(tool.toolCallId) && isRunningTool(tool)) {
+				return true;
+			}
+		}
+		return false;
 	};
 
 	/**
@@ -1602,6 +1668,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		return tail;
 	};
 
+	/** 它们排在摘要行之下；定位时不把它们当摘要行之前的成员。 */
+	const isOuterToolRow = (ids: Set<string>, value: any): boolean =>
+		typeof value?.toolCallId === "string" &&
+		ids.has(value.toolCallId) &&
+		OUTER_TOOLS.has(String(value.toolName ?? ""));
+
 	/**
 	 * 尾行归位。目标位：活回合（运行中/收尾静默期）且未展开 → 容器最末，
 	 * 计数行钉在 transcript 可写底缘，运行中到达的提示行/custom 条目只能落在
@@ -1621,22 +1693,33 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (!container || !Array.isArray(container.children)) return;
 		tail.container = container;
 		const children = container.children as any[];
+		const ids = roundToolCallIds(round);
+		const live = roundLive(round);
 		const isMember = roundMemberMatcher(round);
+		// 收尾后，本回合的外露行（edit/write/ask）一律排到摘要行之下；
+		// 回合还在跑时它们留在原位，摘要行才能钉在可写底缘。
+		const staysAbove = (value: any): boolean =>
+			isMember(value) && (!isOuterToolRow(ids, value) || live);
 		const current = children.indexOf(tail.host);
 		// 摘尾行前先定目标位，已在位就整段跳过。
 		let last = -1;
 		for (let i = 0; i < children.length; i++) {
-			if (children[i] === tail.host || !isMember(children[i])) continue;
+			if (children[i] === tail.host || !staysAbove(children[i])) continue;
 			last = i;
 		}
-		const pinToEnd = roundLive(round) && round.anchor?.expanded !== true;
+		// 外露行压在摘要行上方时仍要重排：尾行就算在目标位上也得让位。
+		const outerAbove =
+			!live &&
+			current > 0 &&
+			children.some((value: any, index: number) => index < current && isOuterToolRow(ids, value));
+		const pinToEnd = live && round.anchor?.expanded !== true;
 		const desired = pinToEnd || last < 0 ? children.length - 1 : last + 1;
-		if (current === desired) return;
+		if (current === desired && !outerAbove) return;
 		if (current >= 0) children.splice(current, 1);
 		let first = -1;
 		last = -1;
 		for (let i = 0; i < children.length; i++) {
-			if (!isMember(children[i])) continue;
+			if (!staysAbove(children[i])) continue;
 			if (first < 0) first = i;
 			last = i;
 		}
@@ -1646,7 +1729,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			// 用户消息永远留在原地：挪走会把别人的消息挪到用户消息下面去。
 			// custom 通知同理：它是回合内的透明行，不被统计也不挪位。
 			if (
-				isMember(children[i]) ||
+				staysAbove(children[i]) ||
 				isUserMessageComponent(children[i]) ||
 				isTransparentComponent(children[i])
 			) {
@@ -1681,8 +1764,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	 */
 	const syncTailForTool = (toolCallId: string): void => {
 		if (!toolCallId) return;
-		for (const round of [activeRound, ...pendingFoldRounds]) {
-			if (!round || !roundToolCallIds(round).has(toolCallId)) continue;
+		for (const round of allRounds()) {
+			if (!roundToolCallIds(round).has(toolCallId)) continue;
+			// 工具收尾后活干完了：挂起的收尾请求当场兑现，摘要行立刻翻成 Ran for。
+			if (retryDeferredFinalize(round)) return;
 			// 槽位是在消息更新时画的，当时工具组件还不存在：组件到了就补上。
 			// 参数流式更新也走这里，槽位卡跟着换内容。
 			if (round.pendingLiveTool || roundLive(round)) renderRound(round);
@@ -2288,6 +2373,14 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (hasText) {
 			const round = roundByComponent.get(this);
 			const previousMessage = round?.messages.get(this);
+			// 消息还在流式时正文不是回合边界：同一条消息常常先出正文、再出 toolCall，
+			// 这时收尾会在下一帧另起一条摘要行，一段工作被拆成两条。
+			// 正文先按成员渲染，等消息收尾（isStreaming=false）再判。
+			if (round && previousMessage && self.isStreaming === true) {
+				round.messages.set(this, message);
+				renderRound(round);
+				return undefined;
+			}
 			if (round && previousMessage && (round.anchor !== this || round.messages.size > 1)) {
 				// 最终回答开始后，当前组件恢复原生文本；它已完成的 thinking
 				// 留在上一轮摘要中，避免再次生成独立 Thought 行。

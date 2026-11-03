@@ -1433,6 +1433,103 @@ test("compact：同一组件流式切换 text/toolCall 形态不拆回合", () =
 	}
 });
 
+test("compact：同一 turn 内先出正文再出 toolCall，不拆出第二条摘要行", async () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const ts = Date.now();
+		const first = {
+			role: "assistant",
+			timestamp: ts,
+			stopReason: "toolUse",
+			content: [
+				{ type: "thinking", thinking: "t1" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(first as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(first as any, false);
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+
+		// 下一条消息流式：thinking → 正文 → toolCall，同一组件逐帧到达。
+		const stream = new AssistantMessageComponent(undefined as any, true) as any;
+		chat.addChild(stream);
+		const thinking = {
+			role: "assistant",
+			timestamp: ts + 1,
+			content: [{ type: "thinking", thinking: "t2" }],
+		};
+		stream.updateContent(thinking as any, true);
+		const withText = {
+			...thinking,
+			content: [...thinking.content, { type: "text", text: "now run more" }],
+		};
+		stream.updateContent(withText as any, true);
+		const withTools = {
+			...withText,
+			content: [
+				...withText.content,
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } },
+				{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+			],
+		};
+		stream.updateContent(withTools as any, true);
+		const bash2 = tool("bash", "b2", { command: "two" });
+		const read = tool("read", "r1", { path: "a.ts" });
+		chat.addChild(bash2);
+		chat.addChild(read);
+		for (const item of [bash2, read]) {
+			item.executionStarted = true;
+			item.updateDisplay();
+		}
+
+		const streaming = renderText(chat).filter((line) => /Running\.\.\.|Ran for/.test(line));
+		assert.equal(streaming.length, 1, `正文后接工具不另起摘要行: ${streaming}`);
+		assert.match(streaming[0] ?? "", /bash×2, read×1/, `两段工具计入同一条: ${streaming}`);
+
+		// 消息收尾 + 工具收尾：仍是一条摘要行。
+		stream.updateContent(withTools as any, false);
+		bash2.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		read.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		hooks.settleFinishedRound();
+		await settleFold();
+		const settled = renderText(chat).filter((line) => /Running\.\.\.|Ran for/.test(line));
+		assert.equal(settled.length, 1, `收尾后仍是一条: ${settled}`);
+		assert.match(settled[0] ?? "", /Ran for .*bash×2, read×1/);
+
+		// 最终回答（只有正文）才另起，摘要行留在正文之上。
+		const answer = new AssistantMessageComponent(undefined as any, true) as any;
+		chat.addChild(answer);
+		const finalText = {
+			role: "assistant",
+			timestamp: ts + 2,
+			content: [{ type: "text", text: "done!" }],
+		};
+		answer.updateContent(finalText as any, true);
+		answer.updateContent(finalText as any, false);
+		hooks.settleFinishedRound();
+		await settleFold();
+		const lines = renderText(chat);
+		const summaryAt = lines.findIndex((line) => /Ran for .*bash×2, read×1/.test(line));
+		const answerAt = lines.findIndex((line) => line.includes("done!"));
+		assert.ok(answerAt >= 0 && answerAt > summaryAt, `最终回答在摘要行之下: ${lines.join(" | ")}`);
+		assert.equal(
+			lines.filter((line) => /Running\.\.\.|Ran for/.test(line)).length,
+			1,
+			`最终回答不另起摘要行: ${lines.join(" | ")}`,
+		);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
 test("compact 尾行：reset 后同 anchor 残留的旧尾行被清扫", async () => {
 	const { hooks, restore } = installHooks();
 	const chat = new Container() as any;
@@ -2085,6 +2182,112 @@ test("compact 展开卡：助手文本不进面板，工具卡保留底色", () 
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact：收尾后 edit/write 外露行排到摘要行之下", async () => {
+	const { restore, hooks } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: Date.now(),
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "先写入" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+				{ type: "toolCall", id: "w1", name: "write", arguments: { path: "src/a.ts" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		const write = tool("write", "w1", { path: "src/a.ts", content: "x" });
+		chat.addChild(anchor);
+		anchor.updateContent(message as any);
+		chat.addChild(bash);
+		chat.addChild(write);
+		for (const item of [bash, write]) {
+			item.executionStarted = true;
+			item.updateDisplay();
+		}
+		bash.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+		write.updateResult({ content: [], isError: false });
+
+		hooks.settleFinishedRound();
+		await settleFold();
+		const folded = renderText(chat);
+		const summaryAt = folded.findIndex((line) => /Ran for .*bash×1/.test(line));
+		const writeAt = folded.findIndex((line) => line.includes("write src/a.ts"));
+		assert.ok(
+			summaryAt >= 0 && writeAt > summaryAt,
+			`摘要行应在 write 之上: ${folded.join(" | ")}`,
+		);
+
+		// 展开接在摘要行原位：面板也在 write 之上，展开/收起不搬位。
+		anchor.setExpanded(true);
+		const expanded = renderText(chat);
+		const panelAt = expanded.findIndex((line) => line.includes("Bash one"));
+		const writeExpandedAt = expanded.findIndex((line) => line.includes("write src/a.ts"));
+		assert.ok(
+			panelAt >= 0 && writeExpandedAt > panelAt,
+			`面板应在 write 之上: ${expanded.join(" | ")}`,
+		);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：消息级归属的 edit 行收尾后也排在摘要行之下", async () => {
+	const { restore, hooks } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const ts = Date.now();
+		const message = {
+			role: "assistant",
+			timestamp: ts,
+			stopReason: "toolUse",
+			content: [
+				{ type: "thinking", thinking: "plan" },
+				{ type: "text", text: "跑一段工具" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message as any);
+		bash.executionStarted = true;
+		bash.updateDisplay();
+
+		// 同一消息里又冒出 edit：封口但仍归属于本回合（消息级），bash 还在跑。
+		const withEdit = {
+			...message,
+			content: [
+				...message.content,
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+			],
+		};
+		const edit = tool("edit", "e1", { path: "a.ts" });
+		chat.addChild(edit);
+		anchor.updateContent(withEdit as any);
+		edit.executionStarted = true;
+		edit.updateDisplay();
+		edit.updateResult({ content: [], details: { diff: "+x" }, isError: false });
+		bash.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+		hooks.settleFinishedRound();
+		await settleFold();
+
+		const folded = renderText(chat);
+		const summaryAt = folded.findIndex((line) => /Ran for .*bash×1/.test(line));
+		const editAt = folded.findIndex((line) => /(?:✓|✗) edit a\.ts/.test(line));
+		assert.ok(summaryAt >= 0 && editAt > summaryAt, `摘要行应在 edit 之上: ${folded.join(" | ")}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
 	}
 });
 
@@ -3187,6 +3390,90 @@ test("compact：外层工具打断摘要段，前后各一条摘要行", () => {
 		assert.deepEqual(labels, ["a1", "tool", "tail1", "a2", "tool", "a3", "tool", "tail2"]);
 	} finally {
 		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：回合还有工具在跑时不提前翻成 Ran for，工具收尾后才收尾", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const ts = Date.now();
+		const message = {
+			role: "assistant",
+			timestamp: ts,
+			stopReason: "toolUse",
+			content: [
+				{ type: "thinking", thinking: "plan" },
+				{ type: "text", text: "run bash" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "sleep 60" } },
+			],
+		};
+		const assistant = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "sleep 60" });
+		chat.addChild(assistant);
+		chat.addChild(bash);
+		assistant.updateContent(message as any);
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		assert.match(renderText(chat).join("\n"), /Running\.\.\. .*bash×1/);
+
+		// 同一条消息里又冒出外层 edit 与另一个 inner 调用：本回合封口，但工具还在跑。
+		assistant.updateContent({
+			...message,
+			content: [
+				...message.content,
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+			],
+		} as any);
+		const running = renderText(chat).join("\n");
+		assert.match(running, /Running\.\.\. .*bash×1, read×1/, `活没干完不能收尾: ${running}`);
+		assert.doesNotMatch(running, /Ran for/);
+
+		// 工具拿到结果：挂起的收尾请求当场兑现，摘要行翻成 Ran for。
+		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		const settled = renderText(chat).join("\n");
+		assert.match(settled, /Ran for .*bash×1, read×1/, `工具收尾后应落成 Ran for: ${settled}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：成员消息仍在流式时 agent_end 不提前收尾，流结束后才翻 Ran for", async () => {
+	const { restore, hooks } = installHooks();
+	try {
+		const ts = Date.now();
+		const message = {
+			role: "assistant",
+			timestamp: ts,
+			content: [
+				{ type: "thinking", thinking: "plan" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } },
+			],
+		};
+		const assistant = new AssistantMessageComponent(message as any, false) as any;
+		assistant.updateContent(message as any, true);
+		const bash = tool("bash", "b1", { command: "echo" });
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+
+		// 工具已收尾，消息仍在流式：摘要行不能说 Ran for。
+		hooks.settleFinishedRound();
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.match(renderText(assistant).join("\n"), /Running\.\.\./);
+
+		// 消息流结束（isStreaming=false）后收尾才成立。
+		assistant.updateContent(
+			{ ...message, content: [...message.content, { type: "text", text: "hi" }] } as any,
+			false,
+		);
+		await settleFold();
+		assert.match(renderText(assistant).join("\n"), /Ran for /);
+	} finally {
 		restore();
 	}
 });
