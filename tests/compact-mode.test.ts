@@ -49,6 +49,10 @@ import {
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
 import { renderToolSummary, toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import {
+	clearLiveToolCalls,
+	noteStreamingToolCalls,
+} from "../extensions/renderer/tool/tool-state.ts";
 import { solidPngBase64 } from "./helpers/png.ts";
 
 initTheme("dark");
@@ -569,6 +573,11 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		assert.match(renderText(assistant1).join("\n"), /^Running\.\.\. · 5s, bash×2/);
 
 		activeTimestamp = undefined;
+		// 消息里其余 toolCall 的组件后到：空窗合上后，正文边界才能把回合收成 Ran for。
+		tool("fffind", "f1", { pattern: "x" });
+		tool("read", "r1", { path: "a.ts" });
+		tool("read", "r2", { path: "a.ts" });
+		tool("bash", "b2", { command: "two" });
 		final.updateContent(finalMessage);
 		assert.match(renderText(assistant1).join("\n"), /^Ran for 5s, bash×2/);
 		assert.match(renderText(final).join("\n"), /final answer/);
@@ -3413,12 +3422,82 @@ test("compact：回合还有工具在跑时不提前翻成 Ran for，工具收�
 		assert.match(running, /Running\.\.\. .*bash×1, read×1/, `活没干完不能收尾: ${running}`);
 		assert.doesNotMatch(running, /Ran for/);
 
+		// read 的组件后到，空窗合上；bash 仍在跑，摘要行继续等。
+		const read = tool("read", "r1", { path: "a.ts" });
+		chat.addChild(read);
+		assert.doesNotMatch(renderText(chat).join("\n"), /Ran for/);
+
 		// 工具拿到结果：挂起的收尾请求当场兑现，摘要行翻成 Ran for。
 		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
 		const settled = renderText(chat).join("\n");
 		assert.match(settled, /Ran for .*bash×1, read×1/, `工具收尾后应落成 Ran for: ${settled}`);
 	} finally {
 		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：工具 id 已写入消息但组件未挂上时，收尾继续等", () => {
+	const { hooks, restore } = installHooks();
+	try {
+		const ts = Date.now();
+		const message = {
+			role: "assistant",
+			timestamp: ts,
+			content: [
+				{ type: "thinking", thinking: "plan" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } },
+			],
+		};
+		const assistant = new AssistantMessageComponent(message as any, false) as any;
+		// message_update 先写 toolCall，组件要等下一拍才 new。
+		assistant.updateContent(message as any, true);
+		assistant.updateContent(message as any, false);
+		hooks.settleFinishedRound();
+		const waiting = renderText(assistant).join("\n");
+		assert.match(waiting, /Running\.\.\./, `组件未挂上不能收尾: ${waiting}`);
+		assert.doesNotMatch(waiting, /Ran for/);
+
+		const bash = tool("bash", "b1", { command: "echo" });
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		assert.doesNotMatch(renderText(assistant).join("\n"), /Ran for/);
+
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		assert.match(renderText(assistant).join("\n"), /Ran for /);
+	} finally {
+		restore();
+	}
+});
+
+test("compact：组件已挂上但还没派发时，收尾继续等", () => {
+	const { hooks, restore } = installHooks();
+	try {
+		const ts = Date.now();
+		const message = {
+			role: "assistant",
+			timestamp: ts,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } }],
+		};
+		// Pi 在消息结束前就把 id 记进声明期，markExecutionStarted 要等工具真正派发。
+		noteStreamingToolCalls(message);
+		const assistant = new AssistantMessageComponent(message as any, false) as any;
+		const bash = tool("bash", "b1", { command: "echo" });
+		assistant.updateContent(message as any, false);
+		hooks.settleFinishedRound();
+		const waiting = renderText(assistant).join("\n");
+		assert.match(waiting, /Running\.\.\./, `未派发不能收尾: ${waiting}`);
+		assert.doesNotMatch(waiting, /Ran for/);
+
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		assert.doesNotMatch(renderText(assistant).join("\n"), /Ran for/);
+
+		clearLiveToolCalls();
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		assert.match(renderText(assistant).join("\n"), /Ran for /);
+	} finally {
+		clearLiveToolCalls();
 		restore();
 	}
 });

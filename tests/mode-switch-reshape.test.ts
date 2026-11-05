@@ -114,6 +114,10 @@ test("on → compact reshapes to summary; compact → on restores tool cards", (
 
 		const bash = tool("bash", "b1", { command: "echo" });
 		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		// 摘要里的 read/grep 也要挂进树：缺组件的空窗不能把已结束回合留在 Running。
+		const read1 = tool("read", "r1", { path: "a.ts" });
+		const read2 = tool("read", "r2", { path: "b.ts" });
+		const grep = tool("grep", "g1", { pattern: "x" });
 		const edit = tool("edit", "e1", { path: "sample.ts" });
 		edit.updateResult({
 			content: [],
@@ -123,7 +127,7 @@ test("on → compact reshapes to summary; compact → on restores tool cards", (
 			isError: false,
 		});
 
-		const root = { children: [a1, aFinal, bash, edit] };
+		const root = { children: [a1, aFinal, bash, read1, read2, grep, edit] };
 
 		// on：工具卡可见，无 compact 摘要
 		assert.ok(renderText(bash).length > 0);
