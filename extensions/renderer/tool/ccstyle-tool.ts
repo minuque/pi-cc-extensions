@@ -450,8 +450,12 @@ export function createCcstyleTool(
 					cachedWidth = width;
 					cachedIcon = icon;
 					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-					cachedLine = `${lead}${icon} ${renderToolSummary(summary, mainWidth, theme.fg.bind(theme))}${extraStyled}`;
-					return [truncateToWidth(cachedLine, viewportWidth, "")];
+					cachedLine = truncateToWidth(
+						`${lead}${icon} ${renderToolSummary(summary, mainWidth, theme.fg.bind(theme))}${extraStyled}`,
+						viewportWidth,
+						"",
+					);
+					return [cachedLine];
 				},
 				invalidate() {
 					cachedLine = undefined;

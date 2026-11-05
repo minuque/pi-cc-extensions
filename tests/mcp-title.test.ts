@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { renderToolSummary } from "../extensions/renderer/tool/names.ts";
@@ -252,5 +252,23 @@ test("分组：行标题与头标题都用真实工具名", () => {
 		]);
 	} finally {
 		hooks.shutdown();
+	}
+});
+
+test("pending read 标题行：窄终端重复渲染（命中缓存）也不超宽", async () => {
+	const ui = stubUi();
+	const shutdown = await bootExtension(ui);
+	try {
+		const args = { path: "package.json", offset: 1190, limit: 65 };
+		const read = makeTool({ name: "read", label: "read", renderCall() {}, renderResult() {} }, "read-narrow", args, ui);
+		read.updateArgs(args);
+		read.markExecutionStarted();
+		for (const width of [26, 26, 26, 20, 20]) {
+			for (const line of read.render(width)) {
+				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}: ${JSON.stringify(line)}`);
+			}
+		}
+	} finally {
+		await shutdown();
 	}
 });
