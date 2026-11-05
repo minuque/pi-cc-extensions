@@ -505,9 +505,9 @@ const createCustomFooterFactory =
 				if (s && (s.add || s.del))
 					stats +=
 						theme.fg("dim", "(") +
-						theme.fg("toolDiffAdded", `+${s.add}`) +
+						theme.fg("success", `+${s.add}`) +
 						" " +
-						theme.fg("toolDiffRemoved", `−${s.del}`) +
+						theme.fg("error", `−${s.del}`) +
 						theme.fg("dim", ")");
 				const gitLabel = glyphs.git ? `${glyphs.git} ${branch}` : branch;
 				gitChip = gitColor(gitLabel) + stats;
