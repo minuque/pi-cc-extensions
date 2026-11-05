@@ -31,7 +31,9 @@
 		],
 		"themes": [
 			"./themes/cc-dark.json",
-			"./themes/cc-light.json"
+			"./themes/cc-light.json",
+			"./themes/cc-dark-hc.json",
+			"./themes/cc-light-hc.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.webp",
 		"video": "https://github.com/minuque/pi-cc-extensions/releases/download/v0.9.4/demo.mp4"
