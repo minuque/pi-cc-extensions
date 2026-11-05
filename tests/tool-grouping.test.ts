@@ -748,3 +748,44 @@ test("分组展开卡为内联图片留出全部占位行", () => {
 		resetCapabilitiesCache();
 	}
 });
+
+test("多工具展开：子卡首行只剩图标时不额外占一行（issue: 重复显示 icon）", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const first = started("bash", "dup-icon-a", { command: "head -c 400 junit.xml" });
+		const second = started("bash", "dup-icon-b", { command: "node --version" });
+		for (const tool of [first, second]) {
+			tool.updateResult({ content: [{ type: "text", text: "out" }], isError: false });
+		}
+		parent.addChild(first);
+		parent.addChild(second);
+		parent.render(100);
+		const group = parent.children[0] as ToolGroupComponent;
+		group.setExpanded(true);
+		group.render(100);
+
+		// 复现现场：子卡的首个可见行被剥成一个孤零零的图标，标题落到下一行。
+		const paintWithOrphanIcon = () => [
+			"",
+			" ✓ ",
+			" ✓ Bash head -c 400 junit.xml",
+			" └ Output",
+			"   out",
+		];
+		first.render = paintWithOrphanIcon as any;
+
+		const rendered = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.deepEqual(
+			rendered.filter((line: string) => /^\s*[├└│]?\s*✓\s*$/.test(line)),
+			[],
+			`不该有只有图标的空行: ${rendered.join(" | ")}`,
+		);
+		assert.equal(rendered[1]!.trimEnd(), " ├ ✓ Bash head -c 400 junit.xml", rendered.join(" | "));
+	} finally {
+		hooks.shutdown();
+	}
+});

@@ -26,6 +26,7 @@ import { mcpToolTitle } from "./mcp-title.ts";
 import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./names.ts";
 import {
 	contentRowRange,
+	hasVisibleText,
 	imagePlacement,
 	stripAnsi,
 	stripBackgroundAnsi,
@@ -364,10 +365,17 @@ function expandedToolRows(tool: any, width: number): string[] {
 	const cached = expandedToolRowsCache.get(paint);
 	if (cached) return cached;
 	const rendered = visibleLines(paint);
-	if (rendered.length) {
-		rendered[0] = stripLeadingStatusIcon(rendered[0])
+	// 首行的状态图标由组前缀给，子行里要剥掉。
+	const stripIcon = (line: string) =>
+		stripLeadingStatusIcon(line)
 			.replace(/^ +/, "")
 			.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*) +/, "$1");
+	// 剥完什么都没剩下（子卡首行只剩一个图标）就丢掉这一行，再对新的首行剥一次：
+	// 留着会多出一行只有 `├ ✓` 的空行，标题行也会带着图标和前缀叠成两个。
+	while (rendered.length) {
+		rendered[0] = stripIcon(rendered[0]);
+		if (hasVisibleText(rendered[0])) break;
+		rendered.shift();
 	}
 	const rows = rendered.length
 		? // 续行只剥外层 Box 的 1 格 left pad，保留 Input/Output 相对缩进
