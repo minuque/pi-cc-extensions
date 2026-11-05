@@ -99,13 +99,13 @@ test("运行中：shell 报已用时间，并且随动画 tick 更新", async ()
 		tool.render(100); // renderCall 记下开始时间
 		tool.updateResult({ content: [], isError: false }, true);
 
-		assert.match(render(tool)[1]!, /Pending… · 0ms$/, "刚开跑报 0ms");
+		assert.match(render(tool)[1]!, /Pending… · 0ms · .*to show more$/, "刚开跑报 0ms");
 
 		now = 1_000 + TOOL_LOADING_INTERVAL_MS;
-		assert.match(render(tool)[1]!, /Pending… · 80ms$/, "时间推进后数字要跟着变");
+		assert.match(render(tool)[1]!, /Pending… · 80ms · .*to show more$/, "时间推进后数字要跟着变");
 
 		now = 1_000 + 4_000;
-		assert.match(render(tool)[1]!, /Pending… · 4\.0s$/);
+		assert.match(render(tool)[1]!, /Pending… · 4\.0s · .*to show more$/);
 	} finally {
 		Date.now = originalNow;
 		hooks.shutdown();
@@ -125,7 +125,7 @@ test("时钟回拨不输出负数", () => {
 		tool.render(100); // 开始时间 = 5000
 		tool.updateResult({ content: [], isError: false }, true);
 		Date.now = () => 0; // 回拨
-		assert.match(render(tool)[1]!, /Pending… · 0ms$/);
+		assert.match(render(tool)[1]!, /Pending… · 0ms · .*to show more$/);
 	} finally {
 		Date.now = originalNow;
 		hooks.shutdown();

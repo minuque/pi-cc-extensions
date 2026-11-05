@@ -195,6 +195,67 @@ function shellDurationText(toolName: string, context: any, isPartial: boolean): 
 }
 
 /**
+ * 运行中的展开视图：与结束后同一份 Input / Output。
+ * 还没输出时用 Pending… 占位：空正文会被视图画成 Done，像已经跑完了。
+ * shell 的已用时间挂到视图尾部；取值函数每帧重算，秒数才跟着动画 tick 走。
+ */
+function renderRunningExpandedResult(toolName: string, result: any, context: any, theme: any): any {
+	const view = renderExpandedToolResult(
+		textFromResult(result) || "Pending…",
+		theme,
+		false,
+		context?.lastComponent,
+		context?.args,
+		context,
+		true,
+	);
+	if (isExpandedToolIoView(view) && SHELL_TOOL_NAMES.has(toolName)) {
+		view.setFooter(() => shellDurationText(toolName, context, true) || undefined);
+	}
+	return view;
+}
+
+/**
+ * 运行中的折叠行：`   ↳ Pending… · 12.4s · click to show more`。
+ * 提示必须留在行尾：collapsedHintHitbox 只认行尾，没有它这行既点不动也看不出能点。
+ * 已用时间在 render() 内取，动画 tick 才能带上新值。
+ */
+function renderRunningCollapsedResult(options: {
+	toolName: string;
+	context: any;
+	theme: any;
+	/** ask_user_question 的结果树用 1 格缩进，与它的 ├/└ 对齐。 */
+	prefix?: string;
+}): any {
+	const { toolName, context, theme, prefix } = options;
+	const toolCallId = context?.toolCallId;
+	const hintPrefix = theme.fg("dim", " · ");
+	const hint = hintPrefix + theme.fg("dim", showMoreHintText());
+	const hoveredHint = hintPrefix + theme.fg("text", showMoreHintText());
+	let cachedWidth: number | undefined;
+	let cachedBody: string | undefined;
+	let cachedLine: string | undefined;
+	let cachedHoveredLine: string | undefined;
+	return {
+		render(width: number) {
+			const elapsed = shellDurationText(toolName, context, true);
+			const body = elapsed ? `Pending… · ${elapsed}` : "Pending…";
+			if (cachedLine === undefined || cachedWidth !== width || cachedBody !== body) {
+				cachedWidth = width;
+				cachedBody = body;
+				cachedLine = theme.fg("muted", renderCollapsedToolResultToWidth(body, hint, width, prefix));
+				cachedHoveredLine = theme.fg(
+					"muted",
+					renderCollapsedToolResultToWidth(body, hoveredHint, width, prefix),
+				);
+			}
+			return [isToolCallHovered(toolCallId) ? cachedHoveredLine! : cachedLine];
+		},
+		invalidate(): void {},
+	};
+}
+
+/**
  * Agent 的 renderResult：与 pi-subagents 保持同样的分支，但收敛成 ccstyle 的 ↳ 行。
  * running/partial 转交原渲染器（只有它有 spinner frame 和 activity 文案）；
  * background/completed/stopped/error 画单行摘要，展开态结果正文交给通用展开视图。
@@ -454,9 +515,9 @@ export function createCcstyleTool(
 			if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
 				if (!options?.isPartial) setToolVisualState(context, isError ? "error" : "success");
 				if (options?.isPartial) {
-					// 折叠态 1 格缩进：与完成后的 ├/└ 对齐标题行的勾。
-					const pending = expanded ? "↳ Pending…" : " ↳ Pending…";
-					return new Text(theme.fg("muted", pending), 0, 0);
+					// 等待回答时也能展开看问题原文（Input 即 args.questions）；折叠态 1 格缩进。
+					if (expanded) return renderRunningExpandedResult(toolName, result, context, theme);
+					return renderRunningCollapsedResult({ toolName, context, theme, prefix: " ↳ " });
 				}
 				if (expanded) {
 					return renderExpandedToolResult(
@@ -479,21 +540,11 @@ export function createCcstyleTool(
 				});
 			}
 			if (options?.isPartial) {
+				// 运行中也给和结束后同一份 Input / Output：命令全文与已产生的输出。
+				if (expanded) return renderRunningExpandedResult(toolName, result, context, theme);
 				// 折叠态保持 3 格：与完成后的 `   ↳ …` 同列，工具跑完那行不横跳。
-				// 展开态贴左（Box 提供 1 格 pad）。
-				const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
-				if (!SHELL_TOOL_NAMES.has(toolName)) {
-					return new Text(theme.fg("muted", pending), 0, 0);
-				}
-				// shell 运行中报已用时间：数字在 render() 内取，动画 tick 才能带上新值。
-				return {
-					render(width: number) {
-						const elapsed = shellDurationText(toolName, context, true);
-						const suffix = elapsed ? theme.fg("dim", ` · ${elapsed}`) : "";
-						return [truncateToWidth(theme.fg("muted", pending) + suffix, width, "")];
-					},
-					invalidate(): void {},
-				};
+				if (context?.state) context.state.ccstyleIoView = undefined;
+				return renderRunningCollapsedResult({ toolName, context, theme });
 			}
 
 			// shell：结果定型时定一次结束时间，这一行之后不再变。

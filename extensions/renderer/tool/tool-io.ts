@@ -106,8 +106,11 @@ export class ExpandedToolIoView {
 
 	/** flushLeft：贴左渲染（外层 Box 负责 1 格 pad）；默认 false 保留 1 格前导空格。 */
 	private flushLeft: boolean;
-	/** 尾部附注（shell 的耗时）。挂到 Output 的 show-more 行上，没有那一行时单独成行。 */
-	private footer: string | undefined;
+	/** 尾部附注（shell 的耗时）。挂到 Output 的 show-more 行上，没有那一行时单独成行。
+	 * 传取值函数时每帧求值，值变了才重画：运行中的秒数要跟着动画 tick 走。 */
+	private footer: string | (() => string | undefined) | undefined;
+	/** 上一次求值结果，用来判断 footer 是否变化。 */
+	private footerText: string | undefined;
 
 	constructor(
 		theme: any,
@@ -224,7 +227,7 @@ export class ExpandedToolIoView {
 	}
 
 	/** 尾部附注（耗时等）。挂在 show-more 行上；无 show-more 行时单独成行。 */
-	setFooter(text: string | undefined): void {
+	setFooter(text: string | (() => string | undefined) | undefined): void {
 		if (this.footer === text) return;
 		this.footer = text;
 		this.invalidate();
@@ -268,6 +271,12 @@ export class ExpandedToolIoView {
 	}
 
 	render(width: number): string[] {
+		// footer 可以是取值函数（运行中的耗时），每帧重算；变了就丢掉行缓存。
+		const footer = typeof this.footer === "function" ? this.footer() : this.footer;
+		if (footer !== this.footerText) {
+			this.footerText = footer;
+			this.cachedLines = undefined;
+		}
 		if (this.cachedLines !== undefined && this.cachedWidth === width) {
 			return withIoViewMarkers(this, this.cachedLines);
 		}
@@ -397,7 +406,7 @@ export class ExpandedToolIoView {
 				limit: this.maxOutputLines,
 				continued: false,
 				section: "output",
-				footerNote: this.footer,
+				footerNote: footer,
 			});
 		} else {
 			this.truncated.output = outputWouldTruncate;
@@ -406,14 +415,14 @@ export class ExpandedToolIoView {
 				limit: this.maxOutputLines,
 				continued: false,
 				section: "output",
-				footerNote: this.footer,
+				footerNote: footer,
 			});
 		}
 
 		// 耗时挂在 Output 的 show-more 行上（与折叠态一样，提示留在行尾）；
 		// 没截断就没有那一行，才单独成行。放在最后追加，前面记下的行号不受影响。
-		if (this.footer && this.showMoreHeaderRows.output === undefined) {
-			pushRailLine(theme.fg("muted", this.footer), false);
+		if (footer && this.showMoreHeaderRows.output === undefined) {
+			pushRailLine(theme.fg("muted", footer), false);
 		}
 
 		this.cachedWidth = width;
