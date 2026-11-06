@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { config } from "../../config/config.ts";
+import { config, type FooterContextLimit } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { formatFooterCost } from "./footer-currency.ts";
 import { formatTokenCount } from "../../utils/format.ts";
@@ -46,6 +46,61 @@ import { inputTextIndent } from "./prompt-editor.ts";
 import { currentTtftMs, displayTokenRate, formatTokenRate } from "./token-rate.ts";
 
 export { parseGitStats } from "./git-stats.ts";
+
+// Pi's built-in compaction.reserveTokens default (pi-coding-agent settings defaults).
+const PI_DEFAULT_COMPACTION_RESERVE_TOKENS = 16_384;
+
+type CompactionSettingsView = {
+	compaction?: {
+		enabled?: boolean;
+		reserveTokens?: number;
+		modelOverrides?: Record<string, { reserveTokens?: number } | undefined>;
+	};
+};
+
+/**
+ * Token count at which Pi auto-compacts: it compacts once context tokens exceed
+ * contextWindow − reserveTokens, resolving reserveTokens as model override, then
+ * compaction.reserveTokens, then Pi's default. Undefined when auto-compaction is
+ * off or the window is unknown or not larger than the reserve.
+ */
+export function compactionLimitTokens(
+	contextWindow: number,
+	settings: CompactionSettingsView | undefined,
+	model: { provider?: string; id?: string } | undefined,
+): number | undefined {
+	const compaction = settings?.compaction;
+	if (compaction?.enabled === false || !(contextWindow > 0)) return undefined;
+	const override = model
+		? compaction?.modelOverrides?.[`${model.provider}/${model.id}`]
+		: undefined;
+	const reserve =
+		override?.reserveTokens ?? compaction?.reserveTokens ?? PI_DEFAULT_COMPACTION_RESERVE_TOKENS;
+	const limit = contextWindow - reserve;
+	return limit > 0 ? limit : undefined;
+}
+
+/**
+ * Percent and denominator label of the context chip. "window" keeps Pi's figures;
+ * "compaction" measures against the compaction point; "both" also shows the window in
+ * brackets. Without a compaction point every mode falls back to the window.
+ */
+export function contextChipFigures(
+	usage: { tokens: number | null; contextWindow: number; percent: number | null },
+	compactionLimit: number | undefined,
+	mode: FooterContextLimit,
+): { percent: number | null; limitLabel: string } {
+	const windowLabel = formatTokenCount(usage.contextWindow);
+	if (mode === "window" || compactionLimit === undefined) {
+		return { percent: usage.percent, limitLabel: windowLabel };
+	}
+	const percent = usage.tokens === null ? null : (usage.tokens * 100) / compactionLimit;
+	const compactionLabel = formatTokenCount(compactionLimit);
+	return {
+		percent,
+		limitLabel: mode === "both" ? `${compactionLabel} (${windowLabel})` : compactionLabel,
+	};
+}
 
 const GIT_REFRESH_INTERVAL_MS = 10_000;
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -234,7 +289,7 @@ export function refreshFooterGitStats(): void {
 let refreshCurrentUsage: (() => void) | undefined;
 let refreshCurrentMcpChip: (() => void) | undefined;
 /** 工具/命令列表在 pi API 上，而 footer 工厂只拿得到 ctx，加载时记下来。 */
-let extensionApi: Pick<ExtensionAPI, "getAllTools" | "getCommands"> | undefined;
+let extensionApi: Pick<ExtensionAPI, "getAllTools" | "getCommands" | "getSettings"> | undefined;
 
 const createCustomFooterFactory =
 	(ctx: ExtensionContext) => (tui: any, theme: any, footerData: any) => {
@@ -360,8 +415,6 @@ const createCustomFooterFactory =
 			tui.requestRender();
 		});
 
-		const fmt = formatTokenCount;
-
 		// ---- pi-cc-status 风格：上下文条形图 ----
 		const BAR_WIDTH = 10;
 		const BAR_WARNING = 80; // >= 80% 转 warning 色
@@ -442,7 +495,18 @@ const createCustomFooterFactory =
 			const model = ctx.model;
 			const { contextUsage, cost, tokens, cachePct } = sessionStats();
 			const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
-			const percent = contextUsage?.percent;
+			const contextFigures = contextChipFigures(
+				{
+					tokens: contextUsage?.tokens ?? null,
+					contextWindow,
+					percent: contextUsage?.percent ?? null,
+				},
+				config.footerContextLimit === "window"
+					? undefined
+					: compactionLimitTokens(contextWindow, extensionApi?.getSettings?.(), model),
+				config.footerContextLimit,
+			);
+			const percent = contextFigures.percent;
 
 			// cwd 默认只显示最底层路径（根目录时回退完整路径）
 			const cwdLabel = ctx.cwd.split(/[\\/]/).filter(Boolean).pop() || ctx.cwd;
@@ -520,7 +584,7 @@ const createCustomFooterFactory =
 				],
 				[
 					FOOTER_CONTEXT_KEY,
-					barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${fmt(contextWindow)}`),
+					barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${contextFigures.limitLabel}`),
 				],
 				[FOOTER_CACHE_KEY, cacheLabel ? theme.fg("dim", cacheLabel) : ""],
 				[FOOTER_RATE_KEY, rateLabel ? theme.fg("dim", rateLabel) : ""],
