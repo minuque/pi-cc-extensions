@@ -153,6 +153,79 @@ test("运行中展开：耗时挂在输出截断的 show-more 行上", () => {
 	});
 });
 
+test("运行中展开：纯空白输出仍是 Pending…，非空输出保留缩进", () => {
+	runInMode(() => {
+		const blanks = ["   ", "\n\n", " \n\t"];
+		for (const text of blanks) {
+			for (const args of [{ command: "echo hi" }, {}]) {
+				const tool = makeTool(
+					"bash",
+					`rc-blank-${args.command ? "args" : "noargs"}-${blanks.indexOf(text)}`,
+					args,
+				);
+				tool.markExecutionStarted();
+				tool.render(100);
+				tool.setExpanded(true);
+				tool.updateResult({ content: [{ type: "text", text }], isError: false }, true);
+
+				const lines = render(tool);
+				assert.ok(
+					lines.some((line: string) => /^\s*Pending…$/.test(line)),
+					`空白输出应是 Pending…: ${JSON.stringify({ text, args, lines })}`,
+				);
+				assert.equal(
+					lines.some((line: string) => /Done/.test(line)),
+					false,
+					`运行中空白不能显示 Done: ${JSON.stringify({ text, args, lines })}`,
+				);
+			}
+		}
+
+		const tool = makeTool("bash", "rc-indent", { command: "echo hi" });
+		tool.markExecutionStarted();
+		tool.render(100);
+		tool.setExpanded(true);
+		tool.updateResult(
+			{ content: [{ type: "text", text: "  indented line\n\tkept  " }], isError: false },
+			true,
+		);
+		const view = tool.rendererState?.ccstyleIoView;
+		assert.equal(view.getOutputBody(), "  indented line\n\tkept  ");
+		const painted = tool.render(120).map((line: string) => stripAnsi(line).replace(/\s+$/, ""));
+		const indented = painted.find((line: string) => line.includes("indented line"));
+		assert.ok(indented, `应保留缩进行: ${JSON.stringify(painted)}`);
+		// Output 前缀 2 格 + 原文 2 格前导空格；外层卡片再垫 1 格。trim 整段会少掉原文缩进。
+		assert.match(indented!, /^ {5}indented line$/);
+		const kept = painted.find((line: string) => line.includes("kept"));
+		assert.ok(kept, `应保留 tab 展开后的正文: ${JSON.stringify(painted)}`);
+		// tab 先换成 3 格，再加 Output 前缀 2 格与卡片 1 格。
+		assert.match(kept!, /^ {6}kept$/);
+	});
+});
+
+test("已完成的空输出展开后仍显示 Done", () => {
+	runInMode(() => {
+		for (const args of [{ command: "echo hi" }, {}]) {
+			const tool = makeTool("bash", `rc-done-${args.command ? "args" : "noargs"}`, args);
+			tool.markExecutionStarted();
+			tool.render(100);
+			tool.setExpanded(true);
+			tool.updateResult({ content: [], isError: false });
+
+			const lines = render(tool);
+			assert.ok(
+				lines.some((line: string) => /Done/.test(line)),
+				`已完成空输出应显示 Done: ${JSON.stringify({ args, lines })}`,
+			);
+			assert.equal(
+				lines.some((line: string) => /Pending…/.test(line)),
+				false,
+				`已完成空输出不用 Pending…: ${JSON.stringify({ args, lines })}`,
+			);
+		}
+	});
+});
+
 test("非 shell 工具运行中也能展开，Input 带完整入参", () => {
 	runInMode(() => {
 		const tool = makeTool("read", "rc-read", { path: "src/a.ts", offset: 1, limit: 50 });

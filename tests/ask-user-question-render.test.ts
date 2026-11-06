@@ -185,6 +185,63 @@ test("单工具卡：标题带问题数，结果是问答树", () => {
 	}
 });
 
+test("等待中的问题折叠时清掉展开视图，回答完成后仍是问答树", () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const tool = new ToolExecutionComponent(
+			"ask_user_question",
+			"ask-wait",
+			{ questions },
+			{},
+			undefined,
+			toolUi(),
+			process.cwd(),
+		) as any;
+		tool.markExecutionStarted();
+		tool.render(120);
+		tool.setExpanded(true);
+		tool.updateResult({ content: [], isError: false }, true);
+
+		const view = tool.rendererState?.ccstyleIoView;
+		assert.equal(typeof view?.getOutputBody, "function");
+		assert.equal(view.getOutputBody(), "Pending…");
+		assert.match(view.getInputBody(), /Which library should we use\?/);
+
+		tool.setExpanded(false);
+		const collapsed = tool.render(120).map(stripAnsi);
+		assert.equal(tool.rendererState?.ccstyleIoView, undefined);
+		assert.ok(
+			collapsed.some((line: string) => /Pending…/.test(line)),
+			`折叠后仍应是等待中: ${JSON.stringify(collapsed)}`,
+		);
+		assert.equal(
+			collapsed.some((line: string) => /Done/.test(line)),
+			false,
+			`等待中折叠不能显示 Done: ${JSON.stringify(collapsed)}`,
+		);
+
+		tool.setExpanded(true);
+		const again = tool.render(120).map(stripAnsi);
+		assert.ok(
+			again.some((line: string) => line.includes("Which library should we use?")),
+			`再次展开应仍是原问题: ${JSON.stringify(again)}`,
+		);
+		assert.equal(typeof tool.rendererState?.ccstyleIoView?.getInputBody, "function");
+
+		tool.setExpanded(false);
+		tool.updateResult(answered);
+		const done = tool.render(120).map(stripAnsi).filter(Boolean);
+		assert.match(done[0]!, /Ask User Question \(\+3\)/);
+		assert.ok(done.some((line: string) => / -> Read/.test(line)));
+		assert.equal(tool.rendererState?.ccstyleIoView, undefined);
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+	}
+});
+
 test("分组折叠行报问题指向回答", () => {
 	const hooks = installToolGrouping(() => true);
 	try {

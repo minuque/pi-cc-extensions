@@ -197,11 +197,13 @@ function shellDurationText(toolName: string, context: any, isPartial: boolean): 
 /**
  * 运行中的展开视图：与结束后同一份 Input / Output。
  * 还没输出时用 Pending… 占位：空正文会被视图画成 Done，像已经跑完了。
+ * 纯空白（空格、换行、tab）同样算还没输出；非空正文保留原始缩进，不整体 trim。
  * shell 的已用时间挂到视图尾部；取值函数每帧重算，秒数才跟着动画 tick 走。
  */
 function renderRunningExpandedResult(toolName: string, result: any, context: any, theme: any): any {
+	const text = textFromResult(result);
 	const view = renderExpandedToolResult(
-		textFromResult(result) || "Pending…",
+		text.trim() ? text : "Pending…",
 		theme,
 		false,
 		context?.lastComponent,
@@ -517,6 +519,8 @@ export function createCcstyleTool(
 				if (options?.isPartial) {
 					// 等待回答时也能展开看问题原文（Input 即 args.questions）；折叠态 1 格缩进。
 					if (expanded) return renderRunningExpandedResult(toolName, result, context, theme);
+					// 折叠后清掉展开视图，与通用 partial 折叠一致。
+					if (context?.state) context.state.ccstyleIoView = undefined;
 					return renderRunningCollapsedResult({ toolName, context, theme, prefix: " ↳ " });
 				}
 				if (expanded) {
