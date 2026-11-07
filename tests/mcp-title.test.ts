@@ -260,12 +260,20 @@ test("pending read 标题行：窄终端重复渲染（命中缓存）也不超�
 	const shutdown = await bootExtension(ui);
 	try {
 		const args = { path: "package.json", offset: 1190, limit: 65 };
-		const read = makeTool({ name: "read", label: "read", renderCall() {}, renderResult() {} }, "read-narrow", args, ui);
+		const read = makeTool(
+			{ name: "read", label: "read", renderCall() {}, renderResult() {} },
+			"read-narrow",
+			args,
+			ui,
+		);
 		read.updateArgs(args);
 		read.markExecutionStarted();
 		for (const width of [26, 26, 26, 20, 20]) {
 			for (const line of read.render(width)) {
-				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}: ${JSON.stringify(line)}`);
+				assert.ok(
+					visibleWidth(line) <= width,
+					`${visibleWidth(line)} > ${width}: ${JSON.stringify(line)}`,
+				);
 			}
 		}
 	} finally {
