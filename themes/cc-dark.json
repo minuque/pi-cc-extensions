@@ -22,9 +22,7 @@
 		"purple": "#be8fff",
 		"pink": "#f778ba",
 		"cyan": "#39c5cf",
-		"selection": "#1a4480",
-		"diffAddBg": "#0f2a24",
-		"diffDelBg": "#261418"
+		"selection": "#1a4480"
 	},
 	"colors": {
 		"accent": "blue",
@@ -49,8 +47,8 @@
 		"customMessageText": "fgMuted",
 		"customMessageLabel": "blue",
 		"toolPendingBg": "canvasSubtle",
-		"toolSuccessBg": "diffAddBg",
-		"toolErrorBg": "diffDelBg",
+		"toolSuccessBg": "#0f2a24",
+		"toolErrorBg": "#261418",
 		"toolTitle": "fg",
 		"toolOutput": "fgMuted",
 		"mdHeading": "blueBright",

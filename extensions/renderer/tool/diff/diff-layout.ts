@@ -92,10 +92,10 @@ function renderChangeMarker(
 		return rowBg ? `${rowBg} ${rowBg}` : " ";
 	}
 	if (kind === "add") {
-		return colorizeSegment(theme, "toolDiffAdded", glyph, rowBg);
+		return colorizeSegment(theme, "success", glyph, rowBg);
 	}
 	if (kind === "remove") {
-		return colorizeSegment(theme, "toolDiffRemoved", glyph, rowBg);
+		return colorizeSegment(theme, "error", glyph, rowBg);
 	}
 	return colorizeSegment(theme, "dim", glyph, rowBg);
 }
@@ -132,12 +132,12 @@ function renderCodeDivider(
 	);
 }
 
-function getLineNumberColor(kind: DiffLineKind): "dim" | "toolDiffAdded" | "toolDiffRemoved" {
+function getLineNumberColor(kind: DiffLineKind): "dim" | "success" | "error" {
 	if (kind === "add") {
-		return "toolDiffAdded";
+		return "success";
 	}
 	if (kind === "remove") {
-		return "toolDiffRemoved";
+		return "error";
 	}
 	return "dim";
 }
@@ -179,7 +179,7 @@ function renderClassicContentPrefix(
 	}
 
 	const glyph = kind === "add" ? "+" : "-";
-	const glyphColor = kind === "add" ? "toolDiffAdded" : "toolDiffRemoved";
+	const glyphColor = kind === "add" ? "success" : "error";
 	const spacer = rowBg ? `${rowBg} ` : " ";
 	return `${colorizeSegment(theme, glyphColor, glyph, rowBg)}${spacer}`;
 }

@@ -96,9 +96,9 @@ export function styleDiffSummaryLine(
 	};
 	if (countsIndex >= 0 && stats) {
 		pushMuted(countsIndex);
-		pieces.push(theme.fg("toolDiffAdded", `+${stats.added}`));
+		pieces.push(theme.fg("success", `+${stats.added}`));
 		pieces.push(theme.fg("muted", " "));
-		pieces.push(theme.fg("toolDiffRemoved", `-${stats.removed}`));
+		pieces.push(theme.fg("error", `-${stats.removed}`));
 		cursor = countsIndex + counts.length;
 	}
 	if (hintIndex >= cursor) {

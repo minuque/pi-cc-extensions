@@ -53,8 +53,8 @@ function renderDiffStatBar(stats: DiffStats, width: number, theme: DiffTheme): s
 	}
 	const removedSlots = Math.max(0, barSlots - addedSlots);
 
-	const addedBar = addedSlots > 0 ? theme.fg("toolDiffAdded", "━".repeat(addedSlots)) : "";
-	const removedBar = removedSlots > 0 ? theme.fg("toolDiffRemoved", "━".repeat(removedSlots)) : "";
+	const addedBar = addedSlots > 0 ? theme.fg("success", "━".repeat(addedSlots)) : "";
+	const removedBar = removedSlots > 0 ? theme.fg("error", "━".repeat(removedSlots)) : "";
 	return stabilizeBackgroundResets(
 		`${theme.fg("dim", "[")}${addedBar}${removedBar}${theme.fg("dim", "]")}`,
 	);
@@ -63,8 +63,8 @@ function renderDiffStatBar(stats: DiffStats, width: number, theme: DiffTheme): s
 function buildDiffSummaryBasePieces(stats: DiffStats, theme: DiffTheme): string[] {
 	return [
 		theme.fg("toolOutput", `↳ ${emphasis(theme, "diff")}`),
-		theme.fg("toolDiffAdded", `+${stats.added}`),
-		theme.fg("toolDiffRemoved", `-${stats.removed}`),
+		theme.fg("success", `+${stats.added}`),
+		theme.fg("error", `-${stats.removed}`),
 	];
 }
 

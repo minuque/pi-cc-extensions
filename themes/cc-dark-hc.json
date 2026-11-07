@@ -22,9 +22,7 @@
 		"purple": "#be8fff",
 		"pink": "#f778ba",
 		"cyan": "#39c5cf",
-		"selection": "#1a4480",
-		"diffAddBg": "#0f2a24",
-		"diffDelBg": "#261418"
+		"selection": "#1a4480"
 	},
 	"colors": {
 		"accent": "blue",
@@ -32,7 +30,7 @@
 		"borderAccent": "blue",
 		"borderMuted": "borderMuted",
 		"success": "green",
-		"error": "#ffc4bd",
+		"error": "red",
 		"warning": "yellow",
 		"muted": "fgMuted",
 		"dim": "#71717a",

@@ -2818,15 +2818,15 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		assert.match(collapsed, /↳ diff \+1 -1 · .*to show more/);
 		assert.doesNotMatch(collapsed, /Input|Output|Details:/);
 
-		// 计数上色：+ 绿、- 红，其余保持 muted。
+		// 计数上色：+ 取 success、- 取 error，与 footer 的 git 计数同源。
 		setMessageDisplayTheme({
 			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 		} as any);
 		// 主题在组件构造时固化，换主题要重新 updateResult 重建 rich diff。
 		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: false });
 		const colored = edit.render(120).join("\n");
-		assert.match(colored, /<toolDiffAdded>\+1<\/toolDiffAdded>/);
-		assert.match(colored, /<toolDiffRemoved>-1<\/toolDiffRemoved>/);
+		assert.match(colored, /<success>\+1<\/success>/);
+		assert.match(colored, /<error>-1<\/error>/);
 		setMessageDisplayTheme(previousTheme);
 
 		// 多行预览同样只显示一处计数：标题无括号，diff 头行有。

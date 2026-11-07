@@ -115,7 +115,7 @@ export function keepBackgroundAcrossResets(text: string, rowBg: string): string 
 
 export function colorizeSegment(
 	theme: DiffTheme,
-	color: "dim" | "toolDiffAdded" | "toolDiffRemoved",
+	color: "dim" | "success" | "error",
 	text: string,
 	rowBg: string | undefined,
 ): string {
@@ -276,15 +276,15 @@ export function readThemeAnsi(
 export function resolveDiffPalette(theme: DiffTheme): DiffPalette {
 	const fallbackBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolPendingBg")) ??
 		parseAnsiColorCode(readThemeAnsi(theme, "bg", "userMessageBg")) ?? { r: 32, g: 35, b: 42 };
-	// 删除行用 toolErrorBg 做基底（主题里是 diffDelBg 暗红）；不定义时退回通用基底混 tint。
+	// 新增行/删除行的文字和底色统一取 success、error，与工具标题、footer 计数同源。
 	const addBaseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolSuccessBg")) ?? fallbackBg;
 	const removeBaseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolErrorBg")) ?? addBaseBg;
-	const addFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "toolDiffAdded")) ?? {
+	const addFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "success")) ?? {
 		r: 88,
 		g: 173,
 		b: 88,
 	};
-	const removeFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "toolDiffRemoved")) ?? {
+	const removeFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "error")) ?? {
 		r: 196,
 		g: 98,
 		b: 98,
