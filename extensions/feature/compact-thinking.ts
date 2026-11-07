@@ -26,6 +26,7 @@ import {
 	styleCompactThinkingText,
 } from "../renderer/compact-mode.ts";
 import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
+import { isTranscriptComponent } from "../renderer/transcript-scope.ts";
 import {
 	COMPACT_THINKING_OWNER,
 	COMPACT_THINKING_PATCH_KEY,
@@ -645,6 +646,11 @@ function compactThinking(pi: ExtensionAPI) {
 		message: AssistantMessage,
 		isStreaming?: boolean,
 	) {
+		// 浏览层副本：不改写思考块，也不当作最新消息跟踪。
+		if (isTranscriptComponent(this)) {
+			originalUpdateContent.call(this, message, isStreaming);
+			return;
+		}
 		const component = this as AssistantMessageComponentLike;
 		const self = this as unknown as AssistantInternals;
 		// isStreaming 丢失 → mermaid 流式误渲染来回闪。

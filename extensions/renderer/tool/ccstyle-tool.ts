@@ -4,6 +4,7 @@
  */
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig, type CompactStyleMode } from "../../config/config.ts";
+import { expandedLineLimit } from "../transcript-scope.ts";
 import { isToolCallHovered } from "../mouse/hover.ts";
 import {
 	ASK_USER_QUESTION_TOOL_NAME,
@@ -126,7 +127,7 @@ function renderExpandedTaskResult(
 	if (toolName === "TaskList") {
 		const tasks = parseTaskList(text);
 		if (!tasks.length) return undefined;
-		const limit = Math.max(1, config.expandedPreviewMaxLines);
+		const limit = Math.max(1, expandedLineLimit(config.expandedPreviewMaxLines));
 		const rows = tasks.slice(0, limit).map((task) => {
 			const color =
 				task.status === "completed"

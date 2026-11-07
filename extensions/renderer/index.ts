@@ -31,6 +31,7 @@ import {
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
 import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
+import { installTranscriptMode, teardownTranscriptMode } from "./transcript-mode.ts";
 import {
 	disposeStickyPromptPatches,
 	installStickyPromptPatches,
@@ -249,6 +250,8 @@ export default function (
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
+		// 浏览模式与鼠标交互同为输入监听，跟着一起装。
+		installTranscriptMode(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
@@ -273,6 +276,7 @@ export default function (
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
+		installTranscriptMode(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
@@ -313,6 +317,7 @@ export default function (
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);
+		teardownTranscriptMode();
 		const current = installation;
 		if (!current || !current.defaultMode.isOwner()) return;
 		current.defaultMode.shutdown();

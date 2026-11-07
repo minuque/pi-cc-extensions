@@ -32,8 +32,9 @@ Run `/reload` after installation.
 | Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
+| Transcript browsing         | Full-screen transcript browsing with every tool output expanded                                                                              | `Ctrl+O`                                        |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
-| Status bar                  | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle`                                      |
+| Status bar                  | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache/token Nerd Font icons can be turned off | `/ccstyle`                                      |
 | Theme                       | Bundled themes: CC Dark, CC Light, CC Dark HC, CC Light HC                                                                                   | `/settings` → Theme                             |
 
 Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)

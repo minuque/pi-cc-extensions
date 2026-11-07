@@ -60,6 +60,14 @@ import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
 import { expandedBodyComponent, insetComponent } from "./tool/result.ts";
 import { isLiveToolCall, scheduleAnimation } from "./tool/tool-state.ts";
+import { isTranscriptComponent } from "./transcript-scope.ts";
+
+const COMPACT_ROUND_TAIL_KEY = Symbol.for("ccstyle.compactRoundTail");
+
+/** compact 挂进对话区的回合尾行（摘要行与槽位卡），浏览层跳过它。 */
+export function isCompactRoundTail(value: unknown): boolean {
+	return Boolean(value && typeof value === "object" && (value as any)[COMPACT_ROUND_TAIL_KEY]);
+}
 import { renderExpandedToolResult } from "./tool/tool-io.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { styleChangeCounts } from "./tool/ccstyle-tool.ts";
@@ -1632,6 +1640,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		const tail: MountedRoundTail = { host: undefined, container: undefined, parts: [], round };
 		const host: any = {
+			[COMPACT_ROUND_TAIL_KEY]: true,
 			outputPad: Number(round.anchor?.outputPad) || 0,
 			children: [],
 			render: (width: number) => tail.parts.flatMap((part: any) => part?.render?.(width) ?? []),
@@ -2294,6 +2303,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			return patch.assistantNative.call(this, message, isStreaming);
 		}
 		self.lastMessage = message;
+		// 浏览层副本：不进回合跟踪，按原生方式渲染完整消息。
+		if (isTranscriptComponent(this)) return passThroughAssistant(this, message, isStreaming);
 		trackedAssistantComponents.add(this);
 		if (!patch.active || config.mode !== "compact") {
 			return passThroughAssistant(this, message, isStreaming);
@@ -2438,7 +2449,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	patch.toolInstalledRender = function (this: any, width: number) {
-		if (!patch.active || config.mode !== "compact") {
+		if (!patch.active || config.mode !== "compact" || isTranscriptComponent(this)) {
 			return patch.toolOriginalRender.call(this, width);
 		}
 		const name = String(this.toolName ?? "");
@@ -2467,6 +2478,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	patch.toolInstalledUpdateDisplay = function (this: any) {
+		// 浏览层副本：不受回合展开规则约束，也不进组件跟踪。
+		if (isTranscriptComponent(this)) return patch.toolOriginalUpdateDisplay.call(this);
 		const id = String(this.toolCallId ?? "");
 		if (
 			patch.active &&

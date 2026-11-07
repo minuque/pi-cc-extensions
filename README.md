@@ -32,8 +32,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
+| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开                                             | `Ctrl+O`                                        |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
-| 状态栏                | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`                              |
+| 状态栏                | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存/token 图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供 4 个主题：CC Dark、CC Light、CC Dark HC、CC Light HC                   | `/settings` → Theme                             |
 
 `on` / `compact` 两种模式的渲染样例：[默认模式](./docs/tool-render-examples-default.md) · [紧凑模式](./docs/tool-render-examples-compact.md)
