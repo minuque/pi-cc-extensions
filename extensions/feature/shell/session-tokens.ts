@@ -45,8 +45,8 @@ export function sessionEntryTokens(entry: unknown): number {
 	return 0;
 }
 
-/** 芯片文案：`∑ 402k`；没有数据返回空串（不占位置）。 */
-export function formatSessionTokenTotal(total: number): string {
+/** 芯片文案：`<glyph> 402k`；没有数据返回空串（不占位置）。 */
+export function formatSessionTokenTotal(total: number, glyph: string): string {
 	if (!Number.isFinite(total) || total <= 0) return "";
-	return `∑ ${formatTokenCount(Math.round(total))}`;
+	return `${glyph} ${formatTokenCount(Math.round(total))}`;
 }

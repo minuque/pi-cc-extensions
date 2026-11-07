@@ -10,6 +10,7 @@ import {
 	FOOTER_NERD_ICON_CACHE,
 	FOOTER_NERD_ICON_GIT,
 	FOOTER_NERD_ICON_MCP,
+	FOOTER_NERD_ICON_TOKENS,
 	applyCustomFooter,
 	clearCustomFooter,
 	colorGitStatus,
@@ -113,8 +114,10 @@ test("footerGlyphs drops Nerd Font icons when disabled", () => {
 		git: FOOTER_NERD_ICON_GIT,
 		cache: FOOTER_NERD_ICON_CACHE,
 		mcp: FOOTER_NERD_ICON_MCP,
+		tokens: FOOTER_NERD_ICON_TOKENS,
 	});
-	assert.deepEqual(footerGlyphs(false), { git: "", cache: "", mcp: "" });
+	// token 芯片不能只剩数字：纯文本模式退回 Σ。
+	assert.deepEqual(footerGlyphs(false), { git: "", cache: "", mcp: "", tokens: "Σ" });
 });
 
 test("normalizeConfig defaults builtin chips on their original lines", () => {

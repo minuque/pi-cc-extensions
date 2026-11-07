@@ -86,10 +86,10 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerTokenRate": true,                 // 输出速率芯片；false 隐藏
   "footerTokenRateMode": "average",        // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
   "footerTokenRateTtft": true,             // 速率芯片是否带 TTFT；false 只显示 tok/s
-  "footerSessionTokens": false,            // 本次对话累计 token 芯片（∑）；累加会话条目的 usage.totalTokens，默认关
+  "footerSessionTokens": false,            // 本次对话累计 token 芯片（Nerd Font 图标，纯文本为 Σ）；累加会话条目的 usage.totalTokens，默认关
   "footerCurrency": "USD",                 // 底栏费用的显示币种
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
-  "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
+  "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布

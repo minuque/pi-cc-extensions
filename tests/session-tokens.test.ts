@@ -49,10 +49,10 @@ test("session token total adds up entries and skips ones without usage", () => {
 });
 
 test("formatSessionTokenTotal abbreviates and hides when empty", () => {
-	assert.equal(formatSessionTokenTotal(0), "");
-	assert.equal(formatSessionTokenTotal(Number.NaN), "");
-	assert.equal(formatSessionTokenTotal(999), "∑ 999");
-	assert.equal(formatSessionTokenTotal(1234), "∑ 1.2k");
-	assert.equal(formatSessionTokenTotal(402_000), "∑ 402k");
-	assert.equal(formatSessionTokenTotal(1_250_000), "∑ 1.3M");
+	assert.equal(formatSessionTokenTotal(0, "Σ"), "");
+	assert.equal(formatSessionTokenTotal(Number.NaN, "Σ"), "");
+	assert.equal(formatSessionTokenTotal(999, "Σ"), "Σ 999");
+	assert.equal(formatSessionTokenTotal(1234, "Σ"), "Σ 1.2k");
+	assert.equal(formatSessionTokenTotal(402_000, "Σ"), "Σ 402k");
+	assert.equal(formatSessionTokenTotal(1_250_000, "Σ"), "Σ 1.3M");
 });

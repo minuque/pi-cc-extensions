@@ -59,10 +59,26 @@ export const FOOTER_NERD_ICON_CACHE = "󰆼";
 // md power-plug：MCP 服务器连接数
 export const FOOTER_NERD_ICON_MCP = "\u{f06a5}";
 
-export function footerGlyphs(nerdIcons: boolean): { git: string; cache: string; mcp: string } {
+// md sigma：会话累计 token。与缓存、MCP 同属 md 图标，字高一致。
+export const FOOTER_NERD_ICON_TOKENS = "\u{f04a0}";
+// 纯文本用希腊字母 Σ：数学求和号 ∑ 在多数字体里比数字高，排在芯片里突兀。
+// 不留空：只剩数字时看不出是 token 总数。
+export const FOOTER_PLAIN_ICON_TOKENS = "Σ";
+
+export function footerGlyphs(nerdIcons: boolean): {
+	git: string;
+	cache: string;
+	mcp: string;
+	tokens: string;
+} {
 	return nerdIcons
-		? { git: FOOTER_NERD_ICON_GIT, cache: FOOTER_NERD_ICON_CACHE, mcp: FOOTER_NERD_ICON_MCP }
-		: { git: "", cache: "", mcp: "" };
+		? {
+				git: FOOTER_NERD_ICON_GIT,
+				cache: FOOTER_NERD_ICON_CACHE,
+				mcp: FOOTER_NERD_ICON_MCP,
+				tokens: FOOTER_NERD_ICON_TOKENS,
+			}
+		: { git: "", cache: "", mcp: "", tokens: FOOTER_PLAIN_ICON_TOKENS };
 }
 
 /**
@@ -487,7 +503,9 @@ const createCustomFooterFactory =
 			const costChip = costLabel
 				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
 				: "";
-			const tokensLabel = config.footerSessionTokens ? formatSessionTokenTotal(tokens) : "";
+			const tokensLabel = config.footerSessionTokens
+				? formatSessionTokenTotal(tokens, footerGlyphs(config.footerNerdIcons).tokens)
+				: "";
 
 			const gitColor = theme.getThinkingBorderColor("medium");
 			let place = theme.fg("accent", cwdLabel);

@@ -26,7 +26,7 @@ const mcpTool = (server: string, extra: Record<string, unknown> = {}) => ({
 test("footerGlyphs：MCP 图标跟 nerd 开关一起给/一起收", () => {
 	assert.equal(footerGlyphs(true).mcp, FOOTER_NERD_ICON_MCP);
 	assert.equal(footerGlyphs(false).mcp, "");
-	assert.deepEqual(Object.keys(footerGlyphs(true)).sort(), ["cache", "git", "mcp"]);
+	assert.deepEqual(Object.keys(footerGlyphs(true)).sort(), ["cache", "git", "mcp", "tokens"]);
 });
 
 test("名字规范化：`-` 与 `_` 是同一个服务器", () => {
