@@ -91,7 +91,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
-  "footerContextLimit": "window",         // context chip limit: window (default); compaction: auto-compaction point (window − compaction.reserveTokens); both: compaction point, window in brackets
+  "footerContextLimit": "window",          // context chip limit: window (default); compaction: auto-compaction point (window − compaction.reserveTokens); both: compaction point, window in brackets
+                                           // Pi compacts only after crossing that point, so the text can briefly exceed 100% (e.g. 104%/184k); the bar clamps at 100%
   "footerHiddenKeys": [],                  // hidden chip keys
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout
   "footerLine2Keys": ["cwd", "git"],       // cwd: directory and session; git: branch and changes. Either can move to any line

@@ -49,35 +49,79 @@ export { parseGitStats } from "./git-stats.ts";
 
 // Pi's built-in compaction.reserveTokens default (pi-coding-agent settings defaults).
 const PI_DEFAULT_COMPACTION_RESERVE_TOKENS = 16_384;
+/** How long a cached compaction limit is reused before settings are read again. */
+export const COMPACTION_LIMIT_REFRESH_MS = 30_000;
 
 type CompactionSettingsView = {
 	compaction?: {
-		enabled?: boolean;
-		reserveTokens?: number;
-		modelOverrides?: Record<string, { reserveTokens?: number } | undefined>;
+		enabled?: unknown;
+		reserveTokens?: unknown;
+		modelOverrides?: Record<string, unknown>;
 	};
 };
+
+type ModelRef = { provider?: string; id?: string } | undefined;
+
+/** A reserve value Pi accepts: a non-negative safe integer; anything else is ignored. */
+function validReserveTokens(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
 
 /**
  * Token count at which Pi auto-compacts: it compacts once context tokens exceed
  * contextWindow − reserveTokens, resolving reserveTokens as model override, then
  * compaction.reserveTokens, then Pi's default. Undefined when auto-compaction is
  * off or the window is unknown or not larger than the reserve.
+ *
+ * Mirrors Pi's SettingsManager.getCompactionSettings and shouldCompact, which
+ * extensions cannot call; update this copy when those change. Where Pi throws on
+ * an invalid reserve value, this skips it and falls through to the next level.
  */
 export function compactionLimitTokens(
 	contextWindow: number,
 	settings: CompactionSettingsView | undefined,
-	model: { provider?: string; id?: string } | undefined,
+	model: ModelRef,
 ): number | undefined {
 	const compaction = settings?.compaction;
-	if (compaction?.enabled === false || !(contextWindow > 0)) return undefined;
+	if (!(compaction?.enabled ?? true) || !(contextWindow > 0)) return undefined;
 	const override = model
 		? compaction?.modelOverrides?.[`${model.provider}/${model.id}`]
 		: undefined;
+	const overrideReserve =
+		typeof override === "object" && override !== null
+			? validReserveTokens((override as { reserveTokens?: unknown }).reserveTokens)
+			: undefined;
 	const reserve =
-		override?.reserveTokens ?? compaction?.reserveTokens ?? PI_DEFAULT_COMPACTION_RESERVE_TOKENS;
+		overrideReserve ??
+		validReserveTokens(compaction?.reserveTokens) ??
+		PI_DEFAULT_COMPACTION_RESERVE_TOKENS;
 	const limit = contextWindow - reserve;
 	return limit > 0 ? limit : undefined;
+}
+
+/**
+ * Caches compactionLimitTokens per model (provider/id) and context window, so a footer
+ * render does not read settings each frame (Pi's getSettings deep-copies them). The
+ * limit is recomputed when the model or window changes, or after
+ * COMPACTION_LIMIT_REFRESH_MS, which picks up settings edits.
+ */
+export function createCompactionLimitCache(
+	readSettings: () => CompactionSettingsView | undefined,
+	now: () => number = Date.now,
+): (contextWindow: number, model: ModelRef) => number | undefined {
+	let cached: { key: string; limit: number | undefined; readAt: number } | undefined;
+	return (contextWindow, model) => {
+		const key = `${model?.provider}/${model?.id}@${contextWindow}`;
+		const time = now();
+		if (cached?.key !== key || time - cached.readAt >= COMPACTION_LIMIT_REFRESH_MS) {
+			cached = {
+				key,
+				limit: compactionLimitTokens(contextWindow, readSettings(), model),
+				readAt: time,
+			};
+		}
+		return cached.limit;
+	};
 }
 
 /**
@@ -290,6 +334,7 @@ let refreshCurrentUsage: (() => void) | undefined;
 let refreshCurrentMcpChip: (() => void) | undefined;
 /** 工具/命令列表在 pi API 上，而 footer 工厂只拿得到 ctx，加载时记下来。 */
 let extensionApi: Pick<ExtensionAPI, "getAllTools" | "getCommands" | "getSettings"> | undefined;
+const cachedCompactionLimit = createCompactionLimitCache(() => extensionApi?.getSettings?.());
 
 const createCustomFooterFactory =
 	(ctx: ExtensionContext) => (tui: any, theme: any, footerData: any) => {
@@ -503,7 +548,7 @@ const createCustomFooterFactory =
 				},
 				config.footerContextLimit === "window"
 					? undefined
-					: compactionLimitTokens(contextWindow, extensionApi?.getSettings?.(), model),
+					: cachedCompactionLimit(contextWindow, model),
 				config.footerContextLimit,
 			);
 			const percent = contextFigures.percent;
