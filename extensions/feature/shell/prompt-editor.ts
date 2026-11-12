@@ -15,6 +15,7 @@
  */
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
+import { setInjectedKeybindings } from "../../utils/keybindings.ts";
 
 /** `❯ ` 固定 2 列：glyph + 尾随空格。 */
 const PROMPT_GLYPH = "❯";
@@ -52,8 +53,11 @@ export class PromptEditor extends CustomEditor {
 
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-const promptEditorFactory: EditorFactory = (tui, theme, keybindings) =>
-	new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+const promptEditorFactory: EditorFactory = (tui, theme, keybindings) => {
+	// pi 把用户的 KeybindingsManager 注进来，顺带作为全扩展的按键提示取源。
+	setInjectedKeybindings(keybindings);
+	return new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+};
 
 /** 是否正占着插槽；占据前的工厂用于原样还回去。 */
 let active = false;
@@ -68,31 +72,32 @@ let previousEditorFactory: EditorFactory | undefined;
  *
  * 例外：插槽被 pi 重置回占据前的工厂时（/new、/reload 走 resetExtensionUI），
  * 我们已经不在槽里，再写一次会把 pi 刚重置的结果又覆盖掉；此时只清状态。
+ * 用户主动改设置时传 force：pi 1.5 会把对话框开着时的替换排队到关闭后落地，
+ * 期间 getEditorComponent() 仍是旧工厂，无法据此判断要不要还回去。
  */
-function releasePromptEditor(ctx: ExtensionContext): void {
+function releasePromptEditor(ctx: ExtensionContext, force = false): void {
 	if (!active) return;
 	const previous = previousEditorFactory;
 	active = false;
 	previousEditorFactory = undefined;
-	if (ctx.ui.getEditorComponent?.() === previous) return;
+	if (!force && ctx.ui.getEditorComponent?.() === previous) return;
 	ctx.ui.setEditorComponent(previous);
 }
 
 /**
  * 应用输入框前缀；enableEditorPrefix=false 时只撤自己装的那层。
  *
- * 只在没有扩展对话框开着时调用：pi 的 setEditorComponent 会清空 editorContainer 并
- * 抢走焦点，把正在设置面板里的对话框踢出渲染树，对话框的 done() 再也走不到，
- * `ctx.ui.custom()` 的 Promise 永不落定，后续输入全部卡死。设置面板自己不做替换，
- * 等 `ctx.ui.custom()` 返回后再调本函数。
+ * 面板开着时也能直接替换：pi 1.5.0 起 setEditorComponent 不会再把现有对话框踢出渲染树，
+ * 新编辑器等对话框关闭后才出现（issue #11431）；早于该版本时 `ctx.ui.custom()` 的 Promise
+ * 会永不落定，只能在面板关闭后再调用。
  *
  * 插槽已经装着本扩展的编辑器时直接返回：重复安装只会重建实例，丢掉撤销栈、
  * 历史等编辑器状态，还会打断其他扩展包在外层的编辑器。
  */
-export function applyPromptEditor(ctx: ExtensionContext): void {
+export function applyPromptEditor(ctx: ExtensionContext, options?: { force?: boolean }): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setEditorComponent !== "function") return;
 	if (!config.enableEditorPrefix) {
-		releasePromptEditor(ctx);
+		releasePromptEditor(ctx, options?.force);
 		return;
 	}
 	const current = ctx.ui.getEditorComponent?.();
@@ -111,7 +116,7 @@ export function applyPromptEditor(ctx: ExtensionContext): void {
 }
 
 /** 恢复本扩展占据前的编辑器；未占用时不动作。 */
-export function clearPromptEditor(ctx: ExtensionContext): void {
+export function clearPromptEditor(ctx: ExtensionContext, options?: { force?: boolean }): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setEditorComponent !== "function") return;
-	releasePromptEditor(ctx);
+	releasePromptEditor(ctx, options?.force);
 }

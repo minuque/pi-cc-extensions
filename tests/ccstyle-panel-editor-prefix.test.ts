@@ -22,15 +22,22 @@ type EditorFactory = (tui: unknown, theme: unknown, keybindings: unknown) => unk
 type Panel = { handleInput(data: string): void };
 
 /**
- * `ui` 复刻 pi 的关键副作用：`setEditorComponent` 会清空 editorContainer 并抢走焦点，
- * 对话框还开着时替换编辑器等于把对话框踢出渲染树，它的 done() 再也不会被调用。
+ * `ui` 复刻 pi 1.5 的关键副作用：对话框开着时 `setEditorComponent` 只排队，
+ * 等对话框关闭后才落到插槽里（issue #11431），期间 `getEditorComponent()` 仍是旧工厂。
  */
 function fakePanelUi() {
 	let factory: EditorFactory | undefined;
+	let queued: { next: EditorFactory | undefined } | undefined;
 	let dialogOpen = false;
 	let panel: Panel | undefined;
 	const swaps: (EditorFactory | undefined)[] = [];
 	const notices: string[] = [];
+
+	const flushQueued = () => {
+		if (!queued) return;
+		factory = queued.next;
+		queued = undefined;
+	};
 
 	const custom = (
 		build: (tui: unknown, theme: unknown, keybindings: unknown, done: () => void) => Panel,
@@ -38,6 +45,7 @@ function fakePanelUi() {
 		new Promise<void>((resolve) => {
 			const done = () => {
 				dialogOpen = false;
+				flushQueued();
 				resolve();
 			};
 			dialogOpen = true;
@@ -47,13 +55,9 @@ function fakePanelUi() {
 	const ui = {
 		getEditorComponent: () => factory,
 		setEditorComponent: (next: EditorFactory | undefined) => {
-			assert.equal(
-				dialogOpen,
-				false,
-				"editor slot swapped while the /ccstyle panel was still open",
-			);
-			factory = next;
 			swaps.push(next);
+			if (dialogOpen) queued = { next };
+			else factory = next;
 		},
 		notify: (message: string) => notices.push(message),
 		custom,
@@ -79,7 +83,7 @@ function selectEditorPrefixRow(panel: Panel): void {
 	for (let i = 0; i < 7; i++) panel.handleInput("\x1b[B");
 }
 
-test("toggling Editor prefix keeps the panel alive and swaps the editor after close", async () => {
+test("toggling Editor prefix applies right away and the swap lands after close", async () => {
 	const slot = fakePanelUi();
 	const { ctx, notices, swaps } = slot;
 	config.enableEditorPrefix = false;
@@ -90,14 +94,15 @@ test("toggling Editor prefix keeps the panel alive and swaps the editor after cl
 	panel.handleInput("\r");
 
 	assert.equal(config.enableEditorPrefix, true);
-	assert.deepEqual(swaps, [], "editor must not be swapped while the panel is open");
 	assert.ok(notices.includes("Updated enableEditorPrefix: on"));
+	assert.equal(swaps.length, 1, "切换后立刻请求替换编辑器");
+	assert.equal(typeof swaps[0], "function");
+	assert.equal(ctx.ui.getEditorComponent(), undefined, "pi 把替换排到对话框关闭后");
+	assert.ok(panel, "面板还在");
 
 	panel.handleInput("\x1b");
 	await closePanel;
 
-	assert.equal(swaps.length, 1);
-	assert.equal(typeof swaps[0], "function");
 	assert.equal(ctx.ui.getEditorComponent(), swaps[0]);
 
 	// 再应用一次不许重建编辑器实例。
@@ -129,11 +134,35 @@ test("toggling Editor prefix off restores the editor captured on enable", async 
 	panel.handleInput("\r");
 
 	assert.equal(config.enableEditorPrefix, false);
-	assert.deepEqual(swaps, []);
+	assert.equal(swaps.length, 1, "关闭时立刻请求还回原工厂");
 
 	panel.handleInput("\x1b");
 	await closePanel;
 
-	assert.equal(swaps.length, 1);
+	assert.equal(ctx.ui.getEditorComponent(), otherFactory);
+});
+
+test("面板里连续开关：以最后一次选择为准", async () => {
+	const otherFactory: EditorFactory = () => ({});
+	const slot = fakePanelUi();
+	const { ctx } = slot;
+
+	ctx.ui.setEditorComponent(otherFactory);
+	config.enableEditorPrefix = false;
+	clearPromptEditor(ctx as never);
+	assert.equal(ctx.ui.getEditorComponent(), otherFactory);
+
+	const closePanel = showCcstylePanel(ctx, hooks);
+	const panel = slot.panel;
+	selectEditorPrefixRow(panel);
+	panel.handleInput("\r");
+	assert.equal(config.enableEditorPrefix, true);
+	// 再切一次关掉：pi 还没把 ❯ 编辑器落进插槽，也要能把原工厂还回去。
+	panel.handleInput("\r");
+	assert.equal(config.enableEditorPrefix, false);
+
+	panel.handleInput("\x1b");
+	await closePanel;
+
 	assert.equal(ctx.ui.getEditorComponent(), otherFactory);
 });
