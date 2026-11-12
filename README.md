@@ -28,11 +28,11 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 功能                  | 说明                                                                            | 入口                                            |
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
-| Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
+| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
-| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开                                             | `Ctrl+O`                                        |
+| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开；对话区有可展开的 `!` 输出时把键让给 pi | `Ctrl+O`                                        |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 状态栏                | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存/token 图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供 4 个主题：CC Dark、CC Light、CC Dark HC、CC Light HC                   | `/settings` → Theme                             |
@@ -103,7 +103,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 > **全屏模式**：展开态 diff 全量显示。Input/Output 超行时末行给 `… +N more lines`，单击看全量，再击收起。
 
 > [!NOTE]
-> **Mermaid 渲染**：`markdown.mermaid` 建议设为 `final`（`~/.pi/agent/settings.json` 或 `/settings`）。默认 `streaming` 逐帧重绘，`final` 只渲染最终版。
+> **Mermaid 渲染**：`markdown.mermaid` 建议设 `final`（`/settings`），避免流式逐帧重绘。
 
 ## 本地开发
 
@@ -115,7 +115,7 @@ pi -e .              # 只跑一次，不改 settings.json
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `^0.84.0`
+- Node.js `>=22.19.0`，Pi `^1.5.1`（用到了 1.5.x 的注入式按键提示、`messageTypes` 与 `ctx.ui.custom({ blocked })`）
 
 ## 推荐搭配
 

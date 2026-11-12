@@ -28,11 +28,11 @@ Run `/reload` after installation.
 | Feature                     | Description                                                                                                                                  | Entry point                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes                                                   | `/ccstyle`                                      |
-| Markdown enhancements       | Mermaid dialects and circled-number conversion                                                                                               | Automatic; turn off with `enableMarkdownEnhance: false` |
-| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Markdown enhancements       | Mermaid dialects in non-standard fences (`statediagram`, `classdiagram`…) and circled-number conversion; plain mermaid goes to pi | Automatic; turn off with `enableMarkdownEnhance: false` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `--tui-mode fullscreen` (default since pi 1.5) |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
-| Transcript browsing         | Full-screen transcript browsing with every tool output expanded                                                                              | `Ctrl+O`                                        |
+| Transcript browsing         | Full-screen transcript browsing with every tool output expanded; the key goes to pi while a long `!` output can be expanded                  | `Ctrl+O`                                        |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
 | Status bar                  | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache/token Nerd Font icons can be turned off | `/ccstyle`                                      |
 | Theme                       | Bundled themes: CC Dark, CC Light, CC Dark HC, CC Light HC                                                                                   | `/settings` → Theme                             |
@@ -103,7 +103,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 > **Fullscreen**: expanded diffs always show every line. When expanded Input/Output exceeds the line cap, the footer shows `… +N more lines`; click for the full preview, click again to collapse.
 
 > [!NOTE]
-> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or `/settings`. Default `streaming` redraws every frame; `final` renders once.
+> **Mermaid rendering**: set `markdown.mermaid` to `final` (`/settings`) so it renders once instead of every frame.
 
 ## Local development
 
@@ -115,7 +115,7 @@ pi -e .              # one run, does not edit settings.json
 
 ## Compatibility
 
-- Node.js `>=22.19.0`, Pi `^0.84.0`
+- Node.js `>=22.19.0`, Pi `^1.5.1` (uses the injected keybinding hints, `messageTypes` and `ctx.ui.custom({ blocked })` from pi 1.5.x)
 
 ## Recommended companions
 
