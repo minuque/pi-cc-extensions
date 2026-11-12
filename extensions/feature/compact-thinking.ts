@@ -11,13 +11,9 @@ import {
 	type ExtensionAPI,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import {
-	getKeybindings,
-	truncateToWidth,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
+import { keyText } from "../utils/keybindings.ts";
 import { TOOL_CARD_BG_SLOT } from "../renderer/tool/tool-state.ts";
 import { isToolTuiFullscreen } from "../renderer/tool/names.ts";
 import {
@@ -167,8 +163,8 @@ function restoreDurationEntries(
 }
 
 function getThinkingToggleHint() {
-	const keys = getKeybindings().getKeys("app.thinking.toggle");
-	return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
+	const keys = keyText("app.thinking.toggle");
+	return keys.length > 0 ? `${keys} to expand` : undefined;
 }
 
 function thinkingExpandAction(): string | undefined {

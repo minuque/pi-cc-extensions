@@ -1,12 +1,7 @@
-import {
-	getKeybindings,
-	matchesKey,
-	truncateToWidth,
-	visibleWidth,
-	type Keybinding,
-} from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
+import { keyDisplayText, keybindings } from "../../utils/keybindings.ts";
 import { parseSgrMousePackets } from "./packets.ts";
 import {
 	OFFICIAL_SCROLL_TO_END_KEY,
@@ -204,19 +199,7 @@ export function isFullscreenAtBottom(tui: any): boolean {
 
 /** 与 Pi 原生浮层同源（keyDisplayText）：用户实际绑定，首字母大写，macOS 上 alt 显示为 option。 */
 function scrollBottomShortcutText(): string {
-	return getKeybindings()
-		.getKeys(SCROLL_BOTTOM_KEYBINDING)
-		.map((key) =>
-			key
-				.split("+")
-				.map((part) => {
-					const display =
-						process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
-					return display.charAt(0).toUpperCase() + display.slice(1);
-				})
-				.join("+"),
-		)
-		.join("/");
+	return keyDisplayText(SCROLL_BOTTOM_KEYBINDING);
 }
 
 function isScrollNavigationInput(data: string): boolean {
@@ -235,7 +218,7 @@ function isScrollNavigationInput(data: string): boolean {
 			"tui.altScreen.nextPrompt",
 			"tui.altScreen.top",
 			"tui.altScreen.bottom",
-		].some((key) => getKeybindings().matches(data, key as Keybinding))
+		].some((key) => keybindings().matches(data, key))
 	) {
 		return true;
 	}

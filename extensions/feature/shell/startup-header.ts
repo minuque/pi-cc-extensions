@@ -1,7 +1,7 @@
 import { InteractiveMode, VERSION, type AppKeybinding } from "@earendil-works/pi-coding-agent";
-import { getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
+import { formatKeyText, keyText, setInjectedKeybindings } from "../../utils/keybindings.ts";
 import { ansi16ToRgb, ansi256ToRgb } from "../../utils/ansi-color.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import {
@@ -187,23 +187,6 @@ function renderLogoLines(width: number, palette: Rgb[]): string[] {
 
 // ---- 右侧：原生默认 header 文本（对齐 pi 内置 startup header，按键文本随用户 keybindings 动态渲染） ----
 
-function formatKeyPart(part: string): string {
-	// 与 pi 内置 keybinding-hints 一致：macOS 上 alt 显示为 option
-	return process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
-}
-
-function formatKeyText(key: string): string {
-	return key
-		.split("/")
-		.map((part) => part.split("+").map(formatKeyPart).join("+"))
-		.join("/");
-}
-
-function keyText(keybinding: AppKeybinding): string {
-	const keys = getKeybindings().getKeys(keybinding);
-	return keys.length === 0 ? "" : formatKeyText(keys.join("/"));
-}
-
 function renderNativeLines(theme: {
 	fg(name: string, text: string): string;
 	bold(text: string): string;
@@ -336,6 +319,8 @@ export function installEarlyStartupHeader(): void {
 		active: true,
 		original,
 		installed: async function (this: any, ...args: any[]) {
+			// 从这里拿到 pi 注入的按键管理器，启动头与工具卡的按键提示都按它显示。
+			setInjectedKeybindings(this?.keybindings);
 			installHeaderContainerSwap(this, patch);
 			return original.apply(this, args);
 		},

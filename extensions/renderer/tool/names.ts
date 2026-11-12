@@ -1,6 +1,7 @@
 import { posix, win32 } from "node:path";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { keyText } from "../../utils/keybindings.ts";
 import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
 import { headTruncateToWidth } from "./result.ts";
@@ -445,20 +446,9 @@ export function isToolTuiFullscreen(): boolean {
 	return toolTuiFullscreen !== false;
 }
 
-function formatKeyPart(part: string): string {
-	// 与 pi 内置 keybinding-hints 一致：macOS 上 alt 显示为 option
-	return process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
-}
-
 /** 默认展开快捷键（app.tools.expand）显示文本；未配置时回退 ctrl+o。 */
 export function expandShortcutText(): string {
-	const keys = getKeybindings().getKeys("app.tools.expand");
-	if (keys.length === 0) return "ctrl+o";
-	return keys
-		.join("/")
-		.split("/")
-		.map((part) => part.split("+").map(formatKeyPart).join("+"))
-		.join("/");
+	return keyText("app.tools.expand") || "ctrl+o";
 }
 
 export function showMoreHintText(): string {

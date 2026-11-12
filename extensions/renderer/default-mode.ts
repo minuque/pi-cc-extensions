@@ -14,6 +14,7 @@ import {
 	TOOL_EXPANDED_BACKGROUND_PATCH,
 } from "../utils/patch-keys.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
+import { setInjectedKeyText } from "../utils/keybindings.ts";
 import { isLiveToolCall, toolCardBgSlot } from "./tool/tool-state.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { createCcstyleTool } from "./tool/ccstyle-tool.ts";
@@ -286,9 +287,13 @@ function installGlobalToolRendering(
 	prototype.getCallRenderer = patch.installed.getCallRenderer;
 	prototype.getResultRenderer = patch.installed.getResultRenderer;
 	// 渲染上下文没有 result。ask_user_question 的标题要报问题数，只能从这里补。
+	// 同时记下 pi 注入的 keyText：工具卡上的展开提示按它显示。
 	patch.getRenderContext = function (this: any, ...args: any[]) {
 		const context = originalGetRenderContext.apply(this, args);
-		if (context && typeof context === "object") context.result = this.result;
+		if (context && typeof context === "object") {
+			context.result = this.result;
+			setInjectedKeyText(context.keyText);
+		}
 		return context;
 	};
 	prototype.getRenderContext = patch.getRenderContext;
