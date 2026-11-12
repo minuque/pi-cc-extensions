@@ -12,6 +12,7 @@
 - 按键提示改用 pi 注入的按键管理器与 `keyText()`：`keybindings.json` 里的自定义绑定在启动头、工具卡提示和浏览层里都能正确显示。
 - `/ccstyle` 面板与 `/context` 弹层报告「等待用户输入」（OSC 7501）；面板内切换 ❯ 前缀立即生效，不再等面板关闭。
 - 开发依赖对齐 pi 1.5.2，`typecheck` 与测试不再对着 1.1.0 的类型运行。
+- 新增 `footerContextLimit`：上下文芯片分母可选完整窗口（`window`，默认）、Pi 的自动压缩触发点（`compaction`）或两者兼显（`both`）。
 
 ### 修复
 
