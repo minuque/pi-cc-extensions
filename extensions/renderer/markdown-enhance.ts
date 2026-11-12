@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { render as renderMermaid, sourceBox } from "grok-mermaid";
+import { diagramKind, render as renderMermaid, sourceBox } from "grok-mermaid";
 
 // ============================================================================
 // Mermaid 方言渲染
@@ -200,8 +200,9 @@ function renderDiagrams(
 			const collected = collectFence(lines, i);
 			if (collected) {
 				const { diagram, next } = collected;
-				// grok-mermaid 需要源码自带类型头，方言头在 fence 标签里时补回去
-				const src = `${fence[2]}\n${diagram}`;
+				// grok-mermaid 需要源码自带类型头：fence 名当类型头补上；正文已带头就别再补，
+				// 重复头会解析失败退成源码框，或者把类型头画成一个节点
+				const src = diagramKind(diagram) ? diagram : `${fence[2]}\n${diagram}`;
 				const art = getArt(src);
 				const width = availableWidth ?? 80;
 				if (art && art.width <= width) {

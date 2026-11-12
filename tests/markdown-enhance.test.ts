@@ -29,6 +29,19 @@ test("标准 mermaid 原样交给 pi 内置渲染器", () => {
 	assert.strictEqual(run(md), md);
 });
 
+test("正文自带类型头不再补 fence 名", () => {
+	for (const md of [
+		"```sequencediagram\nsequenceDiagram\nA->>B: hi\n```",
+		"```classdiagram\nclassDiagram\nclass A\n```",
+		"```statediagram\nstateDiagram-v2\n[*] --> S\n```",
+	]) {
+		const out = run(md);
+		assert.ok(!out.includes("```"), `退成源码框：${md}`);
+		// 类型头被画成节点时，图里会出现它的字面量
+		assert.ok(!out.includes("sequenceDiagram") && !out.includes("classDiagram"), out);
+	}
+});
+
 test("四反引号围栏", () => {
 	assert.ok(run("````sequenceDiagram\nA->>B: hi\n````").includes("┌"));
 });
