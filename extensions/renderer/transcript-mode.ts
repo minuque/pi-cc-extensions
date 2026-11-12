@@ -13,17 +13,20 @@
  * 对话区本身一个状态都不改，关掉弹层即恢复原样。
  *
  * Pi 把 app.tools.expand 列为保留键，registerShortcut 注册不上；这里在原始输入到达
- * 输入框之前拦截。只认 Pi 自己会响应该键的组件（带 actionHandlers 的编辑器）。
+ * 输入框之前拦截。只认 Pi 自己会响应该键的组件（带 actionHandlers 的编辑器），
+ * 且对话区里有可展开的 `!` / `!!` 命令输出时把键还给 Pi——它用同一个键展开命令行输出。
  */
 
 import {
 	AssistantMessageComponent,
+	BashExecutionComponent,
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, isKeyRelease, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { config } from "../config/config.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
+import { keybindings, setInjectedKeybindings } from "../utils/keybindings.ts";
 import { isCompactRoundTail } from "./compact-mode.ts";
 import { stripToolFrameMarkers } from "./mouse/packets.ts";
 import { fullscreenLazyTui, getToolMouseTui } from "./mouse/scroll.ts";
@@ -32,6 +35,9 @@ import { expandShortcutText } from "./tool/names.ts";
 import { markTranscriptComponent, withTranscriptScope } from "./transcript-scope.ts";
 
 const EXPAND_ACTION = "app.tools.expand";
+// pi 的 BashExecutionComponent 在输出超过预览行数且已结束时，才在尾行给出
+// 「ctrl+o to expand」；同样的键这时归 Pi，插件不接管。
+const BASH_PREVIEW_LINES = 20;
 // 与 Pi 的 tui.altScreen.pageUp/pageDown 同一重叠行数，翻页后保留上下文。
 const PAGE_SCROLL_OVERLAP = 4;
 const WHEEL_LINES = 3;
@@ -76,7 +82,7 @@ export function transcriptScrollAction(data: string): ScrollAction | undefined {
 }
 
 export function isTranscriptExitKey(data: string): boolean {
-	return matchesAny(data, EXIT_KEYS) || getKeybindings().matches(data, EXPAND_ACTION as any);
+	return matchesAny(data, EXIT_KEYS) || keybindings().matches(data, EXPAND_ACTION);
 }
 
 // ---------------------------------------------------------------------------
@@ -403,12 +409,28 @@ function canOpen(tui: any): boolean {
 	);
 }
 
+/** 对话区里是否有 `!` / `!!` 命令的长输出：这类输出用同一个展开键展开。 */
+function hasExpandableBashOutput(root: any): boolean {
+	let found = false;
+	walkComponentTree(root, (value: any) => {
+		if (found) return false;
+		if (!(value instanceof BashExecutionComponent)) return undefined;
+		const component = value as any;
+		if (component.status === "running") return undefined;
+		const output = typeof component.getOutput === "function" ? component.getOutput() : "";
+		if (String(output ?? "").split("\n").length > BASH_PREVIEW_LINES) found = true;
+		return undefined;
+	});
+	return found;
+}
+
 function openTranscript(): void {
 	if (!ui || open) return;
 	open = true;
 	void ui
 		.custom<void>(
-			(tui: any, theme: any, _keybindings: unknown, done: () => void) => {
+			(tui: any, theme: any, injectedKeybindings: unknown, done: () => void) => {
+				setInjectedKeybindings(injectedKeybindings);
 				closeOpen = done;
 				return new TranscriptView({
 					rows: () => Number(tui?.terminal?.rows) || 24,
@@ -432,9 +454,14 @@ function openTranscript(): void {
 
 function handleInput(data: string): { consume?: boolean } | undefined {
 	if (open) return undefined;
-	if (!getKeybindings().matches(data, EXPAND_ACTION as any)) return undefined;
-	if (!canOpen(getToolMouseTui())) return undefined;
-	if (!isKeyRelease(data)) openTranscript();
+	if (!keybindings().matches(data, EXPAND_ACTION)) return undefined;
+	const tui = getToolMouseTui();
+	if (!canOpen(tui)) return undefined;
+	// 按键释放事件只吞掉，不再开层，也不交给 Pi 重复处理。
+	if (isKeyRelease(data)) return { consume: true };
+	// 有可展开的 ! 输出时把键还给 Pi，由它展开/收起命令行输出。
+	if (hasExpandableBashOutput(tui)) return undefined;
+	openTranscript();
 	return { consume: true };
 }
 

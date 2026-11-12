@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	AssistantMessageComponent,
+	BashExecutionComponent,
 	createBashToolDefinition,
 	initTheme,
 	ToolExecutionComponent,
@@ -346,6 +347,48 @@ test("展开键打开全屏浏览层", () => {
 			assert.equal(t.opened[0].overlayOptions.maxHeight, "100%");
 			// 已打开时按键交给浏览层自己处理。
 			assert.equal(t.send(CTRL_O), undefined);
+		} finally {
+			t.restore();
+		}
+	});
+});
+
+function bashOutput(tui: any, lines: number): BashExecutionComponent {
+	const component = new BashExecutionComponent("seq 30", tui, false, 1);
+	component.appendOutput(
+		Array.from({ length: lines }, (_, index) => `bash-line-${index + 1}`).join("\n"),
+	);
+	component.setComplete(0, false);
+	return component;
+}
+
+test("对话区有可展开的 ! 输出时，展开键交还 Pi", () => {
+	withExpandKey(() => {
+		const tui: any = fakeTui();
+		const chat = new Container();
+		chat.children.push(bashOutput(tui, 40));
+		tui.children = [chat];
+		const t = setupEntry("on", tui);
+		try {
+			assert.equal(t.send(CTRL_O), undefined, "让 Pi 展开命令行输出");
+			assert.equal(t.opened.length, 0);
+			assert.equal(isTranscriptModeActive(), false);
+		} finally {
+			t.restore();
+		}
+	});
+});
+
+test("短的 ! 输出不占展开键：仍打开浏览层", () => {
+	withExpandKey(() => {
+		const tui: any = fakeTui();
+		const chat = new Container();
+		chat.children.push(bashOutput(tui, 5));
+		tui.children = [chat];
+		const t = setupEntry("on", tui);
+		try {
+			assert.deepEqual(t.send(CTRL_O), { consume: true });
+			assert.equal(t.opened.length, 1);
 		} finally {
 			t.restore();
 		}
