@@ -92,6 +92,8 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
+  "footerContextLimit": "window",          // 上下文芯片分母：window（默认）：完整上下文窗口；compaction：自动压缩触发点（窗口 − compaction.reserveTokens）；both：压缩点并在括号中显示完整窗口
+                                           // Pi 越过压缩点后才压缩，所以文字可能短暂超过 100%（如 104%/184k）；条形图封顶 100%
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
   "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行

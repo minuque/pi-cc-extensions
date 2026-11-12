@@ -13,6 +13,8 @@ export type CompactStyleMode = "on" | "compact" | "off";
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 export type FooterGitStatsMode = "working" | "branch";
+/** window: total context window; compaction: Pi's auto-compaction point; both: compaction point, window in brackets. */
+export type FooterContextLimit = "window" | "compaction" | "both";
 export type FooterTokenRateMode = "average" | "live";
 export type ScrollButtonMode = "dock" | "native";
 
@@ -95,6 +97,8 @@ export type Config = {
 	footerCurrencyRate: number | null;
 	footerNerdIcons: boolean;
 	footerGitStatsMode: FooterGitStatsMode;
+	/** Denominator of the context chip; compaction = contextWindow − compaction.reserveTokens. */
+	footerContextLimit: FooterContextLimit;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
 	footerLine2Keys: string[];
@@ -108,6 +112,7 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
+export const FOOTER_CONTEXT_LIMITS: FooterContextLimit[] = ["window", "compaction", "both"];
 export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
 export const SCROLL_BUTTON_MODES: ScrollButtonMode[] = ["dock", "native"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
@@ -178,6 +183,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
 	footerGitStatsMode: "working",
+	footerContextLimit: "window",
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
 
@@ -329,6 +335,11 @@ export function normalizeConfig(input: unknown): Config {
 			FOOTER_GIT_STATS_MODES,
 			DEFAULT_CONFIG.footerGitStatsMode,
 		),
+		footerContextLimit: pickEnum(
+			source.footerContextLimit,
+			FOOTER_CONTEXT_LIMITS,
+			DEFAULT_CONFIG.footerContextLimit,
+		),
 		...normalizeFooterChipLayout(source),
 	};
 }
@@ -433,6 +444,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		`footerGitStats=${source.footerGitStatsMode}`,
+		`footerContextLimit=${source.footerContextLimit}`,
 		formatFooterChipSummary(source),
 	].join(" · ");
 }
