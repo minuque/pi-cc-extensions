@@ -3660,7 +3660,16 @@ test("compact 展开卡为内联图片留出全部占位行", () => {
 		);
 		for (let index = imageRow + 1; index < imageRow + rows; index++) {
 			assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
+			// pi-tui 靠「锚点行含图片序列 + 其后连续零宽行」认整块图片。
+			// 占位行只要带上底色/空格就认不出来，图片会被当成普通行盖成空白。
+			assert.equal(visibleWidth(lines[index]), 0, `图片占位行必须零宽: 第 ${index} 行`);
 		}
+		// 锚点行行尾不能补底色空格：那些格子就在图片首行上。
+		assert.equal(
+			visibleWidth(lines[imageRow]),
+			visibleWidth(plain(lines[imageRow])),
+			"图片锚点行不该补底色",
+		);
 	} finally {
 		hooks.shutdown();
 		config.mode = previousMode;

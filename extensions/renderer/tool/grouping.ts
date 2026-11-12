@@ -27,6 +27,7 @@ import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./names
 import {
 	contentRowRange,
 	hasVisibleText,
+	imageBlockRows,
 	imagePlacement,
 	stripAnsi,
 	stripBackgroundAnsi,
@@ -673,11 +674,23 @@ export class ToolGroupComponent extends Container {
 			const branch = last ? "└" : "├";
 			const continuation = last ? "  " : "│ ";
 			const rows = panelRows(itemPaints[index], last);
+			const imageRows = imageBlockRows(rows);
 			for (let lineIndex = 0; lineIndex < rows.length; lineIndex++) {
 				const prefix =
 					lineIndex === 0
 						? `${fg("dim", branch)} ${fg(color, statusIcon(item.status))} `
 						: fg("dim", continuation);
+				const imageKind = imageRows.get(lineIndex);
+				// 图片占位行必须零宽：补空格/底色会盖住图片，pi-tui 也认不出整块图片。
+				if (imageKind === "filler") {
+					lines.push("");
+					continue;
+				}
+				// 锚点行只带树枝前缀：行尾补的底色空格会画在图片首行上。
+				if (imageKind === "anchor") {
+					lines.push(prefix + rows[lineIndex]);
+					continue;
+				}
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, prefix + rows[lineIndex], width));
 			}
 		}

@@ -75,6 +75,8 @@ import { formatDisplayPath } from "./tool/names.ts";
 import {
 	contentRowRange,
 	hasVisibleText,
+	imageBlockRows,
+	type ImageRowKind,
 	removeStyledRange,
 	stripBackgroundAnsi,
 	stripTerminalSequencesPreservingLayout,
@@ -410,7 +412,17 @@ function layoutExpandedToolCard(
 	let lastBlank = false;
 	/** live 首行被吃掉的前导缩进：续行同步左移同样格数，保持块内相对对齐。 */
 	let liveLead = 0;
-	const pushRow = (raw: string) => {
+	const pushRow = (raw: string, imageKind?: ImageRowKind) => {
+		// 内联图片：锚点行原样输出（live 只补 `↳`），占位行保持零宽。
+		// 补底色/缩进会让 pi-tui 认不出整块图片，占位行会当成普通行盖在图片上。
+		if (imageKind) {
+			if (imageKind === "filler") {
+				lines.push("");
+				return;
+			}
+			lines.push(live ? `${theme.fg("muted", "↳")} ${raw}` : raw);
+			return;
+		}
 		if (!live) {
 			// 面板 pad 1 是唯一左边距：剥掉子行 collapsed 态自带的 1 格 lead，
 			// 否则标题行偏到 2、↳ 行偏到 4，左右不再对称。
@@ -457,12 +469,14 @@ function layoutExpandedToolCard(
 		if (!innerCard) pushBlank();
 		const rangeStart = lines.length;
 		// 展开的 thinking 走深色内卡（上下各 1 行 padding），工具卡直接铺在外卡上。
-		const paintRow = innerCard
-			? (line: string) => lines.push(toolCardBgRow(theme, slot, toolBgAnsi, line, width))
-			: pushRow;
-		if (innerCard) paintRow("");
-		for (let i = first; i <= last; i++) paintRow(childLines[i]);
-		if (innerCard) paintRow("");
+		const imageKinds = innerCard ? undefined : imageBlockRows(childLines);
+		const paintChild = (line: string, index?: number) =>
+			innerCard
+				? lines.push(toolCardBgRow(theme, slot, toolBgAnsi, line, width))
+				: pushRow(line, index === undefined ? undefined : imageKinds?.get(index));
+		if (innerCard) paintChild("");
+		for (let i = first; i <= last; i++) paintChild(childLines[i], i);
+		if (innerCard) paintChild("");
 		// 内卡的下 padding 不能当分隔：后面的子卡要再留 1 行外卡空行。
 		lastBlank = false;
 		// thinking 命中自身；工具在展开卡内需要能二次展开时才映射回 tool 组件。
@@ -1104,7 +1118,12 @@ function compactLiveSlot(card: any, pad = 0): any {
 	return {
 		render(width: number): string[] {
 			const indent = " ".repeat(Math.max(0, pad));
-			return card.render(innerOf(width)).map((line: string) => `${indent}${line}`);
+			const lines = card.render(innerOf(width));
+			const images = imageBlockRows(lines);
+			// 图片占位行必须零宽：补上缩进空格，pi-tui 就认不出整块图片了。
+			return lines.map((line: string, index: number) =>
+				images.get(index) === "filler" ? "" : `${indent}${line}`,
+			);
 		},
 		childAtRow(localRow: number, width: number) {
 			return card.childAtRow?.(localRow, innerOf(width)) ?? null;

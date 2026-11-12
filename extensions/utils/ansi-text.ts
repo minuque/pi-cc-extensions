@@ -58,6 +58,31 @@ export function imagePlacement(line: string): { rows: number; grows: "down" | "u
 	return undefined;
 }
 
+/** 行区里内联图片的两种行：锚点行带图片序列，占位行是它自己铺开的空白。 */
+export type ImageRowKind = "anchor" | "filler";
+
+/**
+ * 行区里属于内联图片块的行及其种类。
+ *
+ * 最终输出里这两类行都必须是零宽或只带锚点前的少量前缀：pi-tui 靠「锚点行含图片序列、
+ * 其后连续零宽行」认出整块图片。锚点行补底色/空格会画在图片首行上，占位行只要有宽度，
+ * 图片块就认不出来，占位行会被当成普通行铺上底色，图片位置只剩一大片空白。
+ */
+export function imageBlockRows(rows: string[]): Map<number, ImageRowKind> {
+	const kinds = new Map<number, ImageRowKind>();
+	for (let index = 0; index < rows.length; index++) {
+		const placement = imagePlacement(rows[index]);
+		if (!placement) continue;
+		kinds.set(index, "anchor");
+		const start = placement.grows === "up" ? index - placement.rows + 1 : index + 1;
+		const end = placement.grows === "down" ? index + placement.rows - 1 : index - 1;
+		for (let row = Math.max(0, start); row <= Math.min(rows.length - 1, end); row++) {
+			if (!kinds.has(row)) kinds.set(row, "filler");
+		}
+	}
+	return kinds;
+}
+
 /**
  * 行区里必须保留的范围（首行/末行下标；没有内容时 first 为 -1）。
  * 内联图片的行要按 placement 整体算进来：锚点前后那些空行是图片自己占的位置，
