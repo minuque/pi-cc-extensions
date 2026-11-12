@@ -22,6 +22,7 @@
 		"extensions",
 		"assets/readme",
 		"themes",
+		"CHANGELOG.md",
 		"README.md",
 		"README.en.md"
 	],
@@ -67,6 +68,9 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.5",
+		"@earendil-works/pi-ai": "1.5.2",
+		"@earendil-works/pi-coding-agent": "1.5.2",
+		"@earendil-works/pi-tui": "1.5.2",
 		"@types/node": "^26.1.1",
 		"typescript": "^5.9.3"
 	}
