@@ -48,7 +48,11 @@ import {
 } from "../extensions/renderer/tool/message-display.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
-import { renderToolSummary, toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import {
+	renderToolSummary,
+	setToolTuiFullscreen,
+	toolCallSummary,
+} from "../extensions/renderer/tool/names.ts";
 import {
 	clearLiveToolCalls,
 	noteStreamingToolCalls,
@@ -1997,6 +2001,13 @@ test("compact live: 展开入口只取行尾窗口，长负载行不进正则", 
 	const body = "a".repeat(260 * 1024);
 	assert.equal(stripSlotHint(`${body}· click to show more`), body);
 
+	// 实际帧里行尾挂着零宽鼠标标记：入口照样剥掉，标记留着。
+	const marker = "\x1b_cc:t1:3\x07";
+	assert.equal(
+		stripSlotHint(`… 9 more lines · click to show more${marker}`),
+		`… 9 more lines${marker}`,
+	);
+
 	// 键名长度边界：32 与 33 字符都整段剥离，行首不留残字。
 	assert.equal(stripSlotHint(`${"x".repeat(32)} to expand`), "");
 	assert.equal(stripSlotHint(`${"x".repeat(33)} to expand`), "");
@@ -3593,90 +3604,93 @@ test("compact：custom 通知不打断摘要段，原地留在成员之间", () 
 	}
 });
 
-test("compact 展开卡为内联图片留出全部占位行", () => {
-	// kitty 协议的图片序列只写在锚点行，其余行是空占位行：
-	// 组合展开卡时按「首尾空行」裁掉它们，终端里图片仍会铺开盖住后面的内容。
-	setCellDimensions({ widthPx: 9, heightPx: 18 });
-	setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
-	const dir = mkdtempSync(join(tmpdir(), "pi-compact-image-"));
-	const previousDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = dir;
-	const previousMode = config.mode;
-	config.mode = "compact";
-	const writeMetadata = new WriteExecutionMetadataStore();
-	const { pi, ctx, emit } = extensionRuntime();
-	installCompactThinking(pi, {
-		useSummaryTitlesAsThinkingTitle: false,
-		previewLines: 3,
-		completedPreviewLines: null,
-		animationIntervalMs: 30,
-	});
-	emit("session_start", {}, ctx);
-	const hooks = installCompactMode({ writeMetadata });
-	try {
-		const message = {
-			role: "assistant",
-			timestamp: 1,
-			content: [
-				{
-					type: "toolCall",
-					id: "r1",
-					name: "read",
-					arguments: { path: "shot.png" },
-				},
-			],
-		};
-		const readTool = tool("read", "r1", { path: "shot.png" });
-		readTool.executionStarted = true;
-		readTool.updateDisplay?.();
-		const anchor = new AssistantMessageComponent(message as any, true) as any;
-		anchor.updateContent(message);
-		readTool.updateResult({
-			content: [
-				{ type: "text", text: "shot.png" },
-				{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
-			],
-			isError: false,
+for (const fullscreen of [false, true])
+	test(`compact 展开卡为内联图片留出全部占位行（${fullscreen ? "全屏" : "主屏"}）`, () => {
+		// kitty 协议的图片序列只写在锚点行，其余行是空占位行：
+		// 组合展开卡时按「首尾空行」裁掉它们，终端里图片仍会铺开盖住后面的内容。
+		setToolTuiFullscreen(fullscreen);
+		setCellDimensions({ widthPx: 9, heightPx: 18 });
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+		const dir = mkdtempSync(join(tmpdir(), "pi-compact-image-"));
+		const previousDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = dir;
+		const previousMode = config.mode;
+		config.mode = "compact";
+		const writeMetadata = new WriteExecutionMetadataStore();
+		const { pi, ctx, emit } = extensionRuntime();
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			completedPreviewLines: null,
+			animationIntervalMs: 30,
 		});
-		anchor.setExpanded(true);
-		markCompactRoundToolExpanded(readTool);
-		readTool.setExpanded(true);
+		emit("session_start", {}, ctx);
+		const hooks = installCompactMode({ writeMetadata });
+		try {
+			const message = {
+				role: "assistant",
+				timestamp: 1,
+				content: [
+					{
+						type: "toolCall",
+						id: "r1",
+						name: "read",
+						arguments: { path: "shot.png" },
+					},
+				],
+			};
+			const readTool = tool("read", "r1", { path: "shot.png" });
+			readTool.executionStarted = true;
+			readTool.updateDisplay?.();
+			const anchor = new AssistantMessageComponent(message as any, true) as any;
+			anchor.updateContent(message);
+			readTool.updateResult({
+				content: [
+					{ type: "text", text: "shot.png" },
+					{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
+				],
+				isError: false,
+			});
+			anchor.setExpanded(true);
+			markCompactRoundToolExpanded(readTool);
+			readTool.setExpanded(true);
 
-		const lines: string[] = anchor.render(120);
-		const plain = (line: string): string =>
-			line
-				.replace(/\x1b_G[^\x1b]*\x1b\\/g, "")
-				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-				.replace(/\x1b\][^\x07]*\x07/g, "");
-		const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
-		assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
-		const rows = Number(
-			/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
-		);
-		assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
-		assert.ok(
-			imageRow + rows <= lines.length,
-			`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
-		);
-		for (let index = imageRow + 1; index < imageRow + rows; index++) {
-			assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
-			// pi-tui 靠「锚点行含图片序列 + 其后连续零宽行」认整块图片。
-			// 占位行只要带上底色/空格就认不出来，图片会被当成普通行盖成空白。
-			assert.equal(visibleWidth(lines[index]), 0, `图片占位行必须零宽: 第 ${index} 行`);
+			const lines: string[] = anchor.render(120);
+			const plain = (line: string): string =>
+				line
+					.replace(/\x1b_G[^\x1b]*\x1b\\/g, "")
+					.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+					.replace(/\x1b\][^\x07]*\x07/g, "");
+			const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
+			assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
+			const rows = Number(
+				/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
+			);
+			assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
+			assert.ok(
+				imageRow + rows <= lines.length,
+				`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
+			);
+			for (let index = imageRow + 1; index < imageRow + rows; index++) {
+				assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
+				// 主屏渲染器靠「锚点行 + 其后连续零宽行」给图片预留行；
+				// 全屏渲染器最后画图片，占位行铺满底色，图片旁不再断开。
+				assert.equal(
+					visibleWidth(lines[index]),
+					fullscreen ? 120 : 0,
+					`图片占位行宽度不对: 第 ${index} 行`,
+				);
+			}
+			// 锚点行行尾不能补底色空格：那些格子就在图片首行上。
+			assert.ok(visibleWidth(lines[imageRow]) <= 4, "图片锚点行不该补底色空格");
+		} finally {
+			setToolTuiFullscreen(undefined as any);
+			hooks.shutdown();
+			config.mode = previousMode;
+			emit("session_shutdown", {}, ctx);
+			resetCapabilitiesCache();
+			if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousDir;
+			rmSync(dir, { recursive: true, force: true });
 		}
-		// 锚点行行尾不能补底色空格：那些格子就在图片首行上。
-		assert.equal(
-			visibleWidth(lines[imageRow]),
-			visibleWidth(plain(lines[imageRow])),
-			"图片锚点行不该补底色",
-		);
-	} finally {
-		hooks.shutdown();
-		config.mode = previousMode;
-		emit("session_shutdown", {}, ctx);
-		resetCapabilitiesCache();
-		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousDir;
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
+	});

@@ -20,6 +20,7 @@ import { solidPngBase64 } from "./helpers/png.ts";
 import {
 	humanizeToolLabel,
 	renderToolSummary,
+	setToolTuiFullscreen,
 	toolCallSummary,
 } from "../extensions/renderer/tool/names.ts";
 
@@ -701,61 +702,119 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 	}
 });
 
-test("分组展开卡为内联图片留出全部占位行", () => {
-	// 图片序列只写在锚点行，其余是空占位行：按空白行丢掉后，终端里图片会盖住后面的内容。
-	setCellDimensions({ widthPx: 9, heightPx: 18 });
-	setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+for (const fullscreen of [false, true]) {
+	test(`分组展开卡为内联图片留出全部占位行（${fullscreen ? "全屏" : "主屏"}）`, () => {
+		// 图片序列只写在锚点行，其余是占位行：按空白行丢掉后，终端里图片会盖住后面的内容。
+		setCellDimensions({ widthPx: 9, heightPx: 18 });
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+		setToolTuiFullscreen(fullscreen);
+		const hooks = installToolGrouping(() => true);
+		hooks.setTheme({
+			fg: (_color: string, text: string) => text,
+			bg: (_slot: string, text: string) => `\x1b[48;5;22m${text}\x1b[49m`,
+			getBgAnsi: () => "\x1b[48;5;22m",
+		});
+		try {
+			const parent = new Container() as any;
+			const bash = started("bash", "img-bash");
+			// 图片工具放末项：分组卡会裁末项的尾随空行，正是图片占位行所在的位置。
+			const read = started("read", "img-read");
+			parent.addChild(bash);
+			parent.addChild(read);
+			assert.ok(parent.children[0] instanceof ToolGroupComponent, "两个工具应合成一张分组卡");
+			const group = parent.children[0] as ToolGroupComponent;
+			group.setExpanded(true);
+			bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+			read.updateResult({
+				content: [
+					{ type: "text", text: "shot.png" },
+					{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
+				],
+				isError: false,
+			});
+
+			const width = 100;
+			const lines: string[] = group.render(width);
+			const stripEscapes = (line: string): string =>
+				line.replace(/\x1b_G[^\x1b]*\x1b\\/g, "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+			const plain = (line: string): string => stripEscapes(line).replace(/^\s*[│├└]\s*/, "");
+			const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
+			assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
+			const rows = Number(
+				/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
+			);
+			assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
+			assert.ok(
+				imageRow + rows <= lines.length,
+				`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
+			);
+			for (let index = imageRow + 1; index < imageRow + rows; index++) {
+				assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
+				if (fullscreen) {
+					// 全屏渲染器最后画图片：占位行铺满底色，图片旁不再断开。
+					assert.equal(visibleWidth(lines[index]), width, `图片占位行应铺满底色: 第 ${index} 行`);
+				} else {
+					// 主屏渲染器靠「锚点行 + 其后连续零宽行」给图片预留行。
+					assert.equal(visibleWidth(lines[index]), 0, `图片占位行必须零宽: 第 ${index} 行`);
+				}
+			}
+			if (fullscreen) {
+				// 锚点行先用 ECH 按底色擦满整行，不写会落在图片首行上的空格。
+				assert.ok(lines[imageRow].includes(`\x1b[${width}X`), "图片锚点行应按底色擦满整行");
+			}
+			// 锚点行行尾不能补底色空格：那些格子就在图片首行上。
+			assert.ok(
+				visibleWidth(stripEscapes(lines[imageRow])) <= 4,
+				"图片锚点行只带树枝前缀，不补底色空格",
+			);
+		} finally {
+			hooks.shutdown();
+			resetCapabilitiesCache();
+			setToolTuiFullscreen(undefined as any);
+		}
+	});
+}
+
+test("分组展开卡：带鼠标标记的空行不留在图片上方，图片与 Output 正文对齐", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
-		const bash = started("bash", "img-bash");
-		// 图片工具放末项：分组卡会裁末项的尾随空行，正是图片占位行所在的位置。
-		const read = started("read", "img-read");
-		parent.addChild(bash);
+		const bash = started("bash", "mark-bash");
+		const read = started("read", "mark-read");
 		parent.addChild(read);
-		assert.ok(parent.children[0] instanceof ToolGroupComponent, "两个工具应合成一张分组卡");
+		parent.addChild(bash);
 		const group = parent.children[0] as ToolGroupComponent;
 		group.setExpanded(true);
-		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
-		read.updateResult({
-			content: [
-				{ type: "text", text: "shot.png" },
-				{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
-			],
-			isError: false,
-		});
-
-		const lines: string[] = group.render(100);
-		const plain = (line: string): string =>
+		const image = "\x1b_Ga=T,f=100,q=2,C=1,c=10,r=3;AAAA\x1b\\";
+		// 实际帧里每行末尾都挂着零宽的鼠标命中标记（\x1b_cc:t…\x07）。
+		read.render = () =>
+			[
+				"",
+				" ✓ Read shot.png",
+				" └ Output",
+				"   Read image file [image/png]",
+				" ",
+				"",
+				image,
+				"",
+				"",
+			].map((line, row) => `${line}\x1b_cc:t7:${row}\x07`);
+		const plain = (line: string) =>
 			line
-				.replace(/\x1b_G[^\x1b]*\x1b\\/g, "")
-				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-				.replace(/^[│├└]\s*/, "");
-		const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
-		assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
-		const rows = Number(
-			/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
-		);
-		assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
-		assert.ok(
-			imageRow + rows <= lines.length,
-			`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
-		);
-		for (let index = imageRow + 1; index < imageRow + rows; index++) {
-			assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
-			// pi-tui 靠「锚点行含图片序列 + 其后连续零宽行」认整块图片。
-			// 占位行只要带上底色/空格就认不出来，图片会被当成普通行盖成空白。
-			assert.equal(visibleWidth(lines[index]), 0, `图片占位行必须零宽: 第 ${index} 行`);
-		}
-		// 锚点行行尾不能补底色空格：那些格子就在图片首行上。
+				.replace(/\x1b_G[^\x1b]*\x1b\\/g, "<IMG>")
+				.replace(/\x1b_[^\x07\x1b]*\x07/g, "")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const rendered = group.render(100).map(plain);
+		const textRow = rendered.findIndex((line: string) => line.includes("Read image file"));
+		const imageRow = rendered.findIndex((line: string) => line.includes("<IMG>"));
+		assert.equal(imageRow, textRow + 1, `图片应紧跟正文: ${rendered.join(" | ")}`);
 		assert.equal(
-			visibleWidth(lines[imageRow]),
-			visibleWidth(plain(lines[imageRow])),
-			"图片锚点行不该补底色",
+			rendered[imageRow].indexOf("<IMG>"),
+			rendered[textRow].indexOf("Read"),
+			"图片应与 Output 正文左对齐",
 		);
 	} finally {
 		hooks.shutdown();
-		resetCapabilitiesCache();
 	}
 });
 

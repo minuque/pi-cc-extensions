@@ -11,6 +11,8 @@ const CSI_SEQUENCE_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const OSC_SEQUENCE_RE = /\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 /** compact-mode 原有 hasVisibleText 用的更严格 OSC（内容不允许内嵌 ESC）。 */
 const OSC_SEQUENCE_STRICT_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+/** APC 序列：鼠标命中用的零宽行标记（\x1b_cc:…\x07）、kitty 图片（\x1b_G…\x1b\\）。 */
+const APC_SEQUENCE_RE = /\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 /** 剥离一行内所有 CSI 序列。 */
 export function stripAnsi(line: string): string {
@@ -19,7 +21,10 @@ export function stripAnsi(line: string): string {
 
 /** 仅剥离终端序列、保留原布局（换行/空白不动），用于命中区间计算。 */
 export function stripTerminalSequencesPreservingLayout(value: string): string {
-	return value.replace(OSC_SEQUENCE_RE, "").replace(CSI_SEQUENCE_RE, "");
+	return value
+		.replace(OSC_SEQUENCE_RE, "")
+		.replace(APC_SEQUENCE_RE, "")
+		.replace(CSI_SEQUENCE_RE, "");
 }
 
 /** 剥离终端序列并折叠空白（用于纯文本比较）。 */
@@ -27,10 +32,16 @@ export function stripTerminalSequences(value: string): string {
 	return stripTerminalSequencesPreservingLayout(value).replace(/\s+/g, " ").trim();
 }
 
-/** 去掉行内所有 CSI/OSC 序列后是否仍有可见文本（判断工具卡首尾内容行）。 */
+/** 去掉行内所有 CSI/OSC/APC 序列后是否仍有可见文本（判断工具卡首尾内容行）。 */
 export function hasVisibleText(line: string): boolean {
 	// OSC 用更严格的变体：内容内嵌 ESC 时不吞并后续文本，保持 compact-mode 原有语义。
-	return line.replace(CSI_SEQUENCE_RE, "").replace(OSC_SEQUENCE_STRICT_RE, "").trim().length > 0;
+	return (
+		line
+			.replace(CSI_SEQUENCE_RE, "")
+			.replace(OSC_SEQUENCE_STRICT_RE, "")
+			.replace(APC_SEQUENCE_RE, "")
+			.trim().length > 0
+	);
 }
 
 const KITTY_IMAGE_PREFIX = "\x1b_G";
@@ -123,7 +134,10 @@ export function stripLeadingStatusIcon(line: string): string {
 }
 
 /** 终端序列零宽（不计入 plain 下标），与 stripAnsi/stripTerminalSequencesPreservingLayout 一致。 */
-const ANY_SEQUENCE_RE = new RegExp(`${CSI_SEQUENCE_RE.source}|${OSC_SEQUENCE_RE.source}`, "g");
+const ANY_SEQUENCE_RE = new RegExp(
+	`${CSI_SEQUENCE_RE.source}|${OSC_SEQUENCE_RE.source}|${APC_SEQUENCE_RE.source}`,
+	"g",
+);
 
 /** 只保留 [start, end) 之外的字符（base 为 text 首字符在 plain 串中的下标）。 */
 function keepOutsideRange(text: string, base: number, start: number, end: number): string {

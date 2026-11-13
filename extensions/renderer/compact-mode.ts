@@ -47,7 +47,7 @@ import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { showMoreHintText } from "./tool/names.ts";
+import { isToolTuiFullscreen, showMoreHintText } from "./tool/names.ts";
 import {
 	countEditDiffStats,
 	countWriteDiffStats,
@@ -69,7 +69,7 @@ export function isCompactRoundTail(value: unknown): boolean {
 	return Boolean(value && typeof value === "object" && (value as any)[COMPACT_ROUND_TAIL_KEY]);
 }
 import { renderExpandedToolResult } from "./tool/tool-io.ts";
-import { paddedBackgroundRow } from "./tool/grouping.ts";
+import { imageBackgroundRow, paddedBackgroundRow } from "./tool/grouping.ts";
 import { styleChangeCounts } from "./tool/ccstyle-tool.ts";
 import { formatDisplayPath } from "./tool/names.ts";
 import {
@@ -413,14 +413,15 @@ function layoutExpandedToolCard(
 	/** live 首行被吃掉的前导缩进：续行同步左移同样格数，保持块内相对对齐。 */
 	let liveLead = 0;
 	const pushRow = (raw: string, imageKind?: ImageRowKind) => {
-		// 内联图片：锚点行原样输出（live 只补 `↳`），占位行保持零宽。
-		// 补底色/缩进会让 pi-tui 认不出整块图片，占位行会当成普通行盖在图片上。
+		// 内联图片：live 槽位不铺底色，锚点行只补 `↳`、占位行保持零宽；
+		// 面板里按全屏/主屏渲染器决定能否给图片行铺底色（见 imageBackgroundRow）。
 		if (imageKind) {
-			if (imageKind === "filler") {
-				lines.push("");
-				return;
+			if (live) lines.push(imageKind === "filler" ? "" : `${theme.fg("muted", "↳")} ${raw}`);
+			else {
+				// 与普通行同口径：剥掉 1 格 lead，由底色行补回的 1 格左边距代替。
+				const line = raw.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*) /, "$1");
+				lines.push(imageBackgroundRow(theme, outerSlot, line, imageKind, width));
 			}
-			lines.push(live ? `${theme.fg("muted", "↳")} ${raw}` : raw);
 			return;
 		}
 		if (!live) {
@@ -518,6 +519,8 @@ function compactRoundCard(
 				theme: unknown;
 				/** 背景槽位也是面板行的输入：改配置后不能复用旧底色的整卡。 */
 				bgSlot: string;
+				/** 全屏与主屏的图片行输出不同（见 imageBackgroundRow）。 */
+				fullscreen: boolean;
 				paints: unknown[];
 				lines: string[];
 				hits: Array<{ child: any; start: number; end: number }>;
@@ -539,6 +542,7 @@ function compactRoundCard(
 			paint.width === width &&
 			paint.theme === theme &&
 			paint.bgSlot === bgSlot &&
+			paint.fullscreen === isToolTuiFullscreen() &&
 			paint.paints.length === paints.length &&
 			paint.paints.every((item, index) => item === paints[index])
 		) {
@@ -549,6 +553,7 @@ function compactRoundCard(
 			width,
 			theme,
 			bgSlot,
+			fullscreen: isToolTuiFullscreen(),
 			paints,
 			lines: laid.lines,
 			hits: laid.hits,
