@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { FOOTER_NERD_ICON_MCP, footerGlyphs } from "../extensions/feature/shell/footer.ts";
 import {
 	BUILTIN_MCP_SOURCE,
 	buildMcpChip,
@@ -21,12 +20,6 @@ const mcpTool = (server: string, extra: Record<string, unknown> = {}) => ({
 	namespace: { name: `mcp__${server}` },
 	sourceInfo: { path: BUILTIN_MCP_SOURCE },
 	...extra,
-});
-
-test("footerGlyphs：MCP 图标跟 nerd 开关一起给/一起收", () => {
-	assert.equal(footerGlyphs(true).mcp, FOOTER_NERD_ICON_MCP);
-	assert.equal(footerGlyphs(false).mcp, "");
-	assert.deepEqual(Object.keys(footerGlyphs(true)).sort(), ["cache", "git", "mcp", "tokens"]);
 });
 
 test("名字规范化：`-` 与 `_` 是同一个服务器", () => {

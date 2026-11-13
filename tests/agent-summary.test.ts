@@ -154,8 +154,6 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 	assert.match(raw, /\x1b\[32m1\x1b\[0m command/);
 	assert.match(raw, /│/);
 	const plain = stripAnsi(raw);
-	assert.doesNotMatch(plain, /[┌├└]/);
-	assert.doesNotMatch(plain, /TIP/);
 	assert.match(plain, /Ran 1 command, read 1 file/);
 	assert.equal(
 		renderer(

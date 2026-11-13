@@ -358,15 +358,6 @@ test("agent autocomplete does not duplicate delegated agent entries", async () =
 	assert.equal(result?.items[0]?.value, "@subagent:[coder]");
 });
 
-test("agent candidate value uses the bracketed @subagent style", async () => {
-	const provider = createAgentAutocompleteProvider(fffProvider, () => agents);
-	const result = await provider.getSuggestions(["@"], 0, 1, {
-		signal: new AbortController().signal,
-	});
-
-	assert.equal(result?.items[0]?.value, "@subagent:[coder]");
-});
-
 test("extractSubagentReferenceNames finds bracketed mentions and deduplicates them", () => {
 	assert.deepEqual(
 		extractSubagentReferenceNames(

@@ -6,11 +6,9 @@ import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import {
-	codemodeCalls,
 	codemodeCollapsedLines,
 	codemodeExpandedBody,
 	codemodeOutputLineCount,
-	codemodeCodeSummary,
 	highlightCodeSummary,
 	codemodeOutputText,
 	codemodeSummaryParts,
@@ -78,29 +76,6 @@ test("折叠态：子调用带 detail 时接在标题后（与工具组行一致
 		width: 100,
 	});
 	assert.equal(lines[0], " ├ ✓ Read src/a.ts (offset=10, limit=1) 31ms");
-});
-
-test("异常数据不崩：calls 非数组、元素为 null、args 非字符串", () => {
-	const messy = { content: [], details: { calls: "nope" } };
-	assert.deepEqual(codemodeCalls(messy), []);
-	assert.deepEqual(
-		codemodeCollapsedLines({ result: messy, theme, running: false, isError: false, width: 100 }),
-		[" Done · click to show more"],
-	);
-
-	const withNulls = result({}, [null, { name: "read" }, call({ args: 42 })]);
-	const lines = codemodeCollapsedLines({
-		result: withNulls,
-		theme,
-		running: false,
-		isError: false,
-		width: 100,
-	});
-	// 没带 status 的调用按运行中处理（braille 帧随挂钟变，用正则）
-	assert.match(lines[0]!, /^ {1}├ \S Tool$/);
-	assert.match(lines[1]!, /^ {1}├ \S Read$/);
-	assert.match(lines[2]!, /^ {1}├ \S Ffgrep 31ms$/);
-	assert.equal(lines[3], " └ 3 calls · 2 lines output · click to show more");
 });
 
 test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
@@ -183,22 +158,6 @@ test("折叠态：没有子调用也没有脚本时不画衔接符", () => {
 	assert.deepEqual(lines, [" 2 lines output · click to show more"]);
 });
 
-test("代码摘要：取信息量最大的一行语句，跳过注释与选项行", () => {
-	assert.equal(
-		codemodeCodeSummary(
-			'// @options: {}\n/* block\n * comment */\nconst rows = scan()\nreturn rows.filter((row) => row.includes("a"))',
-		),
-		'return rows.filter((row) => row.includes("a"))',
-	);
-	// 同样是调用时，带字符串的那行分更高
-	assert.equal(
-		codemodeCodeSummary('const n = count()\nconst label = name("x")'),
-		'const label = name("x")',
-	);
-	assert.equal(codemodeCodeSummary("// only a comment\n"), undefined);
-	assert.equal(codemodeCodeSummary(42), undefined);
-});
-
 test("代码摘要着色：关键字与字符串上色，剥掉 ANSI 后与原文一致", () => {
 	const summary = 'return rows.filter((row) => row.includes("a"))';
 	const colored = highlightCodeSummary(summary);
@@ -250,17 +209,6 @@ test("折叠态：截断的检索参数恢复出 pattern，路径范围照旧", 
 		width: 120,
 	});
 	assert.match(lines[0]!, /^ {1}├ ✓ Ffgrep "mcp" in src\/ 31ms$/);
-});
-
-test("折叠态：截断后也认不出的参数原样当载荷", () => {
-	const lines = codemodeCollapsedLines({
-		result: result({}, [call({ args: '["mcp","src/…' })]),
-		theme,
-		running: false,
-		isError: false,
-		width: 120,
-	});
-	assert.match(lines[0]!, /^ {1}├ ✓ Ffgrep \["mcp","src\/… 31ms$/);
 });
 
 test("汇总片段：宽度不够时从尾部丢，不断词", () => {

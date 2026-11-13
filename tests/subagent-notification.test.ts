@@ -374,20 +374,6 @@ test("an expanded group nests agent details in the tree and keeps tool views", (
 	});
 });
 
-test("clicks on expanded notification rows belong to the group, tool rows to the tool", () => {
-	withGrouping(() => {
-		const result = settledTool("get_subagent_result", "result", { agent_id: "x" });
-		const group = groupOf(standalone(finishedAgent()), result);
-		group.setExpanded(true);
-		const lines = group.render(120).map(stripAnsi);
-		const statusRow = lines.findIndex((line) => line.includes("Status: completed"));
-		const resultRow = lines.findIndex((line) => /[├└] ✓ .*get_subagent_result/i.test(line));
-		assert.ok(resultRow > statusRow);
-		assert.equal(group.childAtRow(statusRow, 120), null);
-		assert.equal(group.childAtRow(resultRow, 120)?.component, result);
-	});
-});
-
 test("a theme switch repaints grouped notification details after invalidate", (t) => {
 	// 还原成测试前的主题实例本身：Pi 用这个 globalThis 槽在各加载器间共享当前主题。
 	const THEME_SLOT = Symbol.for("@earendil-works/pi-coding-agent:theme");

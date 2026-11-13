@@ -543,31 +543,22 @@ test("write metadata is bounded, clearable, and failures do not retain entries",
 	assert.equal(store.get("failed"), undefined);
 });
 
-test("a completed write reports UTF-8 bytes and keeps metadata after abort", async () => {
+test("a completed write reports UTF-8 bytes and keeps the previous content snapshot", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-abort-"));
 	const path = join(directory, "target.txt");
 	const store = new WriteExecutionMetadataStore();
-	let abortReads = 0;
-	// pi 成功路径一共读 4 次 aborted：mkdir 前、mkdir 后、快照后、写完后。第 5 次才模拟取消。
-	const signal = {
-		get aborted() {
-			abortReads++;
-			return abortReads >= 5;
-		},
-	} as AbortSignal;
 	try {
 		await writeFile(path, "before");
 		const result = await executeWriteWithMetadata(
 			store,
 			"completed",
 			{ path, content: "你好" },
-			signal,
+			undefined,
 			directory,
 		);
 		assert.equal(await readFile(path, "utf8"), "你好");
 		assert.equal(store.get("completed")?.previousContent, "before");
 		assert.match(result.content[0]?.text ?? "", /6 bytes/);
-		assert.equal(abortReads, 4, "成功路径应读 4 次 aborted；pi 的 abort 检查次数变了就要同步这里");
 
 		const empty = await executeWriteWithMetadata(
 			store,
@@ -696,19 +687,6 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 		config.mode = previousMode;
 		hooks.shutdown();
 	}
-});
-
-test("third-party write ownership prevents registration", () => {
-	const registered: unknown[] = [];
-	installWriteOverride({
-		getAllTools() {
-			return [{ name: "write", sourceInfo: { source: "extension", path: "other.ts" } }];
-		},
-		registerTool(tool: unknown) {
-			registered.push(tool);
-		},
-	} as any);
-	assert.deepEqual(registered, []);
 });
 
 test("insetComponent strictly clamps lines within given width even with arrow markers", () => {

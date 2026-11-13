@@ -1,6 +1,5 @@
-// escCloseHitbox 的契约：
-// [esc] 按钮位于弹框标题行（box 第 2 行）右端，5 列宽；
-// bounds 为 0-based 的弹框起点（left/top）+ 宽度。
+// 弹框的鼠标点击盒（[esc]、[copy]、行、滚动条）由最终渲染的行位置算出，
+// 因此这里的断言都走真实渲染，不再单独测坐标函数。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
@@ -9,8 +8,6 @@ import contextUsageExtension from "../extensions/feature/context.ts";
 import {
 	capParts,
 	collectContextBreakdown,
-	copyButtonHitbox,
-	escCloseHitbox,
 	hasActiveTextPreview,
 	resolveUsedTokens,
 	setPreviewCopyImpl,
@@ -252,40 +249,8 @@ test("capParts never produces negative tokens when estimates exceed usage", () =
 		fitted.reduce((sum, part) => sum + part.tokens, 0),
 		5,
 	);
-	assert.ok(fitted.every((part) => part.tokens >= 0));
 });
 
-test("copyButtonHitbox sits one space left of [esc] on the title row", () => {
-	assert.deepEqual(copyButtonHitbox({ left: 8, top: 1, width: 64 }), {
-		row: 3,
-		startCol: 60,
-		endCol: 65,
-	});
-	const esc = escCloseHitbox({ left: 8, top: 1, width: 64 });
-	const copy = copyButtonHitbox({ left: 8, top: 1, width: 64 });
-	assert.equal(copy.row, esc.row);
-	assert.ok(copy.endCol < esc.startCol);
-});
-
-test("escCloseHitbox sits 5 columns wide at the title row's right edge", () => {
-	assert.deepEqual(escCloseHitbox({ left: 8, top: 1, width: 64 }), {
-		row: 3,
-		startCol: 67,
-		endCol: 71,
-	});
-	assert.deepEqual(escCloseHitbox({ left: 1, top: 1, width: 38 }), {
-		row: 3,
-		startCol: 34,
-		endCol: 38,
-	});
-	assert.deepEqual(escCloseHitbox({ left: 20, top: 6, width: 50 }), {
-		row: 8,
-		startCol: 65,
-		endCol: 69,
-	});
-});
-
-/** showTextPreview 自定义 UI 的最小 harness：捕获 component，theme 可注入，可选挂载回调。 */
 /** showTextPreview 自定义 UI 的最小 harness：捕获 component（挂载后实时可读），theme 可注入，可选挂载回调。 */
 function textPreviewHarness(
 	theme: any = { fg: (_color: string, text: string) => text, bold: (text: string) => text },

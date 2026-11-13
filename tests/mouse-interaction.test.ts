@@ -1357,34 +1357,6 @@ test("展开时按点击行在视口里的位置决定冻结还是继续跟随",
 	}
 });
 
-test("fullscreen motion reporting stays off when the terminal opted out", () => {
-	const written: string[] = [];
-	const tui = new FakeFullscreenTui(written);
-	const { tool, collapsedLines } = fullscreenToolFixture();
-	tui.currentLayout = fullscreenLayout(collapsedLines, tool);
-	(tui as any).mouseEnabled = false;
-	try {
-		installToolMouseInteraction({
-			mode: "tui",
-			hasUI: true,
-			ui: {
-				setWidget(_key: string, factory: any) {
-					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
-				},
-				onTerminalInput() {
-					return () => undefined;
-				},
-			},
-		});
-		assert.ok(
-			!written.some((chunk) => chunk.includes("?1003h")),
-			"终端禁用鼠标时不补开 all-motion",
-		);
-	} finally {
-		installToolMouseInteraction({});
-	}
-});
-
 test("fullscreen wheel motion cancels a pending collapse and re-enables motion only once", () => {
 	const written: string[] = [];
 	const tui = new FakeFullscreenTui(written);

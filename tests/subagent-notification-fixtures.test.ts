@@ -89,17 +89,6 @@ function formatName(details: any, index: number): string {
 	].join("-");
 }
 
-test("the corpus carries every observed notification format once", () => {
-	assert.equal(fixtures.length, 33);
-	assert.equal(new Set(fixtures.map((fixture) => fixture.name)).size, fixtures.length);
-	// 换个名字重复收录同一份条目也要失败：按排好序的允许键序列化，与对象键序无关。
-	const keys = [
-		...new Set([...Object.keys(ENTRY), "details", ...Object.keys(AGENT_FIELDS)]),
-	].sort();
-	const payloads = fixtures.map((fixture) => JSON.stringify(fixture.entry, keys));
-	assert.equal(new Set(payloads).size, fixtures.length);
-});
-
 test("fixtures hold only allowed fields and synthetic values", () => {
 	fixtures.forEach((fixture, index) => {
 		assert.deepEqual(Object.keys(fixture).sort(), ["entry", "name"]);

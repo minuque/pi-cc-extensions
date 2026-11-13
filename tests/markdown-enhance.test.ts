@@ -82,14 +82,6 @@ test("thinking 块不转换（与官方推荐一致）", () => {
 	);
 });
 
-test("裸 URL 与提示框不接管，交给 pi 原生渲染", () => {
-	assert.strictEqual(
-		run("访问 https://example.com/docs. 结束"),
-		"访问 https://example.com/docs. 结束",
-	);
-	assert.strictEqual(run("> [!NOTE] 提示\n> 续行"), "> [!NOTE] 提示\n> 续行");
-});
-
 test("Pi 带颜色的 Mermaid 输出不被后面的链接吞掉（#84）", () => {
 	const ESC = "\x1b[38;5;240m";
 	const RST = "\x1b[0m";

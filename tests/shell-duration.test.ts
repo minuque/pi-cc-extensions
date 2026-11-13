@@ -274,7 +274,7 @@ test("展开态：非 shell 不加尾部行", () => {
 		});
 		const lines = render(tool).map((l) => l.replace(/\s+$/g, ""));
 		assert.equal(
-			lines.some((l: string) => /Took/.test(l)),
+			lines.some((l: string) => /1\.2s/.test(l)),
 			false,
 			`不该有耗时行: ${JSON.stringify(lines)}`,
 		);

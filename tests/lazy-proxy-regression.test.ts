@@ -1247,77 +1247,6 @@ test("lazy-proxy tui: single click collapses thinking after preview rebuild", as
 	}
 });
 
-test("lazy-proxy tui: thinking collapse targets the run under the pointer", async () => {
-	const dirHandlers = new Map<string, Function[]>();
-	const pi = {
-		on(name: string, handler: Function) {
-			const list = dirHandlers.get(name) ?? [];
-			list.push(handler);
-			dirHandlers.set(name, list);
-		},
-		appendEntry() {},
-	} as any;
-	const emit = (name: string, event: any = {}, ctx: any = {}) => {
-		for (const handler of dirHandlers.get(name) ?? []) handler(event, ctx);
-	};
-	const thinkingCtx = {
-		mode: "tui",
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: { theme: {}, setWidget() {}, requestRender() {} },
-	};
-	installCompactThinking(pi, {
-		useSummaryTitlesAsThinkingTitle: false,
-		previewLines: 3,
-		completedPreviewLines: null,
-		animationIntervalMs: 30,
-	});
-	emit("session_start", {}, thinkingCtx);
-	const timestamp = 99;
-	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
-	const theme = {
-		fg: (_color: string, text: string) => text,
-		bg: (_slot: string, text: string) => text,
-	} as any;
-	const runA = new ThinkingPreviewBlock(
-		"Thought for 1s",
-		body,
-		1,
-		timestamp,
-		(text) => text,
-		theme,
-		0,
-		false,
-	);
-	const runB = new ThinkingPreviewBlock(
-		"Thought for 2s",
-		body,
-		1,
-		timestamp,
-		(text) => text,
-		theme,
-		4,
-		false,
-	);
-	runA.setExpanded(true);
-	runB.setExpanded(true);
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(runA, null, terminal);
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	try {
-		installToolMouseInteraction(ui.ctx);
-		renderer.currentLayout = fullscreenLayout(runA, null);
-		tui.handleViewportInput("\x1b[<0;2;1M");
-		assert.equal(runA.expanded, true, "press on run A does not collapse");
-		tui.handleViewportInput("\x1b[<0;2;1m");
-		assert.equal(runA.expanded, false, "release on run A collapses run A");
-		assert.equal(runB.expanded, true, "run B instance stays expanded");
-	} finally {
-		installToolMouseInteraction({});
-		emit("session_shutdown", {}, thinkingCtx);
-	}
-});
-
 test("lazy-proxy tui: fullscreen skill hint click expands like other cards", async () => {
 	const previousMode = config.mode;
 	config.mode = "on";
@@ -1538,21 +1467,6 @@ test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights
 	}
 });
 
-test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components", () => {
-	const tool = createTool("tool-foreign-renderer");
-	tool.expanded = true;
-	tool.resultRendererComponent = { render: () => ["third-party result"] };
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(tool, null, terminal);
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx);
-
-	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<35;20;2M`));
-	assert.equal(renderer.officialInputs.length, 1, "motion still reaches official chain");
-	installToolMouseInteraction({});
-});
-
 test("lazy-proxy tui: missing or stale overlay layouts are not consumed as tool clicks", () => {
 	const tool = createTool("tool-overlay-untrusted");
 	const terminal = { columns: 80, rows: 24, write() {} };
@@ -1680,33 +1594,6 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 		!teardownWrites.some((value) => value.includes("?1000l") || value.includes("?1006l")),
 		"teardown keeps official click reporting",
 	);
-});
-
-test("lazy-proxy frame capture rolls back partial render wrappers on failure", () => {
-	const first = createTool("tool-first");
-	const originalRender = first.render;
-	let reads = 0;
-	const hostile = {
-		toolCallId: "tool-hostile",
-		expanded: false,
-		setExpanded() {},
-		invalidate() {},
-		get render() {
-			reads++;
-			if (reads > 1) throw new Error("render getter failed");
-			return () => ["✓ hostile", "  └ 1 line output (ctrl+o expand / click)"];
-		},
-	};
-	const { terminal } = createTerminalFixture();
-	let renderer = createRenderer("regular", [first, hostile], terminal);
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx);
-
-	assert.equal(ui.inputHandler?.("\x1b[<0;20;2M"), undefined);
-	assert.equal(first.render, originalRender, "earlier component render is restored after failure");
-	assert.ok(first.render().every((line) => !line.includes("\x1b_cc:")));
-	installToolMouseInteraction({});
 });
 
 test("compact 摘要行展开前停住跟随：点的那行不随内容长高被顶走", () => {

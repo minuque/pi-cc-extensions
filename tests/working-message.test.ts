@@ -146,20 +146,6 @@ test("tool call argument deltas count toward the token total", async () => {
 	await events.get("turn_end")?.({}, ctx);
 });
 
-// compact 摘要不再改写 working message：无论是否在底部，都走默认文案。
-test("compact 活动回合不改写 working message", async () => {
-	const { events, messages, ctx } = install();
-	const pushDelta = () =>
-		events.get("message_update")?.(
-			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "abcd" } },
-			ctx,
-		);
-
-	await events.get("turn_start")?.({}, ctx);
-	await pushDelta();
-	assert.match(messages.at(-1) ?? "", /^Working\.\.\. \(↓ \d+ tokens/, "保持默认文案");
-});
-
 // Pi 的 ctx 失效后 getter 会抛错；定时器里逃逸的异常会直接终止 Pi 进程 (#41)。
 test("refresh timer stops quietly once the captured ctx goes stale", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });

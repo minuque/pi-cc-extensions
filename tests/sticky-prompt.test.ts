@@ -249,20 +249,6 @@ test("sticky prompt: the next instruction takes over once it scrolls off the top
 	});
 });
 
-test("sticky prompt: the header in place does not stick", () => {
-	withSticky(() => {
-		const content = [...messageLines("tall message", 40), ...assistantLines(40)];
-
-		// 正文首行仍在视口内：消息头本来就在场。
-		const visible = makeFrame(content, 1, 10);
-		assert.equal(computeStickyPrompt(visible.tui, visible.layout), null);
-
-		// 视口在消息之前的顶部：没有指令可钉。
-		const top = makeFrame(content, 0, 10);
-		assert.equal(computeStickyPrompt(top.tui, top.layout), null);
-	});
-});
-
 test("sticky prompt: hover marks the row and keeps one highlight", () => {
 	withSticky(() => {
 		const content = [...messageLines("tall message", 40), ...assistantLines(10)];

@@ -18,9 +18,11 @@ import {
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { solidPngBase64 } from "./helpers/png.ts";
 import {
+	collapseHintText,
 	humanizeToolLabel,
 	renderToolSummary,
 	setToolTuiFullscreen,
+	showMoreHintText,
 	toolCallSummary,
 } from "../extensions/renderer/tool/names.ts";
 
@@ -49,7 +51,6 @@ test("restored tools still render as running with the braille loader", () => {
 			.filter((line: string) => line.trim());
 		assert.match(rendered[0], /2 running/);
 		assert.ok(rendered.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
-		assert.doesNotMatch(rendered.join("\n"), /queued/);
 	} finally {
 		hooks.shutdown();
 	}
@@ -415,7 +416,7 @@ test("off refresh ungroups, reload rescans existing tools, and stale shutdown pr
 	assert.equal(prototype.addChild, originalAdd);
 });
 
-test("pending and expanded groups bypass settled render caching", () => {
+test("pending groups bypass settled render caching", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
@@ -431,8 +432,9 @@ test("pending and expanded groups bypass settled render caching", () => {
 		read.updateResult({ content: [], isError: false });
 		bash.updateResult({ content: [], isError: false });
 		group.setExpanded(true);
-		const expanded = group.render(120);
-		assert.notStrictEqual(group.render(120), expanded, "expanded child output is not memoized");
+		const expanded = group.render(120).join("\n");
+		assert.ok(expanded.includes(collapseHintText()), "expanded render carries the collapse hint");
+		assert.ok(!expanded.includes(showMoreHintText()), "settled collapsed rows are not reused");
 	} finally {
 		hooks.shutdown();
 	}

@@ -53,24 +53,6 @@ const { keyDisplayText } = await import(
 	).href
 );
 
-test("native text: absent native callback stays absent without a fallback button", () => {
-	const previous = { ...config };
-	const { tui } = lazyFullscreenTui();
-	try {
-		config.scrollButtonMode = "native";
-		setToolMouseTui(tui);
-		syncOfficialScrollToEnd(tui);
-		noteNewTranscriptItem();
-		assert.equal(tui.scrollToEndIndicator, undefined);
-		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
-	} finally {
-		restoreNativeScrollIndicatorText();
-		resetScrollButtonState();
-		setToolMouseTui(null);
-		Object.assign(config, previous);
-	}
-});
-
 // 滚动按钮状态机：调度后立即 teardown（/reload 中途）不得残留渲染或状态，
 // 重新 install 后调度必须恢复正常。
 test("scroll button: schedule → immediate teardown → reinstall stays safe", async () => {

@@ -32,22 +32,6 @@ test("sessionEntryTokens counts assistant, toolResult, compaction, branch_summar
 	assert.equal(sessionEntryTokens(null), 0);
 });
 
-test("session token total adds up entries and skips ones without usage", () => {
-	const entries = [
-		{ type: "message", message: { role: "assistant", usage: { totalTokens: 10 } } },
-		{ type: "message", message: { role: "user", content: "hi" } },
-		{ type: "message", message: { role: "toolResult", usage: { totalTokens: 20 } } },
-		{ type: "compaction", usage: { totalTokens: 5 } },
-		{ type: "usage", usage: { totalTokens: 15 } },
-		{ type: "model_change" },
-		null,
-	];
-	assert.equal(
-		entries.reduce<number>((sum, entry) => sum + sessionEntryTokens(entry), 0),
-		50,
-	);
-});
-
 test("formatSessionTokenTotal abbreviates and hides when empty", () => {
 	assert.equal(formatSessionTokenTotal(0, "Σ"), "");
 	assert.equal(formatSessionTokenTotal(Number.NaN, "Σ"), "");

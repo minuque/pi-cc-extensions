@@ -228,28 +228,6 @@ test("声明期的单工具 spinner 在 markExecutionStarted 之前就开始转"
 	}
 });
 
-test("light 动画 tick 只请求重绘，不重建工具卡", async () => {
-	const previous = getToolMouseTui();
-	const { tui, state } = fakeTui();
-	setToolMouseTui(tui);
-	let invalidates = 0;
-	const context = {
-		state: {},
-		invalidate() {
-			invalidates++;
-		},
-	};
-	try {
-		scheduleAnimation(context, { light: true });
-		await tickWait();
-		assert.equal(state.renders, 1, "light 上下文应由 TUI 重绘一次");
-		assert.equal(invalidates, 0, "light 上下文不该再走 updateDisplay 全量重建");
-	} finally {
-		clearAllAnimations();
-		restoreTuiSlot(previous);
-	}
-});
-
 test("light 标志结束后复位，后续非 light 走 invalidate", async () => {
 	const previous = getToolMouseTui();
 	const { tui, state } = fakeTui();

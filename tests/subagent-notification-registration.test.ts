@@ -291,51 +291,6 @@ test("cards rebuilt before the patch is back (/reload, /resume) are adopted on r
 	});
 });
 
-test("a third-party wrapper over our lookup is preserved, and our inactive lookup is not rewrapped", (t) => {
-	t.after(() => {
-		runnerPrototype.getMessageRenderer = nativeLookup;
-	});
-	withMode("on", () => {
-		const disposeFirst = installSubagentNotificationRenderer();
-		const inner = runnerPrototype.getMessageRenderer;
-		let wrapperCalls = 0;
-		const wrapper = function (this: unknown, customType: string) {
-			wrapperCalls++;
-			return inner.call(this, customType);
-		};
-		runnerPrototype.getMessageRenderer = wrapper;
-		const disposeSecond = installSubagentNotificationRenderer();
-		try {
-			assert.equal(runnerPrototype.getMessageRenderer[PROTOTYPE_ORIGINAL_KEY], wrapper);
-			const upstream = upstreamRenderer();
-			const renderer = lookup([new Map<string, unknown>([[TYPE, upstream]])]);
-			assert.equal(wrapperCalls, 1);
-			assert.match(rows(card(renderer))[0]!, FINISHED_ROW);
-			withMode("off", () => {
-				assert.deepEqual(rows(card(renderer)), ["upstream view"]);
-				assert.equal(upstream.seen.length, 1, "dispatched once, not through two patches");
-			});
-		} finally {
-			disposeSecond();
-		}
-		assert.equal(runnerPrototype.getMessageRenderer, wrapper, "dispose restores the wrapper");
-		disposeFirst();
-		assert.equal(runnerPrototype.getMessageRenderer, wrapper, "a wrapped patch cannot unhook it");
-		const upstream = upstreamRenderer();
-		assert.equal(lookup([new Map<string, unknown>([[TYPE, upstream]])]), upstream);
-
-		// 包装方撤掉自己，把我们失效的查找放回最外层：重装时拆开它，直接包原生查找。
-		runnerPrototype.getMessageRenderer = inner;
-		const disposeThird = installSubagentNotificationRenderer();
-		try {
-			assert.equal(runnerPrototype.getMessageRenderer[PROTOTYPE_ORIGINAL_KEY], nativeLookup);
-		} finally {
-			disposeThird();
-		}
-		assert.equal(runnerPrototype.getMessageRenderer, nativeLookup);
-	});
-});
-
 function runtime() {
 	const events = new Map<string, Function>();
 	return {

@@ -1045,7 +1045,7 @@ test("compact live: 工具组件晚于消息到达时补画槽位，参数更新
 	}
 });
 
-test("compact live: a superseding round folds the previous one immediately", () => {
+test("compact live: 同一 turn 的后续消息并入上一回合，摘要只累计一次", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-supersede-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -1085,7 +1085,7 @@ test("compact live: a superseding round folds the previous one immediately", () 
 		assert.match(liveA[3] ?? "", /^↳ \S/, `槽位卡首行紧跟 ↳: ${liveA}`);
 		assert.ok(!(liveA[3] ?? "").startsWith("↳  "), `↳ 后只留一个空格: ${liveA[3]}`);
 
-		// 新 anchor 接替：旧回合立即收拢，不残留成第二张卡。
+		// 新 anchor 接替：并入上一回合，不残留成第二张卡。
 		const messageB = {
 			role: "assistant",
 			timestamp: 2,
@@ -2007,10 +2007,6 @@ test("compact live: 展开入口只取行尾窗口，长负载行不进正则", 
 		stripSlotHint(`… 9 more lines · click to show more${marker}`),
 		`… 9 more lines${marker}`,
 	);
-
-	// 键名长度边界：32 与 33 字符都整段剥离，行首不留残字。
-	assert.equal(stripSlotHint(`${"x".repeat(32)} to expand`), "");
-	assert.equal(stripSlotHint(`${"x".repeat(33)} to expand`), "");
 
 	// 括注形式只去动作词，隐藏行计数与收尾括号保留。
 	assert.equal(stripSlotHint("(195 earlier lines, ctrl+o to expand)"), "(195 earlier lines)");

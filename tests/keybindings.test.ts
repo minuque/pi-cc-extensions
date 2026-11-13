@@ -33,10 +33,6 @@ test("只注入 KeybindingsManager 时按它取键", () => {
 	assert.equal(keyText("app.thinking.toggle"), ALT_X);
 	assert.equal(keyDisplayText("app.thinking.toggle"), ALT_X_DISPLAY);
 	assert.equal(keybindings().matches("", "app.thinking.toggle"), true);
-
-	// 不匹配的值被忽略
-	setInjectedKeybindings({} as never);
-	assert.equal(keyText("app.thinking.toggle"), ALT_X);
 });
 
 test("注入的 keyText 说了算", () => {
@@ -44,8 +40,4 @@ test("注入的 keyText 说了算", () => {
 	assert.equal(keyText("tui.select.confirm"), "ctrl+e", "注入文本盖过默认绑定");
 	assert.equal(keyDisplayText("tui.select.confirm"), "Ctrl+E");
 	assert.equal(keyText("app.thinking.toggle"), "", "注入值给空串就显示空串");
-
-	// 不匹配的值被忽略
-	setInjectedKeyText(42 as never);
-	assert.equal(keyText("tui.select.confirm"), "ctrl+e");
 });

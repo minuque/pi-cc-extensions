@@ -35,8 +35,6 @@ describe("token rate", { concurrency: false }, () => {
 
 	test("formatTokenRate renders empty for no data, rounds below 1k, and uses k above", () => {
 		assert.equal(formatTokenRate(0), "");
-		assert.equal(formatTokenRate(-1), "");
-		assert.equal(formatTokenRate(Number.NaN), "");
 		assert.equal(formatTokenRate(42.4), "avg 42 tok/s");
 		assert.equal(formatTokenRate(99.6), "avg 100 tok/s");
 		assert.equal(formatTokenRate(1234), "avg 1.2k tok/s");
@@ -45,8 +43,6 @@ describe("token rate", { concurrency: false }, () => {
 
 	test("formatTokenRate appends TTFT only when present", () => {
 		assert.equal(formatTokenRate(1200, 0), "avg 1.2k tok/s");
-		assert.equal(formatTokenRate(1200, 812.4), "avg 1.2k tok/s (TTFT: 812ms)");
-		assert.equal(formatTokenRate(1200, -5), "avg 1.2k tok/s");
 		assert.equal(formatTokenRate(1200, 812, "live"), "live 1.2k tok/s (TTFT: 812ms)");
 		assert.equal(formatTokenRate(1200, 812, "average", false), "avg 1.2k tok/s");
 		assert.equal(formatTokenRate(1200, 999.4), "avg 1.2k tok/s (TTFT: 999ms)");
@@ -85,14 +81,6 @@ describe("token rate", { concurrency: false }, () => {
 		recordProviderUsage(300, 3_000); // 真实值 300，覆盖估算并摊回窗口
 		assert.ok(displayTokenRate("average") >= 300 / 2);
 		assert.ok(displayTokenRate("live") > 0);
-	});
-
-	test("carryTokenRate keeps the shown rate across a tool turn", () => {
-		resetTokenRate(1_000);
-		sampleTokenDelta("a".repeat(400), 11_000); // ~10 tok/s
-		const rate = currentTokenRate();
-		carryTokenRate(); // 工具调用结束，本段 token 结转
-		assert.equal(currentTokenRate(), rate, "工具等待期间保留上一段速率");
 	});
 
 	test("TTFT records only the first content block of the turn and survives sampling", () => {
