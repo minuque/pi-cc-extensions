@@ -196,6 +196,11 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 		assert.match(expanded, /^ │ ├ Input\s*$/m, "nested tree aligns with the status dot");
 		assert.match(expanded, /^ │ │ path: sample\.ts\s*$/m);
 		assert.match(expanded, /^ │   ok\s*$/m, "output content retains its relative indent");
+		assert.match(
+			expanded,
+			/^ │   ok\s*\n │\s*\n └ /m,
+			"one blank rail row separates a tool's output from the next tool line",
+		);
 	} finally {
 		hooks.shutdown();
 	}

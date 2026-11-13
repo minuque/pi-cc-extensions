@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.0.17 · mode=`on`。
+> 当前版本：ccstyle 1.0.18 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -331,12 +331,14 @@ write 新建 / 覆盖：
  │   L8
  │   L9
  │   … 30 more lines · click to show more
+ │
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
  │ └ Output
  │   pass 79/79
  │   12.4s
+ │
  └ ✗ Ffgrep "renderCall" in extensions/
    ├ Input
    │ path: extensions/
@@ -353,8 +355,8 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - 组内 shell 行只报耗时（`· 12.4s`），行数是冗余信息；失败另报错误首行。
 - 展开区统一绘制完整状态背景，左右和底部各 1 格 padding，无顶部 padding。
 - 外层树在收起/展开时位置不变；Input/Output 树线与上方状态图标对齐。
-- Input/Output 之间各有一个空白 rail 行。
 - 点击展开区任意行、任意列（含底部 padding）均可收起。
+- 工具与工具之间留一行空行，末项不加。
 - 组末尾不再额外追加空白行。
 
 ### 子代理结束通知（subagent-notification）
@@ -404,6 +406,7 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
  │ │ agent_id: 6dae0e11-9341-43b
  │ └ Output
  │   Agent: 6dae0e11-9341-43b
+ │
  └ ✓ Read extensions/index.ts
    ├ Input
    │ path: extensions/index.ts

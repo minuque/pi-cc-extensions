@@ -458,9 +458,20 @@ function collapsedGroupLine(
 	return truncateToWidth(`${prefix}${item.summary(room, theme)}`, rowWidth, "");
 }
 
-/** 末项结尾的尾随空行不计入卡高（内联图片的占位行除外，见 contentRowRange）。 */
+/** 行内只有树线和空白：渲染出来的空 rail 行，本身就是一个间隔行。 */
+function isBlankRail(line: string): boolean {
+	return /^[\s│]*$/.test(stripAnsi(line));
+}
+
+/**
+ * 项与项之间留一行空行，把上一项的 Output 和下一项的工具行隔开；末项不加。
+ * 项自己已经用空 rail 行收尾的（子代理通知卡），不再叠第二行。
+ * 末项结尾的尾随空行不计入卡高（内联图片的占位行除外，见 contentRowRange）。
+ */
 function panelRows(rows: string[], last: boolean): string[] {
-	if (!last) return rows;
+	if (!last) {
+		return rows.length && isBlankRail(rows[rows.length - 1]) ? rows : [...rows, ""];
+	}
 	const end = Math.max(1, contentRowRange(rows).last + 1);
 	return end >= rows.length ? rows : rows.slice(0, end);
 }
