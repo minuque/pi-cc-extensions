@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.18]
+
+### 变更 / Changed
+
+- 展开卡里 Input 与 Output 之间的空 rail 行去掉，两段内容贴得更近。
+  The empty rail row between Input and Output in expanded cards is gone, so the two sections sit closer.
+
+### 修复 / Fixed
+
+- 分组展开卡里的内联图片补齐底色、树线和缩进，图片与 Output 正文对齐；图片上方的空行不再残留。（#101，by @zfh18）
+  Inline images in expanded group cards now get the background, tree line and indent, aligned with the Output body, and the blank rows above them no longer linger. (#101, by @zfh18)
+
 ## [1.0.17]
 
 适配 pi 1.5.x。
