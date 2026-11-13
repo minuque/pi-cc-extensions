@@ -99,46 +99,6 @@ function fitSummaryParts(parts: readonly string[], width: number): string {
 }
 
 /**
- * 摘要行的打分：调用最能说明脚本在干什么，字符串次之，行长只在前两者相同时决胜。
- * 调用权重必须大于「字符串分 + 行长上限」，否则长赋值会压过短调用。
- */
-const CODE_SUMMARY_CALL_SCORE = 4;
-const CODE_SUMMARY_STRING_SCORE = 2;
-
-/**
- * 无子调用时的脚本摘要：取信息量最大的一行语句，压成单行。
- *
- * 要的是一段真实的 JavaScript 片段，折叠行才能用 highlightCode 着色；
- * 标识符链（`a → b → c`）着色器认不出，染不上。跳过注释、空行和 `// @options`。
- * 只是折叠行的提示，不求还原语义；看代码还是展开 Input。
- */
-export function codemodeCodeSummary(code: unknown): string | undefined {
-	if (typeof code !== "string" || !code.trim()) return undefined;
-	let best: { text: string; score: number } | undefined;
-	let skippingBlock = false;
-	for (const raw of code.split("\n")) {
-		const line = raw.trim();
-		if (skippingBlock) {
-			if (line.includes("*/")) skippingBlock = false;
-			continue;
-		}
-		if (line.startsWith("/*")) {
-			if (!line.includes("*/")) skippingBlock = true;
-			continue;
-		}
-		if (!line || line.startsWith("//") || line.startsWith("*")) continue;
-		const text = oneLine(line);
-		if (!text) continue;
-		const score =
-			(text.includes("(") ? CODE_SUMMARY_CALL_SCORE : 0) +
-			(/["'`]/.test(text) ? CODE_SUMMARY_STRING_SCORE : 0) +
-			Math.min(text.length, 100) / 100;
-		if (!best || score > best.score) best = { text, score };
-	}
-	return best?.text;
-}
-
-/**
  * 没有子调用时的脚本行：语句逐行用 │ 树线列出，行数跟 expandedInputMaxLines。
  * 超出的收成一行 `… N more lines`。注释、空行和 `// @options` 不占行。
  */

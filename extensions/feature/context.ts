@@ -98,21 +98,6 @@ function normalizePreviewText(text: string): string {
 		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
-export type DialogBounds = { left: number; top: number; width: number };
-
-/** 1-based terminal hitbox of the [esc] close button on the dialog title row (row 2 of the box). */
-export function escCloseHitbox(bounds: DialogBounds): {
-	row: number;
-	startCol: number;
-	endCol: number;
-} {
-	return {
-		row: bounds.top + 2,
-		startCol: bounds.left + bounds.width - 5,
-		endCol: bounds.left + bounds.width - 1,
-	};
-}
-
 const COPY_LABEL = "[copy]";
 const ESC_LABEL = "[esc]";
 
@@ -121,20 +106,6 @@ let copyTextImpl: (text: string) => Promise<void> = (text) => copyToClipboard(te
 
 export function setPreviewCopyImpl(impl: ((text: string) => Promise<void>) | null): void {
 	copyTextImpl = impl ?? ((text) => copyToClipboard(text));
-}
-
-/** 1-based terminal hitbox of the [copy] button, one space left of [esc] on the same title row. */
-export function copyButtonHitbox(bounds: DialogBounds): {
-	row: number;
-	startCol: number;
-	endCol: number;
-} {
-	const esc = escCloseHitbox(bounds);
-	return {
-		row: esc.row,
-		startCol: esc.startCol - visibleWidth(COPY_LABEL) - 1,
-		endCol: esc.startCol - 2,
-	};
 }
 
 let activeContextOverlays = 0;
