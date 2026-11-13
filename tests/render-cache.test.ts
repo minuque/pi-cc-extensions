@@ -146,9 +146,9 @@ test("其他工具的 Input 折行与改动前逐行一致（新排版只给 cod
 		const rendered = view
 			.render(width)
 			.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
-		// 第 0 行是 " ├ Input"，Input 正文到空 rail 行为止
+		// 第 0 行是 " ├ Input"，Input 正文到 " └ Output" 为止
 		const inputRows = rendered
-			.slice(1, rendered.indexOf(" │", 1))
+			.slice(1, rendered.indexOf(" └ Output", 1))
 			.map((line) => line.slice(rail.length));
 		assert.deepEqual(inputRows, legacyRows(body), `${label} 的 Input 折行应与改动前一致`);
 	}

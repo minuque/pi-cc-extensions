@@ -33,7 +33,6 @@
  ✓ Bash npm test
  ├ Input
  │ command: npm test
- │
  └ Output
    line 1
    line 2
@@ -65,7 +64,6 @@ Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的�
  ✓ Bash rg -n 'renderCall' extensions/
  ├ Input
  │ command: rg -n 'renderCall' extensions/
- │
  └ Output
    extensions/renderer/default-mode.ts:300:
    renderCall(args, theme,
@@ -238,7 +236,6 @@ write 新建 / 覆盖：
  │       "question": "Which library should we use?",
  │       "header": "Library"
  │ … 12 more lines · click to show more
- │
  └ Output
    Which library should we use?
      Read
@@ -280,7 +277,6 @@ write 新建 / 覆盖：
  │     tools.fffind({ pattern: "mcp" }),
  │   ])
  │ … 1 more lines · click to show more
- │
  └ Output
    ffgrep {"pattern":"mcp","path":"src/"} 31ms
    fffind {"pattern":"mcp"} 12ms
@@ -323,7 +319,6 @@ write 新建 / 覆盖：
  ├ ✓ Read extensions/index.ts
  │ ├ Input
  │ │ path: extensions/index.ts
- │ │
  │ └ Output
  │   L0
  │   L1
@@ -339,7 +334,6 @@ write 新建 / 覆盖：
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
- │ │
  │ └ Output
  │   pass 79/79
  │   12.4s
@@ -347,7 +341,6 @@ write 新建 / 覆盖：
    ├ Input
    │ path: extensions/
    │ pattern: renderCall
-   │
    └ Output
      no match
 ```
@@ -409,13 +402,11 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
  ├ ✓ Get Subagent Result 6dae0e11-9341-43b
  │ ├ Input
  │ │ agent_id: 6dae0e11-9341-43b
- │ │
  │ └ Output
  │   Agent: 6dae0e11-9341-43b
  └ ✓ Read extensions/index.ts
    ├ Input
    │ path: extensions/index.ts
-   │
    └ Output
      L0
 ```

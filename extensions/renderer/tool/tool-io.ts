@@ -310,10 +310,6 @@ export class ExpandedToolIoView {
 			lines.push(truncateToWidth(theme.fg("dim", prefix) + styledContent, safeWidth, ""));
 		};
 
-		const pushBlankRail = () => {
-			lines.push(truncateToWidth(theme.fg("dim", `${lead}│`), safeWidth, ""));
-		};
-
 		const pushBody = (
 			body: string,
 			opts: {
@@ -400,7 +396,6 @@ export class ExpandedToolIoView {
 				continued: true,
 				section: "input",
 			});
-			pushBlankRail();
 			this.truncated.output = outputWouldTruncate;
 			pushHeader("└", "Output");
 			pushBody(outputText, {
