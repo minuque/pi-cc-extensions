@@ -44,9 +44,12 @@ export interface DiffStats {
 	lines: number;
 }
 
+// Pi emits space-delimited rows only (`+12 content`, blank-numbered ` ...`).
+// Pipe rows, hashline anchors and unified patch rows are kept from the upstream
+// parser (ATTRIBUTION.md); hashline edit tools such as pi-hashline-edit emit
+// `+12#AB:content` in details.diff.
 const CANONICAL_LINE_PATTERN = /^([+\- ])(\s*\d+)\|(.*)$/;
 const HASHLINE_ANCHOR_LINE_PATTERN = /^([+\- ])(\s*\d+)#([A-Za-z0-9]+| {2}):(.*)$/;
-// Pi still emits space-separated numbered rows, unlike OMP's pipe-delimited format.
 const PI_LINE_PATTERN = /^([+\- ])(\s*\d+)\s(.*)$/;
 const PI_OMISSION_LINE_PATTERN = /^ {3,}\.\.\.$/;
 const HUNK_HEADER_PATTERN = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
