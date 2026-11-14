@@ -26,7 +26,7 @@
  * 工具计数：read 按非空路径去重、其余按调用计数（首次出现顺序）；edit/write 不进摘要。
  * 时长 = 回合流逝挂钟；进行中 Running...，结束 Ran for。
  * abort/error/length 状态行挂在摘要外层，避免被折叠吞掉。
- * 最终 agent 回合摘要由 feature/agent-summary 独占（bash/read/edit/write/other）。
+ * 最终 agent 回合摘要由 feature/agent-summary 独占（bash/read/edit（含 write）/other）。
  *
  * 补丁生命周期遵循仓库既有模式：Symbol 所有权、dispose 仅恢复仍由本安装持有的
  * 方法、重入守卫防止 /reload 后残留闭包递归。

@@ -17,18 +17,18 @@ function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
-test("classifyTool：bash/read/edit/write/other", () => {
+test("classifyTool：bash/read/edit/other；write 并入 edit", () => {
 	assert.equal(classifyTool("bash"), "bash");
 	assert.equal(classifyTool("powershell"), "bash");
 	assert.equal(classifyTool("read"), "read");
 	assert.equal(classifyTool("edit"), "edit");
-	assert.equal(classifyTool("write"), "write");
+	assert.equal(classifyTool("write"), "edit");
 	assert.equal(classifyTool("grep"), "other");
 	// MCP 风格名不是精确工具名：归 other
 	assert.equal(classifyTool("mcp__server__read"), "other");
 });
 
-test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重；other 计数", () => {
+test("AgentRunSummary：bash/powershell 计数；read/edit（含 write）按路径去重；other 计数", () => {
 	const summary = new AgentRunSummary(1_000);
 	summary.recordToolStart("bash", { command: "npm test" });
 	summary.recordToolStart("powershell", { command: "Get-ChildItem" });
@@ -37,19 +37,19 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 	summary.recordToolStart("read", { path: "a.ts" }); // 去重
 	summary.recordToolStart("read", { path: "b.ts" });
 	summary.recordToolStart("edit", { file_path: "c.ts" }); // file_path 别名
+	summary.recordToolStart("write", { path: "c.ts" }); // 与 edit 合并去重
 	summary.recordToolStart("write", { path: "d.ts" });
 	summary.recordToolStart("write", { path: "d.ts" }); // 去重
 	summary.recordToolStart("grep", { pattern: "x" });
 	summary.recordToolResult(true);
 	summary.recordToolResult(false);
 
-	assert.equal(summary.toolCount, 10);
+	assert.equal(summary.toolCount, 11);
 	const data = summary.snapshot(61_000);
 	assert.deepEqual(data, {
 		commands: 3,
 		reads: 2,
-		edits: 1,
-		writes: 1,
+		edits: 2,
 		others: 1,
 		failed: 1,
 		durationMs: 60_000,
@@ -65,12 +65,11 @@ test("formatClockTime：h:mm AM/PM，非法值返回空串", () => {
 	assert.equal(formatClockTime(0), "");
 });
 
-test("summarySegments：bash→read→edit→write→other→failed，首段大写", () => {
+test("summarySegments：bash→read→edit→other→failed，首段大写", () => {
 	const data: AgentSummaryData = {
 		commands: 3,
 		reads: 2,
-		edits: 1,
-		writes: 1,
+		edits: 2,
 		others: 1,
 		failed: 1,
 		durationMs: 42_000,
@@ -79,13 +78,12 @@ test("summarySegments：bash→read→edit→write→other→failed，首段大�
 	assert.deepEqual(summarySegments(data), [
 		{ text: "Ran 3 commands", tone: "success" },
 		{ text: "read 2 files", tone: "success" },
-		{ text: "edited 1 file", tone: "success" },
-		{ text: "wrote 1 file", tone: "success" },
+		{ text: "edited 2 files", tone: "success" },
 		{ text: "1 other tool", tone: "success" },
 		{ text: "1 failed", tone: "failed" },
 	]);
 	assert.deepEqual(
-		summarySegments({ ...data, commands: 0, reads: 0, edits: 0, writes: 0, others: 0, failed: 0 }),
+		summarySegments({ ...data, commands: 0, reads: 0, edits: 0, others: 0, failed: 0 }),
 		[],
 	);
 });
@@ -124,7 +122,6 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 		commands: 1,
 		reads: 0,
 		edits: 0,
-		writes: 0,
 		others: 1,
 		failed: 0,
 		durationMs: calls[1].durationMs,
@@ -178,7 +175,6 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 				commands: 1,
 				reads: 0,
 				edits: 0,
-				writes: 0,
 				others: 0,
 				failed: 0,
 				durationMs: 500,
@@ -200,7 +196,6 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 				commands: 1,
 				reads: 0,
 				edits: 0,
-				writes: 0,
 				others: 0,
 				failed: 0,
 				durationMs: 15_000,
@@ -221,7 +216,6 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 					commands: 0,
 					reads: 0,
 					edits: 0,
-					writes: 0,
 					others: 0,
 					failed: 0,
 					durationMs: 0,

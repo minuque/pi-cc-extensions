@@ -1,8 +1,8 @@
 /**
  * Agent 回合摘要展示：agent_end 时把本回合工具统计写入会话条目，
- * 由 entry renderer 渲染成一行引用行 `│ Ran 1 command, wrote 1 file · 15s · done 6:51 PM`。
+ * 由 entry renderer 渲染成一行引用行 `│ Ran 1 command, edited 1 file · 15s · done 6:51 PM`。
  *
- * 统计复用 ./core.ts（bash|powershell/read/edit/write/other）。
+ * 统计复用 ./core.ts（bash|powershell/read/edit（含 write）/other）。
  * appendEntry 不进 LLM 上下文，只显示在聊天区。
  *
  * 不走 Markdown：pi 的 Markdown 组件会剥掉输入里的终端序列，
