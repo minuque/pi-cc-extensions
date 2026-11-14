@@ -1,6 +1,6 @@
 /**
  * Agent 回合摘要展示：agent_end 时把本回合工具统计写入会话条目，
- * 由 entry renderer 渲染成一行引用行 `│ Ran 1 command, wrote 1 file · 15s`。
+ * 由 entry renderer 渲染成一行引用行 `│ Ran 1 command, wrote 1 file · 15s · done 6:51 PM`。
  *
  * 统计复用 ./core.ts（bash|powershell/read/edit/write/other）。
  * appendEntry 不进 LLM 上下文，只显示在聊天区。
@@ -11,7 +11,7 @@
 
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { formatDuration } from "../../utils/format.ts";
+import { formatClockTime, formatDuration } from "../../utils/format.ts";
 import { bindAgentSummary, summarySegments, type SummarySegment } from "./core.ts";
 import type { AgentSummaryData } from "./core.ts";
 
@@ -47,12 +47,18 @@ class AgentSummaryLine {
 	private readonly border: string;
 	private readonly theme: SummaryTheme;
 
-	constructor(segments: readonly SummarySegment[], duration: string, theme: SummaryTheme) {
+	constructor(
+		segments: readonly SummarySegment[],
+		duration: string,
+		doneAt: string,
+		theme: SummaryTheme,
+	) {
 		this.theme = theme;
 		this.border = theme.fg("mdQuoteBorder", "│");
 		const quoteStyle = (text: string) => theme.italic(theme.fg("mdQuote", text));
 		const counts = segments.map((segment) => paintNumber(segment, theme)).join(", ");
-		const text = duration ? `${counts} · ${duration}` : counts;
+		const tail = [duration, doneAt].filter(Boolean).join(" · ");
+		const text = tail ? `${counts} · ${tail}` : counts;
 		const prefix = stylePrefix(quoteStyle);
 		this.body = quoteStyle(prefix ? text.replace(/\x1b\[0m/g, `\x1b[0m${prefix}`) : text);
 	}
@@ -67,10 +73,18 @@ class AgentSummaryLine {
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(AGENT_SUMMARY_ENTRY_TYPE, (entry, _options, theme) => {
-		const segments = summarySegments(entry.data as AgentSummaryData);
+		const data = entry.data as Partial<AgentSummaryData>;
+		const segments = summarySegments(data as AgentSummaryData);
 		if (segments.length === 0) return undefined;
-		const duration = formatDuration((entry.data as AgentSummaryData).durationMs);
-		return new AgentSummaryLine(segments, duration, theme as unknown as SummaryTheme);
+		const duration = formatDuration(data.durationMs ?? 0);
+		// 旧版本写的 entry 没有 endedAt：留空，这一行只显示耗时。
+		const endedAt = typeof data.endedAt === "number" ? formatClockTime(data.endedAt) : "";
+		return new AgentSummaryLine(
+			segments,
+			duration,
+			endedAt ? `done ${endedAt}` : "",
+			theme as unknown as SummaryTheme,
+		);
 	});
 
 	bindAgentSummary(pi, (data) => {

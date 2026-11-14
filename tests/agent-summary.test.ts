@@ -11,6 +11,7 @@ import {
 	summarySegments,
 	type AgentSummaryData,
 } from "../extensions/feature/agent-summary/core.ts";
+import { formatClockTime } from "../extensions/utils/format.ts";
 
 function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
@@ -52,7 +53,16 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 		others: 1,
 		failed: 1,
 		durationMs: 60_000,
+		endedAt: 61_000,
 	} satisfies AgentSummaryData);
+});
+
+test("formatClockTime：h:mm AM/PM，非法值返回空串", () => {
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 18, 51).getTime()), "6:51 PM");
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 0, 5).getTime()), "12:05 AM");
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 12, 0).getTime()), "12:00 PM");
+	assert.equal(formatClockTime(Number.NaN), "");
+	assert.equal(formatClockTime(0), "");
 });
 
 test("summarySegments：bash→read→edit→write→other→failed，首段大写", () => {
@@ -64,6 +74,7 @@ test("summarySegments：bash→read→edit→write→other→failed，首段大�
 		others: 1,
 		failed: 1,
 		durationMs: 42_000,
+		endedAt: 43_000,
 	};
 	assert.deepEqual(summarySegments(data), [
 		{ text: "Ran 3 commands", tone: "success" },
@@ -117,7 +128,9 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 		others: 1,
 		failed: 0,
 		durationMs: calls[1].durationMs,
+		endedAt: calls[1].endedAt,
 	});
+	assert.ok(Number.isFinite(calls[1].endedAt));
 });
 
 test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
@@ -155,6 +168,52 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 	assert.match(raw, /│/);
 	const plain = stripAnsi(raw);
 	assert.match(plain, /Ran 1 command, read 1 file/);
+	// 末尾追加完成时刻：耗时 + done h:mm AM/PM
+	assert.match(plain, /· done (?:1[0-2]|[1-9]):[0-5]\d (?:AM|PM)/);
+
+	// 固定时刻下整行形状；不足 1 秒不报耗时，只留完成时刻，不出双分隔。
+	const fixed = renderer(
+		{
+			data: {
+				commands: 1,
+				reads: 0,
+				edits: 0,
+				writes: 0,
+				others: 0,
+				failed: 0,
+				durationMs: 500,
+				endedAt: new Date(2025, 0, 2, 18, 51).getTime(),
+			},
+		},
+		{ expanded: false },
+		theme,
+	);
+	assert.equal(
+		stripAnsi((fixed as any).render(120).map(String).join("\n")).trim(),
+		"│ Ran 1 command · done 6:51 PM",
+	);
+
+	// 旧版本写的 entry 没有 endedAt：只显示耗时，不显示完成时刻。
+	const legacy = renderer(
+		{
+			data: {
+				commands: 1,
+				reads: 0,
+				edits: 0,
+				writes: 0,
+				others: 0,
+				failed: 0,
+				durationMs: 15_000,
+			},
+		},
+		{ expanded: false },
+		theme,
+	);
+	assert.equal(
+		stripAnsi((legacy as any).render(120).map(String).join("\n")).trim(),
+		"│ Ran 1 command · 15s",
+	);
+
 	assert.equal(
 		renderer(
 			{

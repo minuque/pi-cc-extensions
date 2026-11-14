@@ -3,7 +3,7 @@
  *
  * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
  * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
- * 失败单独累计；另记回合耗时。
+ * 失败单独累计；另记回合耗时与结束时刻。
  *
  * 呈现：`summarySegments` 分段（文字 + 语义色），渲染层自己拼行并上色。
  * 不要经 Markdown 渲染：pi 的 Markdown 组件会剥掉输入里的终端序列，数字会失去语义色。
@@ -23,6 +23,8 @@ export type AgentSummaryData = {
 	others: number;
 	failed: number;
 	durationMs: number;
+	/** 回合结束时刻（epoch ms）。存进 entry，会话恢复时才能显示原来的时刻而不是“现在几点”。 */
+	endedAt: number;
 };
 
 export function classifyTool(toolName: string): AgentToolCategory {
@@ -95,6 +97,7 @@ export class AgentRunSummary {
 			others: this.otherCount,
 			failed: this.failedCount,
 			durationMs: now - this.startedAt,
+			endedAt: now,
 		};
 	}
 }

@@ -22,6 +22,19 @@ export function formatDuration(ms: number): string {
 	return `${seconds}s`;
 }
 
+/**
+ * 时刻 → "6:51 PM"（12 小时制，英文 AM/PM）。
+ * 自己拼而不用 toLocaleTimeString：新版 ICU 在 AM/PM 前放的是窄不换行空格（U+202F），各版本不一致。
+ * 非法值返回 ""，调用方据此省略这一段。
+ */
+export function formatClockTime(ms: number): string {
+	if (!Number.isFinite(ms) || ms <= 0) return "";
+	const date = new Date(ms);
+	const hour = date.getHours() % 12 || 12;
+	const minute = String(date.getMinutes()).padStart(2, "0");
+	return `${hour}:${minute} ${date.getHours() < 12 ? "AM" : "PM"}`;
+}
+
 /** 文本单行化：去换行空白，超宽截断加省略号。 */
 export function oneLine(value: unknown, max = 96): string {
 	const text = sanitizeToolResultText(String(value ?? ""), 4096)
