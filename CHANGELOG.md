@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.19]
+
+### 新增功能 / New Features
+
+- 回合摘要末尾追加完成时刻，显示为 `done 6:51 PM`；重新打开会话仍是当时的时间。（#82，by @tarnish233）
+  Round summaries now end with the completion time as `done 6:51 PM`, and keep the original time when the session is reopened. (#82, by @tarnish233)
+- 回合摘要把 write 并入 edit 计数，同一文件先写再改只算一次。
+  Round summaries count writes together with edits, so writing and then editing one file counts once.
+
+### 体验优化 / Improvements
+
+- 展开卡里工具之间留一行空行，各段贴得更清楚。
+  Tool blocks in expanded cards get a blank row between them, so each section stands out.
+
+### 修复 / Fixed
+
+- `/new`、`/reload` 重置输入框后不再写回旧编辑器，前缀等设置按重置后的状态生效。
+  After `/new` or `/reload` resets the editor, the old editor is no longer written back, so the prompt prefix and other settings follow the reset state.
+
 ## [1.0.18]
 
 ### 变更 / Changed
