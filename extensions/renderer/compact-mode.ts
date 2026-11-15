@@ -1246,6 +1246,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		settleUntil?: number;
 		/** 已请求收尾但回合还有活干（消息仍在流式、工具还在跑）：活干完再兑现。 */
 		endRequest?: { endTimestamp?: number };
+		/** 段内已冒出外层调用（edit/write/ask）：本段到此为止，不再并入后续消息。 */
+		outerSealed?: boolean;
 		/** 消息已有 toolCall、工具组件还没到：等它一 updateDisplay 就重画槽位。 */
 		pendingLiveTool?: boolean;
 		foldTimer?: ReturnType<typeof setTimeout>;
@@ -1716,10 +1718,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 	/**
 	 * 尾行归位。目标位：活回合（运行中/收尾静默期）且未展开 → 容器最末，
-	 * 计数行钉在 transcript 可写底缘，运行中到达的提示行/custom 条目只能落在
-	 * 它上方，不会被顶离底部截成两行；其余（收尾回合、展开的回合）→ 回合最后
-	 * 一个成员之后，外来行统一换到摘要行之下。展开的回合不按 live 推到底：
-	 * 展开卡属于回合原位，推进容器末尾会把它挪到别的消息之间。
+	 * 计数行钉在可写底缘，运行中到达的提示行/custom 条目只能落在
+	 * 它上方，不会被顶离底部截成两行；其余（收尾回合、展开的回合）→ 本回合
+	 * 第一个外露行之前（外层行切段：摘要只盖它之前那一段工具），没有外露行
+	 * 则落在最后一个成员之后；外来行统一换到摘要行之下。展开的回合不按 live
+	 * 推到底：展开卡属于回合原位，推进容器末尾会把它挪到别的消息之间。
 	 * 尾行已在目标位就不动容器：展开/收起只换 tail.parts，无谓的重摘重插
 	 * 本身就是摘要行挪位的来源。
 	 */
@@ -1740,6 +1743,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		// 回合还在跑时它们留在原位，摘要行才能钉在可写底缘。
 		const staysAbove = (value: any): boolean =>
 			isMember(value) && (!isOuterToolRow(ids, value) || live);
+		const pinToEnd = live && round.anchor?.expanded !== true;
+		/** 摘要行落在第一个外露行之前：外层行切出的那一段到此为止。 */
+		const outerFirst = (list: any[]): number => {
+			if (live) return -1;
+			for (let i = 0; i < list.length; i++) if (isOuterToolRow(ids, list[i])) return i;
+			return -1;
+		};
 		const current = children.indexOf(tail.host);
 		// 摘尾行前先定目标位，已在位就整段跳过。
 		let last = -1;
@@ -1747,14 +1757,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			if (children[i] === tail.host || !staysAbove(children[i])) continue;
 			last = i;
 		}
-		// 外露行压在摘要行上方时仍要重排：尾行就算在目标位上也得让位。
-		const outerAbove =
-			!live &&
-			current > 0 &&
-			children.some((value: any, index: number) => index < current && isOuterToolRow(ids, value));
-		const pinToEnd = live && round.anchor?.expanded !== true;
-		const desired = pinToEnd || last < 0 ? children.length - 1 : last + 1;
-		if (current === desired && !outerAbove) return;
+		const outer = outerFirst(children);
+		// 外露行压在摘要行上方就前移；已经在下方就别再越过它，否则每帧来回搬。
+		let desired = pinToEnd || last < 0 ? children.length - 1 : last + 1;
+		if (!pinToEnd && outer >= 0 && outer < current) desired = outer;
+		if (current === desired) return;
 		if (current >= 0) children.splice(current, 1);
 		let first = -1;
 		last = -1;
@@ -1778,7 +1785,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			intruders.unshift(children.splice(i, 1)[0]);
 		}
 		if (lastMember) last = children.indexOf(lastMember);
-		const insertAt = last < 0 ? children.length : last + 1;
+		const outerAfter = outerFirst(children);
+		const insertAt = outerAfter >= 0 ? outerAfter : last < 0 ? children.length : last + 1;
 		if (pinToEnd) {
 			// 活回合：外来行压到最后成员之后，尾行占容器最末。
 			children.splice(insertAt, 0, ...intruders);
@@ -2355,30 +2363,14 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 		if (hasToolCalls) {
 			let round = roundByComponent.get(this);
-			const previousMessage = round?.messages.get(this);
-			const previousHadOuter = Array.isArray(previousMessage?.content)
-				? previousMessage.content.some(
-						(item: any) => item?.type === "toolCall" && OUTER_TOOLS.has(String(item?.name ?? "")),
-					)
-				: false;
 			if (!round) {
-				// 外层行打断摘要段：本条消息带外层调用且可并入的活动回合已有内容时，
-				// 旧回合就地完结（不走静默期）。本条消息自己含 inner 调用或思考才另起一段；
-				// 外层独段（edit-only 消息）不建回合——没有可汇总内容，建段只会挂空摘要行。
+				// 外层行打断摘要段：本条消息带外层调用且可并入活动回合时，旧回合就地
+				// 完结（不走静默期）。外层独段（edit-only 消息）不并段也不建段——它没有
+				// 可汇总内容，建段只会挂空摘要行；摘要行落在这一行之前就够了。
 				const joinable = joinableActiveRound(this);
-				if (joinable && hasOuterToolCall) {
+				if (joinable && hasOuterToolCall && !hasInnerToolCall && !hasThinkingContent) {
+					joinable.outerSealed = true;
 					sealRound(joinable, message?.timestamp);
-					if (hasInnerToolCall || hasThinkingContent) {
-						round = createRound(this, message);
-						roundByComponent.set(this, round);
-						round.messages.set(this, message);
-						if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
-							round.startedAt = message.timestamp;
-						}
-						renderRound(round);
-						return undefined;
-					}
-					// 外层独段：text/thinking 照原生渲染，edit 行由 tool render 外置，没有摘要行。
 					return passThroughAssistant(this, message);
 				}
 				if (hasInnerToolCall || hasThinkingContent) {
@@ -2392,6 +2384,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
 						round.startedAt = message.timestamp;
 					}
+					if (hasOuterToolCall) {
+						// 本条消息自带外层调用：它就是本段的最后一格，后续消息另起一段。
+						round.outerSealed = true;
+						sealRound(round, message?.timestamp);
+						return undefined;
+					}
 					renderRound(round);
 					return undefined;
 				}
@@ -2399,9 +2397,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				if (activeRound) finishRound(activeRound, message?.timestamp);
 				return passThroughAssistant(this, message);
 			}
-			if (hasOuterToolCall && !previousHadOuter && roundLive(round)) {
+			if (hasOuterToolCall && !round.outerSealed && roundLive(round)) {
 				// 消息入段后流式增长才冒出外层调用（先 thinking 后 toolCall）：
 				// 就地封口所在段，本条消息按消息级归属留在原段，后续消息另起一段。
+				// 不能拿 round.messages 里的上一份消息判「是否新增」：流式消息的
+				// content 是同一个数组实例，外层调用一出现上一份也就有了。
+				round.outerSealed = true;
 				sealRound(round, message?.timestamp);
 			}
 			round.messages.set(this, message);

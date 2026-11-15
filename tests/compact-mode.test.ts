@@ -2686,6 +2686,198 @@ test("compact folds Agent/Task tools always; no pending outer flash", () => {
 	}
 });
 
+test("compact：流式消息里冒出外层调用也封口，ask 之后的计数另起一行", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const askQuestions = [{ question: "Which library?", header: "Library" }];
+	/** 等 tick 自己兑现收尾请求（250ms）+ 静默期（250ms），不手动催收尾。 */
+	const waitTickFold = () => new Promise((resolve) => setTimeout(resolve, 700));
+	try {
+		// pi 的流式消息是同一个对象、同一个 content 数组就地增长：
+		// 外层调用出现时，回合里存着的上一份消息也已经有了它。
+		const addStreaming = (timestamp: number) => {
+			const message: any = { role: "assistant", timestamp, stopReason: "toolUse", content: [] };
+			const component = new AssistantMessageComponent(
+				{ ...message, content: [] } as any,
+				true,
+			) as any;
+			chat.addChild(component);
+			const push = (item: any, tools: any[] = []) => {
+				message.content.push(item);
+				component.updateContent(message, true);
+				for (const { name, id } of tools) {
+					const component = tool(name, id, item.arguments ?? {});
+					chat.addChild(component);
+					component.markExecutionStarted();
+				}
+			};
+			const end = () => component.updateContent(message, false);
+			return { message, component, push, end };
+		};
+		// 段一：thinking + bash。回合还在跑。
+		const first = addStreaming(1);
+		first.push({ type: "thinking", thinking: "plan one" });
+		first.push({ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }, [
+			{ name: "bash", id: "b1" },
+		]);
+		first.end();
+		const bash1 = chat.children.find((c: any) => c?.toolCallId === "b1") as any;
+		bash1.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+
+		// 段二：thinking + write。write 是外层行，段一到此为止。
+		const second = addStreaming(2);
+		second.push({ type: "thinking", thinking: "write now" });
+		second.push(
+			{ type: "toolCall", id: "w1", name: "write", arguments: { path: "a.ts", content: "x" } },
+			[{ name: "write", id: "w1" }],
+		);
+		second.end();
+		const write = chat.children.find((c: any) => c?.toolCallId === "w1") as any;
+		write.updateResult({ content: [], details: { diff: "+x" }, isError: false });
+		await waitTickFold();
+
+		let lines = renderText(chat);
+		const firstSummaryAt = lines.findIndex((line) => /Ran for .*bash×1/.test(line));
+		const writeAt = lines.findIndex((line) => /(?:✓|✗) write a\.ts/.test(line));
+		assert.ok(firstSummaryAt >= 0, `段一应收成 Ran for: ${lines.join(" | ")}`);
+		assert.ok(writeAt > firstSummaryAt, `write 行应在摘要行之下: ${lines.join(" | ")}`);
+
+		// 段三：thinking + bash，另起一段。
+		const third = addStreaming(3);
+		third.push({ type: "thinking", thinking: "more" });
+		third.push({ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } }, [
+			{ name: "bash", id: "b2" },
+		]);
+		third.end();
+		const bash2 = chat.children.find((c: any) => c?.toolCallId === "b2") as any;
+		bash2.updateResult({ content: [{ type: "text", text: "two" }], isError: false });
+
+		// 段四：thinking + ask。ask 是外层行，段三到此为止。
+		const askMessage = addStreaming(4);
+		askMessage.push({ type: "thinking", thinking: "ask now" });
+		askMessage.push(
+			{
+				type: "toolCall",
+				id: "ask-1",
+				name: "ask_user_question",
+				arguments: { questions: askQuestions },
+			},
+			[{ name: "ask_user_question", id: "ask-1" }],
+		);
+		askMessage.end();
+		const ask = chat.children.find((c: any) => c?.toolCallId === "ask-1") as any;
+		await waitTickFold();
+		ask.updateResult({
+			content: [{ type: "text", text: "User has answered" }],
+			details: {
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which library?", kind: "option", answer: "Read" }],
+			},
+		});
+		await settleFold();
+
+		// 段三的摘要收在 ask 之上，计数只有它自己那一次 bash。
+		lines = renderText(chat);
+		const askAt = lines.findIndex((line) => /ask_user_question/.test(line));
+		const summaries = lines
+			.map((line, index) => ({ line, index }))
+			.filter(({ line }) => /(?:Ran for|Running\.\.\.)/.test(line));
+		assert.ok(askAt >= 0, `ask 行应渲染: ${lines.join(" | ")}`);
+		const above = summaries.filter(({ index }) => index < askAt);
+		const below = summaries.filter(({ index }) => index > askAt);
+		assert.equal(above.length, 2, `ask 之上应有两段摘要: ${lines.join(" | ")}`);
+		assert.equal(below.length, 0, `ask 之后不应还有本段的摘要: ${lines.join(" | ")}`);
+		assert.ok(
+			above.every(({ line }) => /Ran for/.test(line)),
+			`ask 之上的摘要都已定稿: ${lines.join(" | ")}`,
+		);
+		assert.doesNotMatch(lines.join("\n"), /bash×2/, `计数不跨 ask 累加: ${lines.join(" | ")}`);
+
+		// 段五：用户答完之后继续干活，另起一条摘要行。
+		const fifth = addStreaming(5);
+		fifth.push({ type: "thinking", thinking: "after" });
+		fifth.push({ type: "toolCall", id: "b3", name: "bash", arguments: { command: "three" } }, [
+			{ name: "bash", id: "b3" },
+		]);
+		fifth.end();
+		const bash3 = chat.children.find((c: any) => c?.toolCallId === "b3") as any;
+		bash3.updateResult({ content: [{ type: "text", text: "three" }], isError: false });
+		await waitTickFold();
+
+		lines = renderText(chat);
+		const afterAskAt = lines.findIndex((line) => /ask_user_question/.test(line));
+		const settled = lines
+			.map((line, index) => ({ line, index }))
+			.filter(({ line }) => /Ran for/.test(line));
+		assert.equal(settled.length, 2, `答完之后 ask 之上仍是两段定稿: ${lines.join(" | ")}`);
+		const running = lines
+			.map((line, index) => ({ line, index }))
+			.filter(({ line }) => /Running\.\.\./.test(line));
+		assert.equal(running.length, 1, `答完之后只有一条进行中摘要: ${lines.join(" | ")}`);
+		assert.ok(running[0]!.index > afterAskAt, `新摘要行应在 ask 之下: ${lines.join(" | ")}`);
+		assert.match(running[0]!.line, /bash×1/, `新摘要只算答完后的调用: ${lines.join(" | ")}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：同一条消息里 ask 排在其它工具之前，摘要仍在 ask 之上", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const questions = [{ question: "Which library?", header: "Library" }];
+	/** 等 tick 自己兑现收尾请求（250ms）+ 静默期（250ms），不手动催收尾。 */
+	const waitTickFold = () => new Promise((resolve) => setTimeout(resolve, 700));
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [{ type: "thinking", thinking: "ask then read" }],
+		} as any;
+		const anchor = new AssistantMessageComponent({ ...message, content: [] } as any, true) as any;
+		chat.addChild(anchor);
+		anchor.updateContent(message, true);
+		const ask = tool("ask_user_question", "ask-1", { questions });
+		message.content.push({
+			type: "toolCall",
+			id: "ask-1",
+			name: "ask_user_question",
+			arguments: { questions },
+		});
+		anchor.updateContent(message, true);
+		chat.addChild(ask);
+		ask.markExecutionStarted();
+		const read = tool("read", "r1", { path: "a.ts" });
+		message.content.push({ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } });
+		anchor.updateContent(message, true);
+		chat.addChild(read);
+		read.markExecutionStarted();
+		anchor.updateContent(message, false);
+		read.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+		await waitTickFold();
+		ask.updateResult({
+			content: [{ type: "text", text: "User has answered" }],
+			details: {
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which library?", kind: "option", answer: "Read" }],
+			},
+		});
+		await settleFold();
+
+		const lines = renderText(chat);
+		const summaryAt = lines.findIndex((line) => /Ran for .*read×1/.test(line));
+		const askAt = lines.findIndex((line) => /ask_user_question/.test(line));
+		assert.ok(summaryAt >= 0, `摘要应渲染: ${lines.join(" | ")}`);
+		assert.ok(askAt > summaryAt, `摘要行应在 ask 之上: ${lines.join(" | ")}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
 test("compact：ask_user_question 留在外层，不进摘要，复用默认问答树", () => {
 	const previousMode = config.mode;
 	config.mode = "compact";
