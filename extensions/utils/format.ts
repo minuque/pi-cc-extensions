@@ -23,16 +23,18 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * 时刻 → "6:51 PM"（12 小时制，英文 AM/PM）。
- * 自己拼而不用 toLocaleTimeString：新版 ICU 在 AM/PM 前放的是窄不换行空格（U+202F），各版本不一致。
+ * 时刻 → "11/15 6:51 PM"（M/D 加 12 小时制，英文 AM/PM）。
+ * 跨天的会话里只看时分分不清是哪一天，所以带上日期。
+ * 自己拼而不用 toLocaleTimeString/toLocaleDateString：新版 ICU 在 AM/PM 前放的是窄不换行空格（U+202F），
+ * 日期分隔符也随 locale 变，各版本不一致。
  * 非法值返回 ""，调用方据此省略这一段。
  */
-export function formatClockTime(ms: number): string {
+export function formatTimestamp(ms: number): string {
 	if (!Number.isFinite(ms) || ms <= 0) return "";
 	const date = new Date(ms);
 	const hour = date.getHours() % 12 || 12;
 	const minute = String(date.getMinutes()).padStart(2, "0");
-	return `${hour}:${minute} ${date.getHours() < 12 ? "AM" : "PM"}`;
+	return `${date.getMonth() + 1}/${date.getDate()} ${hour}:${minute} ${date.getHours() < 12 ? "AM" : "PM"}`;
 }
 
 /** 文本单行化：去换行空白，超宽截断加省略号。 */
