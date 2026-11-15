@@ -15,7 +15,11 @@ import {
 	setCellDimensions,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	installToolGrouping,
+	paddedBackgroundRow,
+	ToolGroupComponent,
+} from "../extensions/renderer/tool/grouping.ts";
 import { solidPngBase64 } from "./helpers/png.ts";
 import {
 	collapseHintText,
@@ -864,4 +868,20 @@ test("多工具展开：子卡首行只剩图标时不额外占一行（issue: �
 	} finally {
 		hooks.shutdown();
 	}
+});
+
+test("paddedBackgroundRow keeps styled rows intact without running the truncate path", () => {
+	const theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (slot: string, text: string) => `\x1b[48;5;22m${text}\x1b[49m`,
+		setSlot: undefined,
+	};
+	const styled = "\x1b[32m✓\x1b[0m Bash \x1b[2m$ npm test\x1b[0m";
+	// 放得下：原样式保留，右侧补空格到满宽。
+	const fitted = paddedBackgroundRow(theme, "toolSuccessBg", styled, 40);
+	assert.equal(visibleWidth(fitted), 40);
+	assert.ok(fitted.includes("\x1b[32m✓\x1b[0m"), `样式不能丢: ${JSON.stringify(fitted)}`);
+	// 放不下：仍然截断到内宽，不越界。
+	const clipped = paddedBackgroundRow(theme, "toolSuccessBg", styled.repeat(4), 40);
+	assert.equal(visibleWidth(clipped), 40);
 });

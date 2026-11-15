@@ -681,6 +681,55 @@ test("expanded round panel repaints when the card background slot changes", () =
 	}
 });
 
+test("expanded round panel reuses its rows even when a child returns a fresh line array", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	const backgroundSlots: string[] = [];
+	setMessageDisplayTheme(
+		Object.assign(Object.create(previousTheme ?? null), {
+			fg: previousTheme?.fg ?? ((_color: string, text: string) => text),
+			italic: (text: string) => text,
+			bold: (text: string) => text,
+			bg(slot: string, text: string) {
+				backgroundSlots.push(slot);
+				return text;
+			},
+		}),
+	);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		// 带 thinking 的回合：pi 的 assistant 会在块之间插入 Spacer，而 Spacer.render
+		// 每次返回新数组。面板缓存若按数组引用判等，就会每帧整块重排。
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "plan the change\n".repeat(10) },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		} as unknown as AssistantMessage;
+		const bash = tool("bash", "b1", { command: "one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		bash.updateResult({ content: [{ type: "text", text: "line one\nline two" }], isError: false });
+		const anchor = new AssistantMessageComponent(message, true) as any;
+		anchor.updateContent(message);
+		anchor.setExpanded(true);
+		const first = anchor.render(120);
+		assert.ok(first.length > 2, `展开面板应有内容: ${first.length} 行`);
+
+		backgroundSlots.length = 0;
+		const second = anchor.render(120);
+		assert.deepEqual(second, first);
+		assert.deepEqual(backgroundSlots, [], "内容未变时面板复用上一帧行，不再逐行重铺底色");
+	} finally {
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
 test("expanded running round keeps thinking and tools in transcript order", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-order-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;

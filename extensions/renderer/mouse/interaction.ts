@@ -611,8 +611,9 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 					target = { kind: "tool", component, view, section };
 				}
 			} else if (isCompactAssistantComponent(component)) {
-				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
-				if (component.expanded || overHint) target = { kind: "assistant", component };
+				// compact 摘要行：折叠时仅提示文字高亮。展开的面板本身没有 hover 样式，
+				// 命中面板空白行不再点亮它，否则面板里每次指针移动都要多一帧重排。
+				if (!component.expanded && overHint) target = { kind: "assistant", component };
 			} else if (isMessageCard(component)) {
 				if (overHint) target = { kind: "message", component };
 			}

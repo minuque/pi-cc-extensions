@@ -251,7 +251,11 @@ export function paddedBackgroundRow(
 	bgAnsiOverride?: string,
 ): string {
 	const innerWidth = Math.max(0, width - 2);
-	const clipped = truncateToWidth(stripBackgroundAnsi(content), innerWidth, "");
+	const plain = stripBackgroundAnsi(content);
+	// 放得下就不走 truncateToWidth：它在未超宽时原样返回，但含 SGR 的行要逐 grapheme
+	// 走慢路径（约 30us/行），展开面板每帧逐行铺底色时这里是主要开销。
+	const clipped =
+		visibleWidth(plain) <= innerWidth ? plain : truncateToWidth(plain, innerWidth, "");
 	const row = ` ${clipped}${" ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)))} `;
 	const bgAnsi = bgAnsiOverride || backgroundAnsi(theme, slot);
 	const stable = bgAnsi ? row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi) : row;
