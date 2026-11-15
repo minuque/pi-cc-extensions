@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.20]
+
+### 新增功能 / New Features
+
+- 回合摘要的完成时刻带上日期，跨天也分得清。
+  Round summaries now show the date with the completion time, so days stay distinguishable.
+
+### 修复 / Fixed
+
+- 展开卡的底色面板里滚动不再掉帧：内容没变时复用上一帧的行。
+  Scrolling inside an expanded card no longer stutters: unchanged rows are reused.
+- 回合里冒出外层工具时摘要立即封口，计数不再跨 ask 累加。
+  A round summary now seals as soon as an outer tool appears, so counts no longer span an ask command.
+
 ## [1.0.19]
 
 ### 新增功能 / New Features
