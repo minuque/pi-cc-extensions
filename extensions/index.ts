@@ -19,6 +19,7 @@ import { installCompactThinking } from "./feature/compact-thinking.ts";
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
 import markdownEnhance from "./renderer/markdown-enhance.ts";
+import tableCopy from "./renderer/table-copy.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
@@ -37,6 +38,7 @@ export default function (pi: ExtensionAPI): void {
 	// render stack：thinking controller 直接交给 style 作 query
 	// markdownEnhance 单独开关：其他扩展也注册 transformer 时会互相改写输出。
 	if (config.enableMarkdownEnhance) markdownEnhance(pi);
+	if (config.enableTableCopy) tableCopy(pi);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
 
 	// features

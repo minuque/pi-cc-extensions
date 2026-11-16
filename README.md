@@ -29,6 +29,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
+| Copy Table            | 表格底部复制为 TSV / CSV / Markdown；暗色按钮、hover 高亮，成功时显示原生 flash | Fullscreen 点击；`enableTableCopy: false` 关闭（重启生效） |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
@@ -57,6 +58,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
   "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
+  "enableTableCopy": true,                 // Markdown 表格底部的 TSV / CSV / Markdown 整表复制按钮；重启生效
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui

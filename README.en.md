@@ -29,6 +29,7 @@ Run `/reload` after installation.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes                                                   | `/ccstyle`                                      |
 | Markdown enhancements       | Mermaid dialects in non-standard fences (`statediagram`, `classdiagram`…) and circled-number conversion; plain mermaid goes to pi | Automatic; turn off with `enableMarkdownEnhance: false` |
+| Copy Table                  | Copy tables as TSV / CSV / Markdown from dimmed actions below the table, with hover highlighting and native success flashes | Click in Fullscreen; disable with `enableTableCopy: false` (restart required) |
 | Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `--tui-mode fullscreen` (default since pi 1.5) |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
@@ -57,6 +58,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
   "enableAliases": true,                   // /clear, /exit aliases
   "enableMarkdownEnhance": true,           // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
+  "enableTableCopy": true,                 // TSV / CSV / Markdown actions below Markdown tables; restart required
   "enableEditorPrefix": true,              // editor ❯ prefix
 
   // ui
