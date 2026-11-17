@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.21]
+
+### 新增功能 / New Features
+
+- Markdown 表格可整表复制为 TSV、CSV 或 Markdown，只在全屏助手正文里出现；默认关闭。（#102，by @tarnish233）
+  Markdown tables can be copied whole as TSV, CSV or Markdown in the fullscreen assistant body; off by default. (#102, by @tarnish233)
+
+### 修复 / Fixed
+
+- 表格复制的边界交互与悬停绘制收紧，复制范围不再越界。（#102，by @tarnish233）
+  Table copy edges and hover drawing are tightened, so the copy range no longer overflows. (#102, by @tarnish233)
+
 ## [1.0.20]
 
 ### 新增功能 / New Features
