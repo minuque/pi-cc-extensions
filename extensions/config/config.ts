@@ -80,7 +80,7 @@ export type Config = {
 	enableAliases: boolean;
 	/** markdown 转换：Mermaid 方言渲染、圈数字转半角括号。关掉让位给其他扩展。 */
 	enableMarkdownEnhance: boolean;
-	/** Markdown 表格底部的 TSV / CSV / Markdown 整表复制按钮。 */
+	/** Fullscreen 助手正文表格的整表复制按钮；默认关。 */
 	enableTableCopy: boolean;
 	/** 输入框 `❯ ` 前缀（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
 	enableEditorPrefix: boolean;
@@ -175,7 +175,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableMarkdownEnhance: true,
-	enableTableCopy: true,
+	enableTableCopy: false,
 	enableEditorPrefix: true,
 	enableCustomFooter: true,
 	footerTokenRate: true,
@@ -320,7 +320,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableMarkdownEnhance: source.enableMarkdownEnhance !== false,
-		enableTableCopy: source.enableTableCopy !== false,
+		enableTableCopy: source.enableTableCopy === true,
 		enableEditorPrefix: (source.enableEditorPrefix ?? source.enableInputPrompt) !== false, // 兼容旧配置键
 		enableCustomFooter: source.enableCustomFooter !== false,
 		footerTokenRate: source.footerTokenRate !== false,

@@ -1147,6 +1147,7 @@ export async function showCcstylePanel(
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
 					markdownEnhanceToggle.setting,
+					tableCopyToggle.setting,
 				],
 			},
 			{

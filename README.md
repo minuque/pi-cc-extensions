@@ -29,7 +29,6 @@ pi install git:github.com/minuque/pi-cc-extensions
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Copy Table            | 助手正文表格复制为 TSV / CSV / Markdown；主题暗色按钮、hover 切换正文色，成功时显示原生 flash | 仅 Fullscreen 主对话；`enableTableCopy: false` 关闭（重启生效） |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
@@ -37,8 +36,6 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 状态栏                | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存/token 图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供 4 个主题：CC Dark、CC Light、CC Dark HC、CC Light HC                   | `/settings` → Theme                             |
-
-表格复制仅作用于 Fullscreen 主对话的助手正文（含恢复的历史回复与 compact 展开的正文）。思考块、用户消息、工具输出、`/context` 预览和会话记录浏览弹层不显示按钮；regular 模式不显示，运行中切换屏幕模式会自动同步。按钮 hover 不加粗、不加下划线。
 
 `on` / `compact` 两种模式的渲染样例：[默认模式](./docs/tool-render-examples-default.md) · [紧凑模式](./docs/tool-render-examples-compact.md)
 
@@ -60,7 +57,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
   "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
-  "enableTableCopy": true,                 // 仅 Fullscreen 助手正文表格的整表复制按钮；重启生效
+  "enableTableCopy": false,                // TSV / CSV / Markdown 整表复制（Fullscreen 助手正文）；/ccstyle Features 开启，重启生效
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui

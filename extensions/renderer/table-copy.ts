@@ -5,14 +5,20 @@
  * adds mouse actions only to fullscreen assistant-body instances. This module
  * deliberately does not implement cell selection or geometry.
  */
+import { randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import {
 	copyToClipboard,
+	getAgentDir,
+	VERSION,
 	type ExtensionAPI,
 	type ExtensionContext,
 	type MarkdownTransformContext,
 } from "@earendil-works/pi-coding-agent";
 import {
 	Markdown,
+	TuiAltScreen,
 	stripTerminalSequences,
 	visibleWidth,
 	type TUI,
@@ -25,8 +31,6 @@ import { isTranscriptComponent, markTranscriptComponent } from "./transcript-sco
 
 const PATCH = Symbol.for("pi.ccstyle.markdown-table-copy");
 const ACTIONS_KEY = Symbol.for("pi.ccstyle.markdown-table-copy.actions");
-const ACTION_LINE = "[Copy TSV]   [Copy CSV]   [Copy Markdown]";
-const COMPACT_ACTION_LINE = "[Copy TSV] [Copy CSV] [Copy Markdown]";
 const FORMATS = ["tsv", "csv", "markdown"] as const;
 
 type Format = (typeof FORMATS)[number];
@@ -39,6 +43,8 @@ export interface TableCopyOptions {
 	paint: Paint;
 	copy?: CopyText;
 	notify?: Notify;
+	/** Compatibility diagnostics; defaults to an agent-directory debug log, never stdout. */
+	debug?: (message: string) => void;
 }
 
 export interface TableCopyInstallation {
@@ -50,6 +56,7 @@ export interface TableCopyInstallation {
 interface TableCopyOwner extends TableCopyOptions {
 	copy: CopyText;
 	notify: Notify;
+	debug: (message: string) => void;
 }
 
 interface InlineToken {
@@ -90,6 +97,8 @@ interface ActionHit {
 	start: number;
 	end: number;
 	format: Format;
+	marker: string;
+	text: string;
 	table: TableToken;
 }
 
@@ -117,9 +126,41 @@ type HandleMouse = (
 	event: TuiMouseEvent,
 ) => TuiMouseEventResult | undefined;
 
+interface SelectionPoint {
+	row: number;
+	col: number;
+	scrollView?: unknown;
+}
+
+interface SelectionBounds {
+	start: SelectionPoint;
+	end: SelectionPoint;
+}
+
+interface SelectionInternals {
+	getSelectionBounds(): SelectionBounds | undefined;
+	getSelectionSourceLine(point: SelectionPoint): string;
+}
+
+type SelectionText = (this: SelectionInternals) => string | undefined;
+type SelectionColumns = (
+	this: SelectionInternals,
+	line: string,
+	row: number,
+	selection: SelectionBounds,
+	minColumn?: number,
+	maxColumn?: number,
+) => { start: number; end: number };
+
 interface Patch {
-	version: 2;
+	version: 3;
 	active: boolean;
+	markerPrefix: string;
+	selectionTarget: Prototype;
+	originalSelectionText: SelectionText;
+	originalSelectionColumns: SelectionColumns;
+	wrappedSelectionText: SelectionText;
+	wrappedSelectionColumns: SelectionColumns;
 	owners: Set<TableCopyOwner>;
 	components: Set<WeakRef<MarkdownWithActions>>;
 	componentRefs: WeakMap<MarkdownWithActions, WeakRef<MarkdownWithActions>>;
@@ -135,8 +176,40 @@ interface Patch {
 
 type Prototype = Record<PropertyKey, unknown>;
 
-function label(format: Format): string {
+function label(format: Format, compact = false): string {
+	if (compact) return `[${format === "markdown" ? "MD" : format.toUpperCase()}]`;
 	return `[Copy ${format === "markdown" ? "Markdown" : format.toUpperCase()}]`;
+}
+
+/** Zero-width APC markers survive caches; real terminals require ST, not BEL. */
+function marker(patch: Patch, kind: string): string {
+	return `${patch.markerPrefix}${kind}\x1b\\`;
+}
+
+function isActionRow(patch: Patch, line: string): boolean {
+	return FORMATS.some((format) => line.includes(marker(patch, `action:${format}`)));
+}
+
+function diagnostics(options: TableCopyOptions): (message: string) => void {
+	const reported = new Set<string>();
+	return (message) => {
+		if (reported.has(message)) return;
+		reported.add(message);
+		const entry = `[table-copy] Pi ${VERSION}: ${message}`;
+		try {
+			if (options.debug) options.debug(entry);
+			else {
+				const directory = join(getAgentDir(), "logs");
+				mkdirSync(directory, { recursive: true });
+				appendFileSync(
+					join(directory, "pi-cc-extensions-table-copy.log"),
+					`${new Date().toISOString()} ${entry}\n`,
+				);
+			}
+		} catch {
+			// A read-only log directory or custom logger must not break rendering.
+		}
+	};
 }
 
 /** Inline Markdown copies as readable cell text, without ANSI or formatting markers. */
@@ -173,10 +246,19 @@ export function serializeTable(token: TableToken, format: Format): string {
 	return rows.map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
-function actionLines(availableWidth: number): string[] {
-	if (visibleWidth(ACTION_LINE) <= availableWidth) return [ACTION_LINE];
-	if (visibleWidth(COMPACT_ACTION_LINE) <= availableWidth) return [COMPACT_ACTION_LINE];
-	return FORMATS.map(label);
+function actionLines(patch: Patch, availableWidth: number): string[] {
+	const compact = visibleWidth(label("markdown")) > availableWidth;
+	const labels = FORMATS.map((format) => label(format, compact));
+	// Even the compact labels need five columns. Hide actions rather than render
+	// a broken label or an unidentifiable one-character button below that width.
+	if (labels.some((text) => visibleWidth(text) > availableWidth)) return [];
+	const actions = FORMATS.map(
+		(format, index) =>
+			`${marker(patch, `action:${format}`)}${labels[index]}${marker(patch, "end")}`,
+	);
+	if (visibleWidth(actions.join("   ")) <= availableWidth) return [actions.join("   ")];
+	if (visibleWidth(actions.join(" ")) <= availableWidth) return [actions.join(" ")];
+	return actions;
 }
 
 function collectTables(tokens: MarkdownToken[], output: TableToken[] = []): TableToken[] {
@@ -193,17 +275,14 @@ function collectTables(tokens: MarkdownToken[], output: TableToken[] = []): Tabl
 	return output;
 }
 
-function actionLineFormats(line: string): Format[] {
-	// Blockquotes prefix every rendered content line, including our action row.
-	const trimmed = line
-		.trim()
-		.replace(/^(?:│\s*)+/, "")
-		.trim();
-	if (trimmed === ACTION_LINE || trimmed === COMPACT_ACTION_LINE) return [...FORMATS];
-	return FORMATS.filter((format) => trimmed === label(format));
+function parsedTokens(component: MarkdownWithActions): MarkdownToken[] | undefined {
+	const cache = (component as unknown as MarkdownInternals).cachedTokens;
+	const tokens = typeof cache?.deref === "function" ? cache.deref()?.tokens : undefined;
+	return Array.isArray(tokens) ? tokens : undefined;
 }
 
 function paintActions(
+	patch: Patch,
 	lines: string[],
 	hits: ActionHit[],
 	hover: ActionState["hover"],
@@ -217,63 +296,78 @@ function paintActions(
 	}
 	for (const [y, row] of byLine) {
 		const replacements = row
-			.map((hit) => ({ hit, index: lines[y]!.indexOf(label(hit.format)) }))
+			.map((hit) => ({ hit, index: lines[y]!.indexOf(hit.marker) }))
 			.filter(({ index }) => index >= 0)
 			.sort((a, b) => b.index - a.index);
 		for (const { hit, index } of replacements) {
-			const text = label(hit.format);
+			const start = index + hit.marker.length;
+			const end = lines[y]!.indexOf(marker(patch, "end"), start);
+			if (end < 0) continue;
 			const hovered = hover?.y === hit.y && hover.format === hit.format;
-			const styled = paint(hovered ? "text" : "dim", text);
-			lines[y] = `${lines[y]!.slice(0, index)}${styled}${lines[y]!.slice(index + text.length)}`;
+			const styled = paint(hovered ? "text" : "dim", hit.text);
+			lines[y] = `${lines[y]!.slice(0, start)}${styled}${lines[y]!.slice(end)}`;
 		}
 	}
 }
 
 /** Rebuild hit regions after every new render; identical cached lines reuse them. */
-function bindActions(component: MarkdownWithActions, lines: string[], owner: TableCopyOwner): void {
+function bindActions(
+	patch: Patch,
+	component: MarkdownWithActions,
+	lines: string[],
+	owner: TableCopyOwner,
+): void {
 	if (component[ACTIONS_KEY]?.lines === lines && component[ACTIONS_KEY]?.owner === owner) return;
 	const hits: ActionHit[] = [];
-	const groups: Array<Array<Omit<ActionHit, "table">>> = [];
-	for (let y = 0; y < lines.length; y++) {
-		const plain = stripTerminalSequences(lines[y]!);
-		const formats = actionLineFormats(plain);
-		if (formats.length === 0) continue;
-		const group: Array<Omit<ActionHit, "table">> = [];
-		for (const format of formats) {
-			const text = label(format);
-			const index = plain.indexOf(text);
-			if (index < 0) continue;
-			const start = visibleWidth(plain.slice(0, index));
-			group.push({ y, start, end: start + visibleWidth(text), format });
-		}
-		if (group.length === 0) continue;
-		const previous = groups.at(-1);
-		if (previous?.at(-1)?.y === y - 1) previous.push(...group);
-		else groups.push(group);
-	}
-
-	const tokens = (component as unknown as MarkdownInternals).cachedTokens?.deref()?.tokens;
+	const tokens = parsedTokens(component);
 	const tables = tokens ? collectTables(tokens) : [];
-	const previousHover = component[ACTIONS_KEY]?.hover;
-	// A pathological collision with model-written action text must not associate
-	// a button with the wrong table. In that case leave clicks to Pi's selection.
-	if (groups.length === tables.length) {
-		for (let index = 0; index < groups.length; index++) {
-			for (const hit of groups[index]!) hits.push({ ...hit, table: tables[index]! });
+	let tableIndex = -1;
+	for (let y = 0; y < lines.length; y++) {
+		const line = lines[y]!;
+		if (line.includes(marker(patch, "table"))) tableIndex++;
+		const table = tables[tableIndex];
+		if (!table) continue;
+		for (const format of FORMATS) {
+			const actionMarker = marker(patch, `action:${format}`);
+			const index = line.indexOf(actionMarker);
+			if (index < 0) continue;
+			const contentStart = index + actionMarker.length;
+			const contentEnd = line.indexOf(marker(patch, "end"), contentStart);
+			if (contentEnd < 0) continue;
+			const text = stripTerminalSequences(line.slice(contentStart, contentEnd));
+			const start = visibleWidth(line.slice(0, contentStart));
+			hits.push({
+				y,
+				start,
+				end: start + visibleWidth(text),
+				format,
+				marker: actionMarker,
+				text,
+				table,
+			});
 		}
 	}
+	// Only internal markers are anchors. Model-written labels never affect the
+	// count, while hidden narrow actions still have a marked table in the order.
+	if (tableIndex + 1 !== tables.length) {
+		hits.length = 0;
+		owner.debug(
+			"Table actions skipped: Markdown.cachedTokens and internal table markers disagree.",
+		);
+	}
+	const previousHover = component[ACTIONS_KEY]?.hover;
 	const hover = hits.some(
 		(hit) => hit.y === previousHover?.y && hit.format === previousHover?.format,
 	)
 		? previousHover
 		: undefined;
-	paintActions(lines, hits, hover, owner.paint);
+	paintActions(patch, lines, hits, hover, owner.paint);
 	component[ACTIONS_KEY] = { owner, lines, hits, hover };
 }
 
 function currentPatch(target: Prototype): Patch | undefined {
 	const held = target[PATCH] as Partial<Patch> | undefined;
-	return held?.version === 2 ? (held as Patch) : undefined;
+	return held?.version === 3 ? (held as Patch) : undefined;
 }
 
 function eligibleOwner(patch: Patch, component: MarkdownWithActions): TableCopyOwner | undefined {
@@ -319,16 +413,73 @@ const NO_INSTALLATION: TableCopyInstallation = { noteSource() {}, dispose() {} }
  */
 export function installTableCopy(options: TableCopyOptions): TableCopyInstallation {
 	if (!isFullscreenTui(options.tui)) return NO_INSTALLATION;
+	const debug = diagnostics(options);
 	const target = Markdown.prototype as unknown as Prototype;
+	const selectionTarget = TuiAltScreen.prototype as unknown as Prototype;
 	let patch = currentPatch(target);
 	if (!patch?.active) {
+		const required = [
+			[target, "Markdown", "render"],
+			[target, "Markdown", "renderTable"],
+			[target, "Markdown", "clearRenderCache"],
+			[selectionTarget, "TuiAltScreen", "getActiveSelectionText"],
+			[selectionTarget, "TuiAltScreen", "getSelectionColumns"],
+			[selectionTarget, "TuiAltScreen", "getSelectionBounds"],
+			[selectionTarget, "TuiAltScreen", "getSelectionSourceLine"],
+		] as const;
+		const missing = required.filter(
+			([prototype, _name, key]) => typeof prototype[key] !== "function",
+		);
+		if (missing.length > 0) {
+			debug(
+				`Table copy not installed: incompatible private API (${missing.map(([_prototype, name, key]) => `${name}.${key}`).join(", ")}).`,
+			);
+			return NO_INSTALLATION;
+		}
 		const originalRender = target.render as Render;
 		const originalRenderTable = target.renderTable as RenderTable;
-		if (typeof originalRender !== "function" || typeof originalRenderTable !== "function")
-			return NO_INSTALLATION;
 		const created: Patch = {
-			version: 2,
+			version: 3,
 			active: true,
+			markerPrefix: `\x1b_pi:ccstyle-table-copy:${randomUUID()}:`,
+			selectionTarget,
+			originalSelectionText: selectionTarget.getActiveSelectionText as SelectionText,
+			originalSelectionColumns: selectionTarget.getSelectionColumns as SelectionColumns,
+			wrappedSelectionColumns(line, row, selection, minColumn, maxColumn) {
+				const columns = created.originalSelectionColumns.call(
+					this,
+					line,
+					row,
+					selection,
+					minColumn,
+					maxColumn,
+				);
+				return created.active && isActionRow(created, line)
+					? { start: columns.start, end: columns.start }
+					: columns;
+			},
+			wrappedSelectionText() {
+				const text = created.originalSelectionText.call(this);
+				if (!created.active || text === undefined) return text;
+				const selection = this.getSelectionBounds();
+				if (!selection) return text;
+				const lines = text.split("\n");
+				if (lines.length !== selection.end.row - selection.start.row + 1) return text;
+				// Keep Pi's grapheme slicing, scroll coordinates and ordinary blank
+				// lines. Only remove rows inserted by this active patch, never labels.
+				const selectable = lines.filter(
+					(_line, offset) =>
+						!isActionRow(
+							created,
+							this.getSelectionSourceLine({
+								...selection.start,
+								row: selection.start.row + offset,
+							}),
+						),
+				);
+				const selected = selectable.join("\n");
+				return selected.length > 0 ? selected : undefined;
+			},
 			owners: new Set(),
 			components: new Set(),
 			componentRefs: new WeakMap(),
@@ -344,9 +495,15 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 					nextTokenType,
 					styleContext,
 				);
-				if (!eligibleOwner(created, this) || token.header.length === 0) return lines;
+				const owner = eligibleOwner(created, this);
+				if (!owner || token.header.length === 0) return lines;
+				if (!parsedTokens(this)) {
+					owner.debug("Table actions skipped: incompatible private API (Markdown.cachedTokens).");
+					return lines;
+				}
+				if (lines.length > 0) lines[0] = marker(created, "table") + lines[0];
 				const trailingBlank = lines.at(-1) === "" ? lines.pop() : undefined;
-				lines.push(...actionLines(availableWidth));
+				lines.push(...actionLines(created, availableWidth));
 				if (trailingBlank !== undefined) lines.push(trailingBlank);
 				return lines;
 			},
@@ -367,7 +524,7 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 					const owner = eligibleOwner(created, this);
 					if (owner) {
 						trackComponent(created, this);
-						bindActions(this, lines, owner);
+						bindActions(created, this, lines, owner);
 					}
 					return lines;
 				} finally {
@@ -417,6 +574,8 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 		target.renderTable = created.wrappedRenderTable;
 		target.render = created.wrappedRender;
 		target.handleMouse = created.wrappedHandleMouse;
+		selectionTarget.getActiveSelectionText = created.wrappedSelectionText;
+		selectionTarget.getSelectionColumns = created.wrappedSelectionColumns;
 		target[PATCH] = created;
 		patch = created;
 	}
@@ -424,6 +583,7 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 		...options,
 		copy: options.copy ?? copyToClipboard,
 		notify: options.notify ?? (() => {}),
+		debug,
 	};
 	patch.owners.add(owner);
 	invalidateMountedMarkdown(owner.tui);
@@ -470,6 +630,10 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 				if (held.originalHandleMouse) target.handleMouse = held.originalHandleMouse;
 				else delete target.handleMouse;
 			}
+			if (held.selectionTarget.getActiveSelectionText === held.wrappedSelectionText)
+				held.selectionTarget.getActiveSelectionText = held.originalSelectionText;
+			if (held.selectionTarget.getSelectionColumns === held.wrappedSelectionColumns)
+				held.selectionTarget.getSelectionColumns = held.originalSelectionColumns;
 			if (currentPatch(target) === held) delete target[PATCH];
 			held.componentOwners = new WeakMap();
 		},

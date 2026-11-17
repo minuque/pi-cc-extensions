@@ -29,7 +29,6 @@ Run `/reload` after installation.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes                                                   | `/ccstyle`                                      |
 | Markdown enhancements       | Mermaid dialects in non-standard fences (`statediagram`, `classdiagram`…) and circled-number conversion; plain mermaid goes to pi | Automatic; turn off with `enableMarkdownEnhance: false` |
-| Copy Table                  | Copy assistant-body tables as TSV / CSV / Markdown; theme-dimmed actions switch to text color on hover, with native success flashes | Fullscreen main chat only; disable with `enableTableCopy: false` (restart required) |
 | Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button                                         | `--tui-mode fullscreen` (default since pi 1.5) |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                                                                      | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
@@ -37,8 +36,6 @@ Run `/reload` after installation.
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
 | Status bar                  | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache/token Nerd Font icons can be turned off | `/ccstyle`                                      |
 | Theme                       | Bundled themes: CC Dark, CC Light, CC Dark HC, CC Light HC                                                                                   | `/settings` → Theme                             |
-
-Table actions appear only in assistant bodies in the Fullscreen main chat, including restored replies and expanded compact bodies. Thinking, user messages, tool output, `/context` previews, and the transcript browser have no buttons. Regular mode has no buttons; live screen-mode changes are synchronized automatically. Hover adds neither bold nor underline.
 
 Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)
 
@@ -60,7 +57,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
   "enableAliases": true,                   // /clear, /exit aliases
   "enableMarkdownEnhance": true,           // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
-  "enableTableCopy": true,                 // table actions in Fullscreen assistant bodies only; restart required
+  "enableTableCopy": false,                // TSV / CSV / Markdown table copy (Fullscreen assistant bodies); enable in /ccstyle Features, restart required
   "enableEditorPrefix": true,              // editor ❯ prefix
 
   // ui

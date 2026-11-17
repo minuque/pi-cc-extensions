@@ -135,8 +135,9 @@ async function withPatch(
 	}
 }
 
-test("enableTableCopy defaults on and can be disabled", () => {
-	assert.equal(normalizeConfig({}).enableTableCopy, true);
+test("enableTableCopy defaults off and can be enabled explicitly", () => {
+	assert.equal(normalizeConfig({}).enableTableCopy, false);
+	assert.equal(normalizeConfig({ enableTableCopy: true }).enableTableCopy, true);
 	assert.equal(normalizeConfig({ enableTableCopy: false }).enableTableCopy, false);
 });
 
