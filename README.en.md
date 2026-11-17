@@ -93,6 +93,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache/tokens; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
   "footerContextLimit": "window",          // context chip limit: window (default) | compaction point | both (point + window); may briefly exceed 100%
+  "footerCustomStatusColors": false,       // chips from other extensions (setStatus) keep the colors/bold they send; cursor/screen codes are still dropped. Off by default (all dim)
   "footerHiddenKeys": [],                  // hidden chip keys
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout
   "footerLine2Keys": ["cwd", "git"],       // cwd: directory and session; git: branch and changes. Either can move to any line

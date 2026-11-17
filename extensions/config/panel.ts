@@ -122,6 +122,12 @@ function footerSessionTokensDescription(enabled: boolean): string {
 		: "Conversation token total hidden.";
 }
 
+function footerCustomStatusColorsDescription(enabled: boolean): string {
+	return enabled
+		? "Chips from other extensions keep the colors and bold they send via setStatus(). Cursor and screen control codes are still dropped."
+		: "Chips from other extensions render in one dim color; colors from setStatus() are removed.";
+}
+
 function footerContextLimitDescription(mode: FooterContextLimit): string {
 	if (mode === "compaction")
 		return "Context chip measures against Pi's auto-compaction point (window minus compaction.reserveTokens).";
@@ -831,6 +837,13 @@ export async function showCcstylePanel(
 			currentValue: config.footerSessionTokens ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const footerCustomStatusColorsSetting = {
+			id: "footerCustomStatusColors",
+			label: "Custom extension chip colors",
+			description: footerCustomStatusColorsDescription(config.footerCustomStatusColors),
+			currentValue: config.footerCustomStatusColors ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Footer chips",
@@ -943,6 +956,14 @@ export async function showCcstylePanel(
 				updateConfig({ footerSessionTokens: enabled });
 				footerSessionTokensSetting.currentValue = enabled ? "on" : "off";
 				footerSessionTokensSetting.description = footerSessionTokensDescription(enabled);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerCustomStatusColors") {
+				const enabled = value === "on";
+				updateConfig({ footerCustomStatusColors: enabled });
+				footerCustomStatusColorsSetting.currentValue = enabled ? "on" : "off";
+				footerCustomStatusColorsSetting.description = footerCustomStatusColorsDescription(enabled);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1191,6 +1212,7 @@ export async function showCcstylePanel(
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,
 					footerGitStatsSetting,
+					footerCustomStatusColorsSetting,
 					pluginChipsSetting,
 				],
 			},

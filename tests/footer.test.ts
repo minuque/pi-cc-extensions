@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	config,
 	formatConfigStatus,
 	normalizeConfig,
 	setConfig,
 } from "../extensions/config/config.ts";
+import { keepSgrOnly } from "../extensions/utils/ansi-text.ts";
 import {
 	FOOTER_NERD_ICON_CACHE,
 	FOOTER_NERD_ICON_GIT,
@@ -18,6 +20,7 @@ import {
 	formatXaiFooterChip,
 	modelChip,
 	parseGitStats,
+	styleFooterPluginText,
 } from "../extensions/feature/shell/footer.ts";
 import {
 	DEFAULT_FOOTER_CHIP_LAYOUT,
@@ -416,4 +419,48 @@ test("parseGitStats sums numstat add/delete columns", () => {
 		add: 75,
 		del: 9,
 	});
+});
+
+test("footerCustomStatusColors defaults to off and is reported in the config status", () => {
+	assert.equal(normalizeConfig({}).footerCustomStatusColors, false);
+	assert.equal(normalizeConfig({ footerCustomStatusColors: true }).footerCustomStatusColors, true);
+	assert.equal(
+		normalizeConfig({ footerCustomStatusColors: "yes" }).footerCustomStatusColors,
+		false,
+	);
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerCustomStatusColors=off/);
+	assert.match(
+		formatConfigStatus(normalizeConfig({ footerCustomStatusColors: true })),
+		/footerCustomStatusColors=on/,
+	);
+});
+
+test("keepSgrOnly keeps colors/attributes and drops cursor, screen and OSC sequences", () => {
+	const plan = "\x1b[1m\x1b[32m⏸ plan\x1b[39m\x1b[22m";
+	assert.equal(keepSgrOnly(plan), plan);
+	assert.equal(keepSgrOnly("\x1b[38;2;10;20;30mrgb\x1b[0m"), "\x1b[38;2;10;20;30mrgb\x1b[0m");
+	assert.equal(keepSgrOnly("\x1b[38:2::10:20:30mrgb\x1b[0m"), "\x1b[38:2::10:20:30mrgb\x1b[0m");
+	assert.equal(keepSgrOnly("a\x1b[2Jb\x1b[3;4Hc\x1b]8;;https://x\x07d"), "abcd");
+	assert.equal(keepSgrOnly("a\x1b[?25lb"), "ab");
+	assert.equal(keepSgrOnly("\x1b[2J\x1b[H"), "");
+});
+
+test("styleFooterPluginText is dim by default and keeps SGR only when asked to", () => {
+	const theme = { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
+	const auto = "\x1b[33mauto\x1b[39m";
+	// Default: colors removed, one dim color for every plugin chip.
+	assert.equal(styleFooterPluginText(theme, auto), "<dim>auto</dim>");
+	assert.equal(styleFooterPluginText(theme, auto, false), "<dim>auto</dim>");
+	// Enabled: styled text renders as sent, closed with a reset; plain text stays dim.
+	assert.equal(styleFooterPluginText(theme, auto, true), `${auto}\x1b[0m`);
+	assert.equal(styleFooterPluginText(theme, "MCP 1/2", true), "<dim>MCP 1/2</dim>");
+});
+
+test("a colored custom chip is truncated by visible width and does not leak its color", () => {
+	const theme = { fg: (_color: string, text: string) => text };
+	const chip = styleFooterPluginText(theme, "\x1b[32mabcdefghij\x1b[39m", true);
+	const cut = truncateToWidth(chip, 5);
+	assert.equal(visibleWidth(cut), 5);
+	// The chip's own reset (appended by styleFooterPluginText) must survive the cut.
+	assert.ok(cut.includes("\x1b[0m"), "truncated chip is closed");
 });

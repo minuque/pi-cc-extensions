@@ -20,7 +20,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { config, type FooterContextLimit } from "../../config/config.ts";
-import { stripAnsi } from "../../utils/ansi-text.ts";
+import { keepSgrOnly, stripAnsi } from "../../utils/ansi-text.ts";
 import { formatFooterCost } from "./footer-currency.ts";
 import { formatTokenCount } from "../../utils/format.ts";
 import {
@@ -276,7 +276,7 @@ export function getFooterStatusSnapshot(): Map<string, string> {
 	const out = new Map<string, string>();
 	for (const [key, text] of cachedExtensionStatuses) {
 		if (isSkippedFooterStatusKey(key) || isBuiltinFooterKey(key)) continue;
-		out.set(key, text);
+		out.set(key, stripAnsi(text));
 	}
 	out.set(PI_USAGE_KEY, cachedLocalUsageText);
 	const mcpChip = ownMcpChip();
@@ -288,8 +288,9 @@ function rememberExtensionStatuses(entries: Iterable<[string, string]>): void {
 	cachedExtensionStatuses.clear();
 	for (const [key, raw] of entries) {
 		if (isSkippedFooterStatusKey(key)) continue;
-		const text = stripAnsi(raw.replace(/[\r\n\t]+/g, " ").trim());
-		if (text) cachedExtensionStatuses.set(key, text);
+		// Keep SGR here; styleFooterPluginText decides at render time (footerCustomStatusColors).
+		const text = keepSgrOnly(raw.replace(/[\r\n\t]+/g, " ").trim());
+		if (stripAnsi(text).trim()) cachedExtensionStatuses.set(key, text);
 	}
 }
 
@@ -335,8 +336,14 @@ async function getPiUsage(): Promise<any | null> {
 	return piUsageMod;
 }
 
-function colorUsageChip(theme: any, text: string): string {
-	return theme.fg("dim", stripAnsi(text));
+/**
+ * Render a plugin chip. Default: plain dim text. With keepColors, a chip that carries SGR
+ * renders as sent (closed with a reset); plain text stays dim.
+ */
+export function styleFooterPluginText(theme: any, text: string, keepColors = false): string {
+	const plain = stripAnsi(text);
+	if (!keepColors || plain === text) return theme.fg("dim", plain);
+	return `${text}\x1b[0m`;
 }
 
 let currentTui: any = undefined;
@@ -591,7 +598,8 @@ const createCustomFooterFactory =
 			const mcpChip = ownMcpChip();
 			if (mcpChip) pluginTexts.set(MCP_STATUS_KEY, mcpChip);
 			const layout = resolveFooterChipLayout(layoutFromConfig(), [...pluginTexts.keys()]);
-			const dimPlugin = (text: string) => colorUsageChip(theme, text);
+			const dimPlugin = (text: string) =>
+				styleFooterPluginText(theme, text, config.footerCustomStatusColors);
 
 			const pctLabel = percent === null || percent === undefined ? "?" : `${Math.floor(percent)}%`;
 			const glyphs = footerGlyphs(config.footerNerdIcons);

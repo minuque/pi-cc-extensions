@@ -19,6 +19,19 @@ export function stripAnsi(line: string): string {
 	return line.replace(CSI_SEQUENCE_RE, "");
 }
 
+/** A complete SGR sequence (colors and attributes only, no cursor/screen control). */
+const SGR_SEQUENCE_RE = /^\x1b\[[0-9;:]*m$/;
+
+/**
+ * Keep SGR (color/bold/…) sequences and drop every other CSI and OSC sequence.
+ * For text from third parties (e.g. status chips): it may be colored, but must not move the cursor.
+ */
+export function keepSgrOnly(text: string): string {
+	return text
+		.replace(OSC_SEQUENCE_RE, "")
+		.replace(CSI_SEQUENCE_RE, (seq) => (SGR_SEQUENCE_RE.test(seq) ? seq : ""));
+}
+
 /** 仅剥离终端序列、保留原布局（换行/空白不动），用于命中区间计算。 */
 export function stripTerminalSequencesPreservingLayout(value: string): string {
 	return value

@@ -99,6 +99,8 @@ export type Config = {
 	footerGitStatsMode: FooterGitStatsMode;
 	/** Denominator of the context chip; compaction = contextWindow − compaction.reserveTokens. */
 	footerContextLimit: FooterContextLimit;
+	/** Chips other extensions publish via setStatus() keep their own SGR colors instead of rendering dim. Default off. */
+	footerCustomStatusColors: boolean;
 	footerHiddenKeys: string[];
 	footerLine1Keys: string[];
 	footerLine2Keys: string[];
@@ -184,6 +186,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerNerdIcons: true,
 	footerGitStatsMode: "working",
 	footerContextLimit: "window",
+	footerCustomStatusColors: false,
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
 
@@ -340,6 +343,7 @@ export function normalizeConfig(input: unknown): Config {
 			FOOTER_CONTEXT_LIMITS,
 			DEFAULT_CONFIG.footerContextLimit,
 		),
+		footerCustomStatusColors: source.footerCustomStatusColors === true,
 		...normalizeFooterChipLayout(source),
 	};
 }
@@ -445,6 +449,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		`footerGitStats=${source.footerGitStatsMode}`,
 		`footerContextLimit=${source.footerContextLimit}`,
+		`footerCustomStatusColors=${source.footerCustomStatusColors ? "on" : "off"}`,
 		formatFooterChipSummary(source),
 	].join(" · ");
 }

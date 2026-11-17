@@ -93,6 +93,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerContextLimit": "window",          // 上下文芯片分母：window（默认）｜compaction 自动压缩点｜both 压缩点+窗口；越过压缩点才压缩，可短暂超过 100%
+  "footerCustomStatusColors": false,       // 其它扩展（setStatus）发来的芯片保留自带颜色/加粗；光标、清屏等控制码仍会剥掉。默认关（统一暗色）
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
   "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
