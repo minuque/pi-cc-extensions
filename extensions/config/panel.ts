@@ -708,7 +708,7 @@ export async function showCcstylePanel(
 		const tableCopyToggle = featureToggleSetting(
 			"enableTableCopy",
 			"Copy table",
-			"Show TSV / CSV / Markdown copy actions below tables. Next restart applies.",
+			"Copy assistant-body tables as TSV / CSV / Markdown in Fullscreen main chat. Next restart applies.",
 			"Table copy actions off; another extension can own table interactions.",
 			config.enableTableCopy,
 		);
