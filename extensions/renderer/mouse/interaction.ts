@@ -1,6 +1,7 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
+import { clearTableCopyHover } from "../table-copy.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_PARENT_KEY,
@@ -221,6 +222,7 @@ function clearPendingCollapsePressOnMove(packet: SgrMousePacket): void {
 }
 
 function clearHoverState(): void {
+	clearTableCopyHover();
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);
@@ -560,6 +562,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	const x = packet.col - 1;
 	const y = packet.row - 1;
 	let target: FullscreenHoverTarget | null = null;
+	let leaf: unknown;
 	const hit = fullscreenLeafAt(layout, x, y);
 	if (hit) {
 		const line = hit.box.lines?.[hit.localRow];
@@ -581,6 +584,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 				contentWidth,
 			);
 			const component = componentHit?.component;
+			leaf = component;
 			const hintBox = collapsedHintHitbox(line);
 			const overHint = Boolean(
 				hintBox && packet.col >= hintBox.startCol && packet.col <= hintBox.endCol,
@@ -619,7 +623,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			}
 		}
 	}
-	applyFullscreenHover(tui, target);
+	applyFullscreenHover(tui, target, leaf);
 }
 
 /** 布局缺失，或焦点 overlay 还不在上一帧列表里：这份矩形不能拿来判点击。 */
@@ -680,6 +684,8 @@ function patchFullscreenViewportInput(tui: any): void {
 	if (typeof original !== "function") return;
 	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
 	tui.handleViewportInput = function (this: any, data: string) {
+		// 失焦时官方清掉选区与按下目标，表格按钮的高亮也要一起熄灭。
+		if (data === FULLSCREEN_FOCUS_OUT) clearTableCopyHover();
 		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
 			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
 			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。

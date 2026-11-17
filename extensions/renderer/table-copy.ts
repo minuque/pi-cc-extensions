@@ -19,6 +19,7 @@ import {
 import {
 	Markdown,
 	TuiAltScreen,
+	sliceByColumn,
 	stripTerminalSequences,
 	visibleWidth,
 	type TUI,
@@ -102,11 +103,28 @@ interface ActionHit {
 	table: TableToken;
 }
 
+/** The button captured on press; a reflow must not retarget the release. */
+interface ActionPress {
+	y: number;
+	start: number;
+	end: number;
+	format: Format;
+	/** Source identity, not token identity: streaming re-lexes the same table. */
+	raw: string;
+}
+
 interface ActionState {
 	owner: TableCopyOwner;
 	lines: string[];
 	hits: ActionHit[];
 	hover?: { y: number; format: Format };
+	pointer?: { x: number; y: number };
+	pressed?: ActionPress;
+}
+
+interface ColumnRange {
+	start: number;
+	end: number;
 }
 
 interface MarkdownWithActions extends Markdown {
@@ -165,6 +183,9 @@ interface Patch {
 	components: Set<WeakRef<MarkdownWithActions>>;
 	componentRefs: WeakMap<MarkdownWithActions, WeakRef<MarkdownWithActions>>;
 	componentOwners: WeakMap<MarkdownWithActions, TableCopyOwner>;
+	hovered?: WeakRef<MarkdownWithActions>;
+	/** Last leaf verified to enclose the lit action, so dense motion skips the walk. */
+	hoverLeaf?: WeakRef<object>;
 	rendering?: { component: MarkdownWithActions; transcript: boolean };
 	originalRender: Render;
 	originalRenderTable: RenderTable;
@@ -261,6 +282,62 @@ function actionLines(patch: Patch, availableWidth: number): string[] {
 	return actions;
 }
 
+/** Label spans in visible columns; markers survive Pi's compositing, so this also
+ * works on a screen row shared with unrelated columns. */
+function actionSpans(patch: Patch, line: string): ColumnRange[] {
+	const spans: ColumnRange[] = [];
+	for (const format of FORMATS) {
+		const actionMarker = marker(patch, `action:${format}`);
+		for (let index = line.indexOf(actionMarker); index >= 0; ) {
+			const contentStart = index + actionMarker.length;
+			const contentEnd = line.indexOf(marker(patch, "end"), contentStart);
+			// Compositing can clip the trailing marker off a shared row; the label's
+			// own bracket still bounds it, so the visible text never becomes selectable.
+			const labelEnd = contentEnd >= 0 ? contentEnd : line.indexOf("]", contentStart) + 1;
+			if (labelEnd <= contentStart) break;
+			const start = visibleWidth(line.slice(0, contentStart));
+			const width = visibleWidth(stripTerminalSequences(line.slice(contentStart, labelEnd)));
+			spans.push({ start, end: start + width });
+			index = line.indexOf(actionMarker, labelEnd);
+		}
+	}
+	return spans.sort((a, b) => a.start - b.start);
+}
+
+function subtractSpans(range: ColumnRange, spans: ColumnRange[]): ColumnRange[] {
+	let pieces: ColumnRange[] = range.end > range.start ? [range] : [];
+	for (const span of spans) {
+		const next: ColumnRange[] = [];
+		for (const piece of pieces) {
+			if (span.end <= piece.start || span.start >= piece.end) {
+				next.push(piece);
+				continue;
+			}
+			if (piece.start < span.start) next.push({ start: piece.start, end: span.start });
+			if (span.end < piece.end) next.push({ start: span.end, end: piece.end });
+		}
+		pieces = next;
+	}
+	return pieces;
+}
+
+/** Padding and quote borders left from a generated row carry no text worth copying. */
+function isRowDecoration(text: string): boolean {
+	return /^[\s│┃║]*$/.test(text);
+}
+
+function selectableRow(
+	line: string,
+	range: ColumnRange,
+	spans: ColumnRange[],
+): { pieces: Array<ColumnRange & { text: string }>; hasText: boolean } {
+	const pieces = subtractSpans(range, spans).map((piece) => ({
+		...piece,
+		text: stripTerminalSequences(sliceByColumn(line, piece.start, piece.end - piece.start, true)),
+	}));
+	return { pieces, hasText: pieces.some((piece) => !isRowDecoration(piece.text)) };
+}
+
 function collectTables(tokens: MarkdownToken[], output: TableToken[] = []): TableToken[] {
 	for (const token of tokens) {
 		if (token.type === "table") {
@@ -318,6 +395,16 @@ function bindActions(
 	owner: TableCopyOwner,
 ): void {
 	if (component[ACTIONS_KEY]?.lines === lines && component[ACTIONS_KEY]?.owner === owner) return;
+	if (lines.length === 0) {
+		// Pi keeps cachedTokens when a body becomes empty: nothing to bind, and no
+		// token/marker disagreement to report.
+		if (patch.hovered?.deref() === component) {
+			patch.hovered = undefined;
+			patch.hoverLeaf = undefined;
+		}
+		component[ACTIONS_KEY] = { owner, lines, hits: [] };
+		return;
+	}
 	const hits: ActionHit[] = [];
 	const tokens = parsedTokens(component);
 	const tables = tokens ? collectTables(tokens) : [];
@@ -355,14 +442,42 @@ function bindActions(
 			"Table actions skipped: Markdown.cachedTokens and internal table markers disagree.",
 		);
 	}
-	const previousHover = component[ACTIONS_KEY]?.hover;
-	const hover = hits.some(
-		(hit) => hit.y === previousHover?.y && hit.format === previousHover?.format,
-	)
-		? previousHover
-		: undefined;
+	const previous = component[ACTIONS_KEY];
+	const pointer = previous?.pointer;
+	const previousHover = previous?.hover;
+	// A resize or reflow can move the labels away from a stationary pointer, so
+	// re-check the remembered position instead of trusting row and format alone.
+	const hover =
+		previousHover &&
+		pointer &&
+		hits.some(
+			(hit) =>
+				hit.y === previousHover.y &&
+				hit.format === previousHover.format &&
+				hit.y === pointer.y &&
+				pointer.x >= hit.start &&
+				pointer.x < hit.end,
+		)
+			? previousHover
+			: undefined;
+	if (!hover && patch.hovered?.deref() === component) {
+		patch.hovered = undefined;
+		patch.hoverLeaf = undefined;
+	}
 	paintActions(patch, lines, hits, hover, owner.paint);
-	component[ACTIONS_KEY] = { owner, lines, hits, hover };
+	component[ACTIONS_KEY] = { owner, lines, hits, hover, pointer, pressed: previous?.pressed };
+}
+
+/** Only one table action stays lit across every assistant body in the frame. */
+function setHoveredComponent(patch: Patch, component: MarkdownWithActions | undefined): void {
+	const previous = patch.hovered?.deref();
+	if (previous === component) return;
+	patch.hovered = component ? new WeakRef(component) : undefined;
+	patch.hoverLeaf = undefined;
+	const state = previous?.[ACTIONS_KEY];
+	if (!previous || !state?.hover) return;
+	state.hover = undefined;
+	clearLineCache(previous);
 }
 
 function currentPatch(target: Prototype): Patch | undefined {
@@ -454,9 +569,15 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 					minColumn,
 					maxColumn,
 				);
-				return created.active && isActionRow(created, line)
-					? { start: columns.start, end: columns.start }
-					: columns;
+				if (!created.active || columns.end <= columns.start || !isActionRow(created, line))
+					return columns;
+				// Exclude only our label spans: a neighbouring column sharing this screen
+				// row keeps its own text and highlight.
+				const parts = selectableRow(line, columns, actionSpans(created, line));
+				const first = parts.hasText
+					? parts.pieces.find((piece) => !isRowDecoration(piece.text))
+					: undefined;
+				return first ?? { start: columns.start, end: columns.start };
 			},
 			wrappedSelectionText() {
 				const text = created.originalSelectionText.call(this);
@@ -465,18 +586,31 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 				if (!selection) return text;
 				const lines = text.split("\n");
 				if (lines.length !== selection.end.row - selection.start.row + 1) return text;
-				// Keep Pi's grapheme slicing, scroll coordinates and ordinary blank
-				// lines. Only remove rows inserted by this active patch, never labels.
-				const selectable = lines.filter(
-					(_line, offset) =>
-						!isActionRow(
-							created,
-							this.getSelectionSourceLine({
-								...selection.start,
-								row: selection.start.row + offset,
-							}),
-						),
-				);
+				// Keep Pi's grapheme slicing, scroll coordinates and ordinary blank lines.
+				// Drop only the generated label spans, never a whole shared screen row.
+				const selectable: string[] = [];
+				for (let offset = 0; offset < lines.length; offset++) {
+					const row = selection.start.row + offset;
+					const source = this.getSelectionSourceLine({ ...selection.start, row });
+					if (!isActionRow(created, source)) {
+						selectable.push(lines[offset]!);
+						continue;
+					}
+					const columns = created.originalSelectionColumns.call(this, source, row, selection);
+					const parts = selectableRow(source, columns, actionSpans(created, source));
+					if (!parts.hasText) continue;
+					// Pi only trims the tail. Keep the removed spans as blank columns so a
+					// multi-row copy stays aligned with the rows above and below it.
+					let value = "";
+					let cursor = columns.start;
+					for (const piece of parts.pieces) {
+						if (piece.start > cursor) value += " ".repeat(piece.start - cursor);
+						value += piece.text;
+						cursor = piece.end;
+					}
+					value = value.trimEnd();
+					if (value.length > 0) selectable.push(value);
+				}
 				const selected = selectable.join("\n");
 				return selected.length > 0 ? selected : undefined;
 			},
@@ -488,7 +622,7 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 			originalRenderTable,
 			originalHandleMouse: target.handleMouse as HandleMouse | undefined,
 			wrappedRenderTable(token, availableWidth, nextTokenType, styleContext) {
-				const lines = created.originalRenderTable.call(
+				const rendered = created.originalRenderTable.call(
 					this,
 					token,
 					availableWidth,
@@ -496,11 +630,13 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 					styleContext,
 				);
 				const owner = eligibleOwner(created, this);
-				if (!owner || token.header.length === 0) return lines;
+				if (!owner || token.header.length === 0 || !Array.isArray(rendered)) return rendered;
 				if (!parsedTokens(this)) {
 					owner.debug("Table actions skipped: incompatible private API (Markdown.cachedTokens).");
-					return lines;
+					return rendered;
 				}
+				// Another renderer may cache or freeze its rows: copy before adding marks.
+				const lines = rendered.slice();
 				if (lines.length > 0) lines[0] = marker(created, "table") + lines[0];
 				const trailingBlank = lines.at(-1) === "" ? lines.pop() : undefined;
 				lines.push(...actionLines(created, availableWidth));
@@ -539,16 +675,41 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 					(action) => action.y === event.y && event.x >= action.start && event.x < action.end,
 				);
 				if (event.type === "move") {
+					state.pointer = { x: event.x, y: event.y };
 					const hover = hit ? { y: hit.y, format: hit.format } : undefined;
 					if (state.hover?.y !== hover?.y || state.hover?.format !== hover?.format) {
 						state.hover = hover;
 						clearLineCache(this);
+						setHoveredComponent(created, hover ? this : undefined);
 						return { handled: true, render: true };
 					}
+					if (hover) setHoveredComponent(created, this);
 				}
 				// Fullscreen release synthesizes click only after capturing this press.
-				if (event.type === "press" && event.button === "left" && hit) return { handled: true };
+				if (event.type === "press" && event.button === "left" && hit) {
+					state.pressed = {
+						y: hit.y,
+						start: hit.start,
+						end: hit.end,
+						format: hit.format,
+						raw: hit.table.raw,
+					};
+					return { handled: true };
+				}
 				if (event.type === "click" && event.button === "left" && hit) {
+					const pressed = state.pressed;
+					state.pressed = undefined;
+					// A resize between press and release can put another button under the
+					// pointer: cancel instead of copying a format the user never pressed.
+					if (
+						pressed &&
+						(pressed.format !== hit.format ||
+							pressed.raw !== hit.table.raw ||
+							pressed.y !== hit.y ||
+							pressed.start !== hit.start ||
+							pressed.end !== hit.end)
+					)
+						return { handled: true };
 					const text = serializeTable(hit.table, hit.format);
 					const name = hit.format === "markdown" ? "Markdown" : hit.format.toUpperCase();
 					// Capture the clicked component's owner, never the newest session.
@@ -609,6 +770,11 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 		dispose() {
 			if (!held.owners.delete(owner)) return;
 			if (held.owners.size === 0) held.active = false;
+			const hoveredComponent = held.hovered?.deref();
+			if (hoveredComponent && held.componentOwners.get(hoveredComponent) === owner) {
+				held.hovered = undefined;
+				held.hoverLeaf = undefined;
+			}
 			for (const ref of held.components) {
 				const component = ref.deref();
 				if (!component) {
@@ -638,6 +804,47 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 			held.componentOwners = new WeakMap();
 		},
 	};
+}
+
+/** Clear the lit action when the pointer leaves the transcript or focus is lost. */
+export function clearTableCopyHover(): boolean {
+	const patch = currentPatch(Markdown.prototype as unknown as Prototype);
+	if (!patch) return false;
+	const component = patch.hovered?.deref();
+	patch.hovered = undefined;
+	patch.hoverLeaf = undefined;
+	const state = component?.[ACTIONS_KEY];
+	if (!component || !state?.hover) return false;
+	state.hover = undefined;
+	clearLineCache(component);
+	return true;
+}
+
+/**
+ * Shared hover arbitration: the mouse layer knows the leaf under the pointer, so a
+ * lit action survives only while that leaf still owns it. Compact panels and link
+ * rows resolve to an enclosing component instead of the Markdown body, so an
+ * ancestor counts as ownership too — otherwise every motion would clear and
+ * repaint the same button.
+ */
+export function retainTableCopyHover(leafComponent: unknown): boolean {
+	const patch = currentPatch(Markdown.prototype as unknown as Prototype);
+	if (!patch?.active || !patch.hovered) return false;
+	const hovered = patch.hovered.deref();
+	if (!hovered || hovered === leafComponent) return false;
+	if (leafComponent && patch.hoverLeaf?.deref() === leafComponent) return false;
+	let owns = false;
+	walkComponentTree(leafComponent, (value) => {
+		if (value === hovered) {
+			owns = true;
+			return false;
+		}
+		return undefined;
+	});
+	if (!owns) return clearTableCopyHover();
+	if (leafComponent && typeof leafComponent === "object")
+		patch.hoverLeaf = new WeakRef(leafComponent);
+	return false;
 }
 
 interface FlashTui {

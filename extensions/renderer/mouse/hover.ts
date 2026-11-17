@@ -1,4 +1,5 @@
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
+import { retainTableCopyHover } from "../table-copy.ts";
 import { setHoveredCompactAssistant } from "../compact-mode.ts";
 import { patchRegistry, TOOL_HOVER_STATE_KEY } from "../../utils/patch-keys.ts";
 import {
@@ -124,9 +125,17 @@ export type FullscreenHoverTarget =
 			section: ToolIoSection | null;
 	  };
 
-/** 悬停状态变化才触发渲染（motion 事件密集，状态不变跳过）。 */
-export function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | null): void {
-	let changed = false;
+/**
+ * 悬停状态变化才触发渲染（motion 事件密集，状态不变跳过）。
+ * leafComponent 是指针下的最内层组件：表格复制按钮的高亮只在同一 leaf 上保留，
+ * 指针移到别的回复、输入框或空白处时立刻熄灭。
+ */
+export function applyFullscreenHover(
+	tui: any,
+	target: FullscreenHoverTarget | null,
+	leafComponent?: unknown,
+): void {
+	let changed = retainTableCopyHover(leafComponent);
 	const nextCallId =
 		target?.kind === "tool" && !target.component.expanded
 			? (target.component.toolCallId ?? null)
