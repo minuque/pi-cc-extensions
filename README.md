@@ -57,6 +57,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
   "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
+  "enableTableCopy": false,                // TSV / CSV / Markdown 整表复制（Fullscreen 助手正文）；/ccstyle Features 开启，重启生效
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui

@@ -1,4 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	MarkdownMessageType,
+	MarkdownTransformContext,
+} from "@earendil-works/pi-coding-agent";
 import { diagramKind, render as renderMermaid, sourceBox } from "grok-mermaid";
 
 // ============================================================================
@@ -140,27 +144,32 @@ function normalizeMultilineLinks(markdown: string): string {
 // 注册
 // ============================================================================
 
+export const MARKDOWN_ENHANCE_MESSAGE_TYPES: readonly MarkdownMessageType[] = [
+	"user",
+	"assistant",
+	"assistant-thinking",
+	"custom",
+	"summary",
+];
+
+/** Pure conversion so the package entry point can share Pi's single transformer slot. */
+export function transformMarkdown(
+	markdown: string,
+	context?: Partial<MarkdownTransformContext>,
+): string {
+	const { messageType, isStreaming = false } = context ?? {};
+	// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
+	if (messageType === "assistant-thinking") return markdown;
+	markdown = normalizeMultilineLinks(markdown);
+	if (isStreaming) return markdown;
+	markdown = deCircled(markdown);
+	return renderDiagrams(markdown, context);
+}
+
 export default function (pi: ExtensionAPI): void {
-	// 注意：pi 每个扩展只有一个 markdownTransformer 槽位，多次注册会互相覆盖，
-	// 所以剩下的转换合并为一次注册，内部按序链式执行。
-	// 提示框和裸 URL 不接管：pi 的 marked 已自带裸 URL 链接化（带尾标点回退，
-	// 且在链接文本内不再嵌套），提示框交给默认引用块风格。
-	// messageTypes：除默认的 user/assistant/thinking，再跟上自定义消息与展开的 summary，
-	// 免得圈数字、方言图在那两处变回原样。
-	pi.registerMarkdownTransformer(
-		(markdown, context) => {
-			const { messageType, isStreaming = false } = context ?? {};
-			// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
-			if (messageType === "assistant-thinking") return markdown;
-			markdown = normalizeMultilineLinks(markdown);
-			if (isStreaming) return markdown;
-			// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
-			markdown = deCircled(markdown);
-			// 1. Mermaid 方言渲染
-			return renderDiagrams(markdown, context);
-		},
-		{ messageTypes: ["user", "assistant", "assistant-thinking", "custom", "summary"] },
-	);
+	pi.registerMarkdownTransformer(transformMarkdown, {
+		messageTypes: MARKDOWN_ENHANCE_MESSAGE_TYPES,
+	});
 }
 
 // grok-mermaid 渲染结果缓存：resize/restored 重绘会重复转换，按源码缓存 art。

@@ -13,6 +13,17 @@ export function isLazyProxyTui(tui: any): boolean {
 	return typeof probe === "function" && probe !== tui.requestRender;
 }
 
+/** The actual screen mode, independent of whether the host exposes a lazy Proxy. */
+export function isFullscreenTui(tui: unknown): boolean {
+	if (tui === null || typeof tui !== "object") return false;
+	try {
+		return (tui as { mode?: unknown }).mode === "fullscreen";
+	} catch {
+		// A renderer-switching or disposed host reference is not an active screen.
+		return false;
+	}
+}
+
 type MainScreenDoRenderPatch = {
 	active: boolean;
 	original: (lines: string[]) => string[];

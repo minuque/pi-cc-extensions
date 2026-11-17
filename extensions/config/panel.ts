@@ -705,6 +705,13 @@ export async function showCcstylePanel(
 			"Markdown enhancements off; another extension can own the markdown pass.",
 			config.enableMarkdownEnhance,
 		);
+		const tableCopyToggle = featureToggleSetting(
+			"enableTableCopy",
+			"Copy table",
+			"Copy assistant-body tables as TSV / CSV / Markdown in Fullscreen main chat. Next restart applies.",
+			"Table copy actions off; another extension can own table interactions.",
+			config.enableTableCopy,
+		);
 		const footerCurrencySetting = {
 			id: "footerCurrency",
 			label: "Cost currency",
@@ -862,6 +869,7 @@ export async function showCcstylePanel(
 			enableWorkingMessage: workingMessageToggle,
 			enableAliases: aliasesToggle,
 			enableMarkdownEnhance: markdownEnhanceToggle,
+			enableTableCopy: tableCopyToggle,
 		};
 
 		const onSettingChange = (id: string, value: string) => {
@@ -1139,6 +1147,7 @@ export async function showCcstylePanel(
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
 					markdownEnhanceToggle.setting,
+					tableCopyToggle.setting,
 				],
 			},
 			{

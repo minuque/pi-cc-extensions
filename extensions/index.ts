@@ -18,7 +18,27 @@ import { installCompactThinking } from "./feature/compact-thinking.ts";
 
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
-import markdownEnhance from "./renderer/markdown-enhance.ts";
+import { MARKDOWN_ENHANCE_MESSAGE_TYPES, transformMarkdown } from "./renderer/markdown-enhance.ts";
+import tableCopy from "./renderer/table-copy.ts";
+
+/** One registration per extension: table provenance must not replace enhancement. */
+export function configureMarkdownRendering(
+	pi: ExtensionAPI,
+	{
+		enableMarkdownEnhance,
+		enableTableCopy,
+	}: { enableMarkdownEnhance: boolean; enableTableCopy: boolean },
+): void {
+	const copy = enableTableCopy ? tableCopy(pi) : undefined;
+	if (!enableMarkdownEnhance && !copy) return;
+	pi.registerMarkdownTransformer(
+		(markdown, context) => {
+			copy?.noteSource(context);
+			return enableMarkdownEnhance ? transformMarkdown(markdown, context) : markdown;
+		},
+		{ messageTypes: enableMarkdownEnhance ? MARKDOWN_ENHANCE_MESSAGE_TYPES : ["assistant"] },
+	);
+}
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
@@ -35,8 +55,8 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	// render stack：thinking controller 直接交给 style 作 query
-	// markdownEnhance 单独开关：其他扩展也注册 transformer 时会互相改写输出。
-	if (config.enableMarkdownEnhance) markdownEnhance(pi);
+	// 两个功能独立开关，但共享同一个 transformer 注册槽位。
+	configureMarkdownRendering(pi, config);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
 
 	// features

@@ -57,6 +57,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
   "enableAliases": true,                   // /clear, /exit aliases
   "enableMarkdownEnhance": true,           // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
+  "enableTableCopy": false,                // TSV / CSV / Markdown table copy (Fullscreen assistant bodies); enable in /ccstyle Features, restart required
   "enableEditorPrefix": true,              // editor ❯ prefix
 
   // ui
