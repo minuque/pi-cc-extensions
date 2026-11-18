@@ -524,6 +524,8 @@ function previewValue(value: unknown): string {
 export function collectContextBreakdown(
 	ctx: ExtensionCommandContext,
 	allTools: ToolInfo[],
+	/** Per-tool gate for the "Tools definition" part; return false to leave a tool out. */
+	countTool?: (tool: ToolInfo) => boolean,
 ): ContextBreakdown {
 	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
 	const selectedTools = new Set(options.selectedTools ?? ["read", "bash", "edit", "write"]);
@@ -547,6 +549,7 @@ export function collectContextBreakdown(
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
+		if (countTool && !countTool(tool)) continue;
 		const definition = {
 			name: tool.name,
 			description: tool.description,
@@ -658,8 +661,18 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const usage = ctx.getContextUsage();
 			const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+			// Codemode "only" mode hides active 'direct' tools from the request: only
+			// non-direct declared tools (codemode itself, model-only tools, tools loaded
+			// by tool_search) actually reach the model. Counting the whole active registry
+			// would overstate the real tool tokens. getSettings() is an action method, so
+			// it must run inside the handler, not during extension loading.
+			const codemodeOnly = pi.getSettings().codemode?.mode === "only";
 			const tools = pi.getAllTools();
-			const breakdown = collectContextBreakdown(ctx, tools);
+			const breakdown = collectContextBreakdown(
+				ctx,
+				tools,
+				codemodeOnly ? (tool) => tool.exposure !== "direct" : undefined,
+			);
 			const estimated = breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
 			// System / Memory / Skills / Tools definition 为固定项，capParts 时保持原值不压缩。
 			const fixedTokens = breakdown.parts.slice(0, 4).reduce((sum, part) => sum + part.tokens, 0);

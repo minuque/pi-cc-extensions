@@ -496,6 +496,7 @@ function contextDialogHarness(options: { mode?: string } = {}) {
 			handler = def.handler;
 		},
 		getAllTools: () => tools,
+		getSettings: () => ({}),
 	} as any);
 	return {
 		overlays,
@@ -803,4 +804,48 @@ test("showTextPreview falls back to notify when the TUI has no flash and reports
 	} finally {
 		setPreviewCopyImpl(null);
 	}
+});
+
+// codemode only 模式下，隐藏的 direct 工具不会进请求；/context 的 Tools definition
+// 只应统计真正发给模型的工具，否则会把 12 个隐藏工具的 schema 全算进去。
+test("context breakdown counts only wire-declared tools when codemode only mode hides direct ones", () => {
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			selectedTools: ["codemode", "ask_user_question", "read"],
+		}),
+		getSystemPrompt: () => "",
+		sessionManager: { buildSessionProjection: () => ({ entries: [] }) },
+	} as any;
+	const tools = [
+		{
+			name: "codemode",
+			description: "Run JavaScript",
+			parameters: { type: "object" },
+			exposure: "model-only",
+		},
+		{
+			name: "ask_user_question",
+			description: "Ask",
+			parameters: { type: "object" },
+			exposure: "model-only",
+		},
+		{
+			name: "read",
+			description: "Read a file",
+			parameters: { type: "object" },
+			exposure: "direct",
+		},
+	] as any;
+
+	const toolsTokens = (breakdown: ReturnType<typeof collectContextBreakdown>) =>
+		breakdown.parts.find((part) => part.label === "Tools definition")?.tokens ?? 0;
+
+	const unfiltered = collectContextBreakdown(ctx, tools);
+	const wire = collectContextBreakdown(ctx, tools, (tool) => tool.exposure !== "direct");
+
+	assert.ok(toolsTokens(wire) < toolsTokens(unfiltered), "hidden direct tools are left out");
+	assert.match(wire.previews.tools, /Definition: codemode/);
+	assert.match(wire.previews.tools, /Definition: ask_user_question/);
+	assert.doesNotMatch(wire.previews.tools, /Definition: read/);
+	assert.match(unfiltered.previews.tools, /Definition: read/);
 });
