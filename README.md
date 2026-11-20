@@ -4,7 +4,7 @@
 
 # pi-cc-extensions
 
-> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能（无额外内置工具）。
+> 类 Claude Code 的 TUI 输出风格，加入个人喜好与若干实用小功能（无额外内置工具）。
 
 ## 界面预览
 
@@ -25,17 +25,17 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 功能
 
-| 功能                  | 说明                                                                            | 入口                                            |
-| --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
-| Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
-| 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
-| 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
-| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开；对话区有可展开的 `!` 输出时把键让给 pi | `Ctrl+O`                                        |
-| Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
-| 状态栏                | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存/token 图标可关 Nerd Font | `/ccstyle`                              |
-| 主题                  | 随包提供 4 个主题：CC Dark、CC Light、CC Dark HC、CC Light HC                   | `/settings` → Theme                             |
+| 功能                  | 说明                                                                                                    | 入口                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff；`on` / `compact` / `off` 三种模式                             | `/ccstyle`                                    |
+| Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭 |
+| Fullscreen mode       | 工具卡/group 单击展开收起、预览、hover 高亮、回到底部按钮                                               | `--tui-mode fullscreen`（pi 1.5 起默认）      |
+| 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                                               | `/ccstyle`                                    |
+| 上下文检查            | 查看上下文占用，预览 System prompt、Memory、Skills、Tools definition 与消息内容                         | `/context`                                    |
+| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开；`!` 输出可展开时把键让给 pi                                       | `Ctrl+O`                                      |
+| Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                     | `@`                                           |
+| 状态栏                | 模型、上下文、缓存、费用、累计 token、git，并适配 `@narumitw/pi-usage` 实时额度；图标可切 Nerd Font     | `/ccstyle` → Footer                           |
+| 主题                  | 随包提供 4 个主题：CC Dark、CC Light、CC Dark HC、CC Light HC                                           | `/settings` → Theme                           |
 
 `on` / `compact` 两种模式的渲染样例：[默认模式](./docs/tool-render-examples-default.md) · [紧凑模式](./docs/tool-render-examples-compact.md)
 
@@ -47,7 +47,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 {
   // style
   "mode": "on",                            // on / compact / off
-  "excludeRenderers": [],                  // 走原生渲染的工具名，匹配忽略大小写；Agent 始终保留专用渲染器
+  "excludeRenderers": [],                  // 走原生渲染的工具名，忽略大小写；Agent 始终用专用渲染器
 
   // features
   "enableSessionReference": true,          // @ session 引用
@@ -57,16 +57,16 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
   "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
-  "enableTableCopy": false,                // TSV / CSV / Markdown 整表复制（Fullscreen 助手正文）；/ccstyle Features 开启，重启生效
+  "enableTableCopy": false,                // TSV / CSV / Markdown 整表复制；在 /ccstyle 开启，重启生效
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui
-  "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
-  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
-  "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
+  "expandedInputMaxLines": 5,              // 展开工具卡 Input 的行数上限，超出末行提示
+  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 的行数上限，超出末行提示
+  "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文的行数上限（展开 diff 始终全量）
   "toolLabelClip": 0,                      // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
-  "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
+  "stickyUserMessage": true,               // fullscreen：用户消息首行滚出上沿后钉住，直到下一条接手
   "scrollButtonMode": "dock",              // fullscreen：dock 独占行 / native Pi 原生浮层
 
   // diff
@@ -74,35 +74,33 @@ pi install git:github.com/minuque/pi-cc-extensions
   "diffIndicatorMode": "bars",             // 变更指示：bars / classic / none
   "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
   "editDiffCollapsedLines": 24,            // edit 折叠行数；0 仅显示变更统计摘要
-  "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
+  "writeDiffCollapsedLines": 0,            // write 折叠行数；0 仅显示创建摘要
   "diffWordWrap": true,                    // 长 diff 行换行
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
   "previewLines": 3,                       // 思考中的预览行数，0 隐藏
-  "completedPreviewLines": null,           // 完成态预览行数，0 隐藏；null 跟随 previewLines。面板可输入任意值或 follow
+  "completedPreviewLines": null,           // 完成态预览行数，0 隐藏；null 跟随 previewLines；面板可填数字或 follow
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
 
   // footer
   "enableCustomFooter": true,              // 自定义状态栏
   "footerTokenRate": true,                 // 输出速率芯片；false 隐藏
   "footerTokenRateMode": "average",        // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
-  "footerTokenRateTtft": true,             // 速率芯片是否带 TTFT；false 只显示 tok/s
-  "footerSessionTokens": false,            // 本次对话累计 token 芯片（Nerd Font 图标，纯文本为 Σ）；累加会话条目的 usage.totalTokens，默认关
-  "footerCurrency": "USD",                 // 底栏费用的显示币种
-  "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
+  "footerTokenRateTtft": true,             // 速率芯片带 TTFT；false 只显示 tok/s
+  "footerSessionTokens": false,            // 累计 token 芯片，累加会话条目 usage.totalTokens；默认关
   "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
-  "footerContextLimit": "window",          // 上下文芯片分母：window（默认）｜compaction 自动压缩点｜both 压缩点+窗口；越过压缩点才压缩，可短暂超过 100%
+  "footerContextLimit": "window",          // 上下文芯片分母：window（默认）｜compaction 压缩点｜both；越过压缩点才压缩，可短暂超过 100%
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
-  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
-  "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序，内置项与插件共用
+  "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支与改动
   "footerLine3Keys": []                    // 有可见芯片才占行
 }
 ```
 
 > [!TIP]
-> **全屏模式**：展开态 diff 全量显示。Input/Output 超行时末行给 `… +N more lines`，单击看全量，再击收起。
+> **全屏模式**：展开态 diff 全量显示。Input/Output 超行时末行显示 `… +N more lines`，单击看全量，再击收起。
 
 > [!NOTE]
 > **Mermaid 渲染**：`markdown.mermaid` 建议设 `final`（`/settings`），避免流式逐帧重绘。
@@ -117,7 +115,7 @@ pi -e .              # 只跑一次，不改 settings.json
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `^1.5.1`（用到了 1.5.x 的注入式按键提示、`messageTypes` 与 `ctx.ui.custom({ blocked })`）
+- Node.js `>=22.19.0`，Pi `^1.5.1`
 
 ## 推荐搭配
 
