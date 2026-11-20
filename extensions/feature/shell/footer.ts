@@ -21,7 +21,6 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { config, type FooterContextLimit } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
-import { formatFooterCost } from "./footer-currency.ts";
 import { formatTokenCount } from "../../utils/format.ts";
 import {
 	FOOTER_CACHE_KEY,
@@ -605,10 +604,7 @@ const createCustomFooterFactory =
 						config.footerTokenRateTtft,
 					)
 				: "";
-			const costLabel =
-				cost || usingSubscription
-					? formatFooterCost(cost, config.footerCurrency, config.footerCurrencyRate)
-					: "";
+			const costLabel = cost || usingSubscription ? `$${cost.toFixed(2)}` : "";
 			const costChip = costLabel
 				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
 				: "";

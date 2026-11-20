@@ -14,10 +14,6 @@ import {
 	refreshFooterGitStats,
 } from "../feature/shell/footer.ts";
 import {
-	FOOTER_CURRENCY_PRESETS,
-	presetFooterCurrencyRate,
-} from "../feature/shell/footer-currency.ts";
-import {
 	footerChipDescription,
 	footerLineOfKey,
 	formatFooterChipSummary,
@@ -325,10 +321,6 @@ function buildExcludeRenderersSubmenu(
 		invalidate: () => list.invalidate(),
 		handleInput: (data: string) => list.handleInput(data),
 	};
-}
-
-function footerCurrencyRateLabel(rate: number | null): string {
-	return rate === null ? "-" : String(rate);
 }
 
 /**
@@ -712,65 +704,6 @@ export async function showCcstylePanel(
 			"Table copy actions off; another extension can own table interactions.",
 			config.enableTableCopy,
 		);
-		const footerCurrencySetting = {
-			id: "footerCurrency",
-			label: "Cost currency",
-			description:
-				"ISO code for the status-bar cost. Switching currency fills its preset rate. USD clears the rate.",
-			currentValue: config.footerCurrency,
-			values: [...FOOTER_CURRENCY_PRESETS],
-			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
-				nestedSubmenuOpen = true;
-				nestedHint = "  Enter to apply · Esc back to Footer";
-				return buildValueInputSubmenu(
-					theme,
-					{
-						prompt: "  Cost currency — ISO code:",
-						initial: footerCurrencySetting.currentValue,
-						hint: "  Enter to apply · Esc to go back",
-						accept: (raw) => (raw === "" ? undefined : raw),
-					},
-					(selected) => {
-						nestedSubmenuOpen = false;
-						nestedHint = "";
-						closeSubmenu(selected);
-					},
-				);
-			},
-		};
-		const footerCurrencyRateSetting = {
-			id: "footerCurrencyRate",
-			label: "Cost rate",
-			description:
-				"Display units per 1 USD of cost. Switching currency replaces this. Empty keeps the number and only changes the symbol.",
-			currentValue: footerCurrencyRateLabel(config.footerCurrencyRate),
-			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
-				nestedSubmenuOpen = true;
-				nestedHint = "  Enter to apply · empty clears · Esc back to Footer";
-				return buildValueInputSubmenu(
-					theme,
-					{
-						prompt: "  Cost rate — display units per 1 cost unit:",
-						initial:
-							footerCurrencyRateSetting.currentValue === "-"
-								? ""
-								: footerCurrencyRateSetting.currentValue,
-						hint: "  Enter to apply · empty clears conversion · Esc to go back",
-						accept: (raw) => {
-							if (raw === "" || raw === "-") return "-";
-							const n = Number(raw);
-							return Number.isFinite(n) && n > 0 ? raw : null;
-						},
-						invalid: () => "Rate must be a positive number",
-					},
-					(selected) => {
-						nestedSubmenuOpen = false;
-						nestedHint = "";
-						closeSubmenu(selected);
-					},
-				);
-			},
-		};
 		const footerNerdIconsSetting = {
 			id: "footerNerdIcons",
 			label: "Nerd Font icons",
@@ -881,27 +814,6 @@ export async function showCcstylePanel(
 				if (enabled) applyCustomFooter(ctx);
 				else clearCustomFooter(ctx);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
-				return;
-			}
-			if (id === "footerCurrency") {
-				updateConfig({
-					footerCurrency: value,
-					footerCurrencyRate: presetFooterCurrencyRate(value),
-				});
-				footerCurrencySetting.currentValue = config.footerCurrency;
-				footerCurrencyRateSetting.currentValue = footerCurrencyRateLabel(config.footerCurrencyRate);
-				if (config.enableCustomFooter) applyCustomFooter(ctx);
-				ctx.ui.notify(
-					`Updated ${id}: ${config.footerCurrency} · ${footerCurrencyRateSetting.currentValue}`,
-					"info",
-				);
-				return;
-			}
-			if (id === "footerCurrencyRate") {
-				updateConfig({ footerCurrencyRate: value === "-" ? null : Number(value) });
-				footerCurrencyRateSetting.currentValue = footerCurrencyRateLabel(config.footerCurrencyRate);
-				if (config.enableCustomFooter) applyCustomFooter(ctx);
-				ctx.ui.notify(`Updated ${id}: ${footerCurrencyRateSetting.currentValue}`, "info");
 				return;
 			}
 			if (id === "footerContextLimit") {
@@ -1196,8 +1108,6 @@ export async function showCcstylePanel(
 					footerTokenRateModeSetting,
 					footerTokenRateTtftSetting,
 					footerSessionTokensSetting,
-					footerCurrencySetting,
-					footerCurrencyRateSetting,
 					footerNerdIconsSetting,
 					footerGitStatsSetting,
 					pluginChipsSetting,

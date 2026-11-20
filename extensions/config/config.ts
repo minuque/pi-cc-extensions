@@ -93,10 +93,6 @@ export type Config = {
 	footerTokenRateTtft: boolean;
 	/** 会话累计 token 芯片（累加会话条目的 usage.totalTokens）。默认关。 */
 	footerSessionTokens: boolean;
-	/** ISO 4217 显示币种。USD 时不换算。 */
-	footerCurrency: string;
-	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
-	footerCurrencyRate: number | null;
 	footerNerdIcons: boolean;
 	footerGitStatsMode: FooterGitStatsMode;
 	/** Denominator of the context chip; compaction = contextWindow − compaction.reserveTokens. */
@@ -182,8 +178,6 @@ export const DEFAULT_CONFIG: Config = {
 	footerTokenRateMode: "average",
 	footerTokenRateTtft: true,
 	footerSessionTokens: false,
-	footerCurrency: "USD",
-	footerCurrencyRate: null,
 	footerNerdIcons: true,
 	footerGitStatsMode: "working",
 	footerContextLimit: "window",
@@ -218,19 +212,6 @@ export function pickCompletedPreviewLines(value: unknown): number | null {
 	if (value === undefined || value === null || value === "") return null;
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
 	return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null;
-}
-
-function normalizeCurrency(value: unknown): string {
-	return typeof value === "string" && /^[A-Za-z]{3}$/.test(value.trim())
-		? value.trim().toUpperCase()
-		: "USD";
-}
-
-/** 缺失、空串、非正数都视为不换算。 */
-function normalizeFooterCurrencyRate(value: unknown): number | null {
-	if (value === undefined || value === null || value === "") return null;
-	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-	return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export function normalizeConfig(input: unknown): Config {
@@ -331,8 +312,6 @@ export function normalizeConfig(input: unknown): Config {
 		),
 		footerTokenRateTtft: source.footerTokenRateTtft !== false,
 		footerSessionTokens: source.footerSessionTokens === true,
-		footerCurrency: normalizeCurrency(source.footerCurrency),
-		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
 		footerGitStatsMode: pickEnum(
 			source.footerGitStatsMode,
@@ -445,8 +424,6 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerTokenRateMode=${source.footerTokenRateMode}`,
 		`footerTokenRateTtft=${source.footerTokenRateTtft ? "on" : "off"}`,
 		`footerSessionTokens=${source.footerSessionTokens ? "on" : "off"}`,
-		`footerCurrency=${source.footerCurrency}`,
-		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
 		`footerGitStats=${source.footerGitStatsMode}`,
 		`footerContextLimit=${source.footerContextLimit}`,
