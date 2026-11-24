@@ -527,6 +527,12 @@ export function collectContextBreakdown(
 ): ContextBreakdown {
 	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
 	const selectedTools = new Set(options.selectedTools ?? ["read", "bash", "edit", "write"]);
+	// prepareLoadout 隐藏的声明不会进请求：pi 从 transcript 的 toolsAdded 组装 tools，
+	// _installHiddenDeclarationsProjection 把隐藏名字从中切掉（codemode "only" 隐藏激活的
+	// direct 工具就是这种情况）；buildSystemPrompt 同样从 selectedTools 减去它们。这里必须
+	// 一起跳过，否则 Tools definition 会把从未发给模型的 schema 也算进去。
+	// hiddenTools 取自 base 快照，随 setActiveTools 刷新。
+	const hiddenTools = new Set(options.hiddenTools ?? []);
 	const toolDefinitionPreview: string[] = [];
 	const toolResultPreview: string[] = [];
 	const contextPreview: string[] = [];
@@ -547,6 +553,7 @@ export function collectContextBreakdown(
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
+		if (hiddenTools.has(tool.name)) continue;
 		const definition = {
 			name: tool.name,
 			description: tool.description,
