@@ -817,7 +817,23 @@ test("context breakdown skips declarations hidden by prepareLoadout", () => {
 				hiddenTools,
 			}),
 			getSystemPrompt: () => "",
-			sessionManager: { buildSessionProjection: () => ({ entries: [] }) },
+			sessionManager: {
+				buildSessionProjection: () => ({
+					entries: [
+						{
+							sourceEntry: { type: "message" },
+							messages: [
+								{
+									role: "system",
+									content: "",
+									toolsAdded: [{ name: "codemode" }, { name: "read" }],
+									toolsRemoved: [{ name: "read" }],
+								},
+							],
+						},
+					],
+				}),
+			},
 		}) as any;
 	const tools = [
 		{
@@ -851,6 +867,10 @@ test("context breakdown skips declarations hidden by prepareLoadout", () => {
 	assert.match(wire.previews.tools, /Definition: ask_user_question/);
 	assert.doesNotMatch(wire.previews.tools, /Definition: read/);
 	assert.match(unfiltered.previews.tools, /Definition: read/);
+	// 系统提示预览里的 toolsAdded / toolsRemoved 同样按隐藏集合收敛，与 Tools definition 对齐。
+	assert.match(wire.previews.systemPrompt, /"codemode"/);
+	assert.doesNotMatch(wire.previews.systemPrompt, /"read"/);
+	assert.match(unfiltered.previews.systemPrompt, /"read"/);
 
 	// 模式 on / 无 codemode：hiddenTools 为空，行为与之前一致。
 	assert.equal(toolsTokens(collectContextBreakdown(ctxWith([]), tools)), toolsTokens(unfiltered));
@@ -877,9 +897,15 @@ test("context dialog row drops hidden tools", async () => {
 		partRows(dialog.latest().component.render(64)).find((line) =>
 			line.includes("Tools definition"),
 		) ?? "";
+	// 只比大小关系，不写死具体 token 数：估算方式或工具描述变化不该让这个用例失败。
+	const rowTokens = (line: string) => {
+		const match = line.match(/Tools definition\s+(\d+)\s/);
+		assert.ok(match, `行内没有 token 数：${line}`);
+		return Number(match[1]);
+	};
 
-	assert.match(row(visible), /Tools definition\s+19\s/);
-	assert.match(row(hidden), /Tools definition\s+0\s/);
+	assert.ok(rowTokens(row(visible)) > 0, "可见工具仍计入");
+	assert.equal(rowTokens(row(hidden)), 0, "隐藏工具不计入");
 
 	visible.latest().component.handleInput("\x1b");
 	hidden.latest().component.handleInput("\x1b");
