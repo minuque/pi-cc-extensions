@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.22]
+
+### 体验优化 / Improvements
+
+- 状态栏去掉费用币种与倍率选项，配置面板相应收缩。
+  The status bar drops the cost currency and rate options, and the config panel shrinks accordingly.
+
+### 修复 / Fixed
+
+- 隐藏的工具不再计入上下文占用，`codemode` 只挂模式下的统计不再虚高。（#106，by @jhartum）
+  Hidden tools no longer count toward context usage, so the figures stop over-reporting in codemode's only mode. (#106, by @jhartum)
+- 系统提示预览同步过滤隐藏工具，与工具统计口径一致。
+  The system prompt preview filters hidden tools too, matching the tool figures.
+
+### 变更 / Changed
+
+- 中英文 README 的配置说明与功能表更紧凑。
+  The Chinese and English READMEs condense the configuration notes and the feature table.
+
 ## [1.0.21]
 
 ### 新增功能 / New Features
