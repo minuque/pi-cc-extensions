@@ -400,7 +400,7 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 type ContextOverlayEntry = { component: any; done: (action?: unknown) => void };
 
 /** /context 主弹框与预览共用 harness：每次 ui.custom 同步挂载一个 overlay 并记录。 */
-function contextDialogHarness(options: { mode?: string } = {}) {
+function contextDialogHarness(options: { mode?: string; hiddenTools?: string[] } = {}) {
 	const fg: Array<[string, string]> = [];
 	const bg: Array<[string, string]> = [];
 	const notifications: string[] = [];
@@ -439,6 +439,7 @@ function contextDialogHarness(options: { mode?: string } = {}) {
 		getSystemPromptOptions: () => ({
 			cwd: "/repo",
 			selectedTools: ["read"],
+			hiddenTools: options.hiddenTools,
 			toolSnippets: { read: "Read files" },
 			contextFiles: [{ path: "AGENTS.md", content: "cccc" }],
 			skills: [{ name: "ok", description: "desc", filePath: "/v" }],
@@ -803,4 +804,84 @@ test("showTextPreview falls back to notify when the TUI has no flash and reports
 	} finally {
 		setPreviewCopyImpl(null);
 	}
+});
+
+// prepareLoadout 隐藏的声明不会进请求（codemode "only" 模式隐藏激活的 direct 工具就是
+// 这种情况）。/context 的 Tools definition 必须只统计真正发给模型的工具，否则会把十几个
+// 隐藏工具的 schema 也算进去，把总量显示成真实请求的好几倍。
+test("context breakdown skips declarations hidden by prepareLoadout", () => {
+	const ctxWith = (hiddenTools?: string[]) =>
+		({
+			getSystemPromptOptions: () => ({
+				selectedTools: ["codemode", "ask_user_question", "read"],
+				hiddenTools,
+			}),
+			getSystemPrompt: () => "",
+			sessionManager: { buildSessionProjection: () => ({ entries: [] }) },
+		}) as any;
+	const tools = [
+		{
+			name: "codemode",
+			description: "Run JavaScript",
+			parameters: { type: "object" },
+			exposure: "model-only",
+		},
+		{
+			name: "ask_user_question",
+			description: "Ask",
+			parameters: { type: "object" },
+			exposure: "model-only",
+		},
+		{
+			name: "read",
+			description: "Read a file",
+			parameters: { type: "object" },
+			exposure: "direct",
+		},
+	] as any;
+
+	const toolsTokens = (breakdown: ReturnType<typeof collectContextBreakdown>) =>
+		breakdown.parts.find((part) => part.label === "Tools definition")?.tokens ?? 0;
+
+	const unfiltered = collectContextBreakdown(ctxWith(undefined), tools);
+	const wire = collectContextBreakdown(ctxWith(["read"]), tools);
+
+	assert.ok(toolsTokens(wire) < toolsTokens(unfiltered), "hidden declarations are left out");
+	assert.match(wire.previews.tools, /Definition: codemode/);
+	assert.match(wire.previews.tools, /Definition: ask_user_question/);
+	assert.doesNotMatch(wire.previews.tools, /Definition: read/);
+	assert.match(unfiltered.previews.tools, /Definition: read/);
+
+	// 模式 on / 无 codemode：hiddenTools 为空，行为与之前一致。
+	assert.equal(toolsTokens(collectContextBreakdown(ctxWith([]), tools)), toolsTokens(unfiltered));
+	// hidden 里不在 selectedTools 的名字不影响计数。
+	assert.equal(
+		toolsTokens(collectContextBreakdown(ctxWith(["bash"]), tools)),
+		toolsTokens(unfiltered),
+	);
+	// 全部隐藏 → 0 tokens，预览为空。
+	const allHidden = collectContextBreakdown(
+		ctxWith(["codemode", "ask_user_question", "read"]),
+		tools,
+	);
+	assert.equal(toolsTokens(allHidden), 0);
+	assert.equal(allHidden.previews.tools, "No active tool definitions.");
+});
+
+// handler 路径：隐藏集合来自 ctx.getSystemPromptOptions().hiddenTools，
+// 因此弹框里「Tools definition」一行不再包含被 prepareLoadout 隐藏的工具。
+test("context dialog row drops hidden tools", async () => {
+	const visible = contextDialogHarness();
+	const hidden = contextDialogHarness({ hiddenTools: ["read"] });
+	const row = (dialog: ReturnType<typeof contextDialogHarness>) =>
+		partRows(dialog.latest().component.render(64)).find((line) =>
+			line.includes("Tools definition"),
+		) ?? "";
+
+	assert.match(row(visible), /Tools definition\s+19\s/);
+	assert.match(row(hidden), /Tools definition\s+0\s/);
+
+	visible.latest().component.handleInput("\x1b");
+	hidden.latest().component.handleInput("\x1b");
+	await Promise.all([visible.running, hidden.running]);
 });
