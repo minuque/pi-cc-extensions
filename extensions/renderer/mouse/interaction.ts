@@ -685,7 +685,7 @@ function patchFullscreenViewportInput(tui: any): void {
 	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
 	tui.handleViewportInput = function (this: any, data: string) {
 		// 失焦时官方清掉选区与按下目标，表格按钮的高亮也要一起熄灭。
-		if (data === FULLSCREEN_FOCUS_OUT) clearTableCopyHover();
+		if (data === FULLSCREEN_FOCUS_OUT && clearTableCopyHover()) tui.requestRender?.();
 		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
 			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
 			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。

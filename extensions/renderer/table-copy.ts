@@ -105,6 +105,7 @@ interface ActionHit {
 
 /** The button captured on press; a reflow must not retarget the release. */
 interface ActionPress {
+	x: number;
 	y: number;
 	start: number;
 	end: number;
@@ -674,6 +675,13 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 				const hit = state.hits.find(
 					(action) => action.y === event.y && event.x >= action.start && event.x < action.end,
 				);
+				// Pi cancels a click once the pointer moves, even if it returns before release.
+				if (
+					state.pressed &&
+					(event.type === "drag" || event.type === "release") &&
+					(event.x !== state.pressed.x || event.y !== state.pressed.y)
+				)
+					state.pressed = undefined;
 				if (event.type === "move") {
 					state.pointer = { x: event.x, y: event.y };
 					const hover = hit ? { y: hit.y, format: hit.format } : undefined;
@@ -688,6 +696,7 @@ export function installTableCopy(options: TableCopyOptions): TableCopyInstallati
 				// Fullscreen release synthesizes click only after capturing this press.
 				if (event.type === "press" && event.button === "left" && hit) {
 					state.pressed = {
+						x: event.x,
 						y: hit.y,
 						start: hit.start,
 						end: hit.end,

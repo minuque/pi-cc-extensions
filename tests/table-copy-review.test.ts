@@ -17,6 +17,11 @@ import {
 	type TableCopyInstallation,
 } from "../extensions/renderer/table-copy.ts";
 import { applyFullscreenHover } from "../extensions/renderer/mouse/hover.ts";
+import {
+	installToolMouseInteraction,
+	teardownToolMouseInteraction,
+} from "../extensions/renderer/mouse/interaction.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
 initTheme("dark");
 
@@ -47,6 +52,7 @@ const paint = (color: "dim" | "text", text: string) =>
 interface State {
 	hits: Array<{ y: number; start: number; end: number; format: string }>;
 	hover?: { y: number; format: string };
+	pressed?: { format: string };
 }
 
 function state(component: unknown): State | undefined {
@@ -151,8 +157,8 @@ function screen(options: { columns?: number; rows?: number } = {}) {
 		(tui as any).doRender();
 		return tui.getScreenLines();
 	};
-	const send = (type: "press" | "release" | "move", x: number, y: number) => {
-		const code = type === "move" ? 35 : 0;
+	const send = (type: "press" | "release" | "move" | "drag", x: number, y: number) => {
+		const code = type === "move" ? 35 : type === "drag" ? 32 : 0;
 		(tui as any).handleViewportInput(
 			`\x1b[<${code};${x + 1};${y + 1}${type === "release" ? "m" : "M"}`,
 		);
@@ -262,6 +268,43 @@ test("an unchanged layout still copies after press, including a streaming redraw
 		assert.deepEqual(host.notices, ["Copied table as CSV"]);
 	} finally {
 		host.dispose();
+	}
+});
+
+test("cancelled table gestures clear the captured press without blocking the next click", async () => {
+	for (const gesture of ["release-away", "drag-away", "drag-back"]) {
+		const host = screen();
+		try {
+			const component = assistant(TABLE, host.installation);
+			host.add(component);
+			const rows = host.plain();
+			const y = rows.findIndex((line) => line.includes("[Copy CSV]"));
+			const x = rows[y]!.indexOf("[Copy CSV]") + 2;
+			const body = (component as any).contentContainer.children.find(
+				(child: unknown) => child instanceof Markdown,
+			);
+			host.send("press", x, y);
+			const pressed = state(body)?.pressed;
+			assert.ok(pressed);
+			host.send("drag", x, y);
+			assert.equal(state(body)?.pressed, pressed, "a stationary drag preserves the resize guard");
+			if (gesture !== "release-away") host.send("drag", x + 1, y);
+			if (gesture === "drag-back") host.send("drag", x, y);
+			host.send("release", gesture === "drag-back" ? x : x + 1, y);
+			await settle();
+			assert.equal(state(body)?.pressed, undefined, gesture);
+			assert.deepEqual(host.copies, []);
+			assert.deepEqual(host.notices, []);
+
+			host.send("press", x, y);
+			host.send("release", x, y);
+			await settle();
+			assert.deepEqual(host.copies, ["A,B\none,two"]);
+			assert.deepEqual(host.notices, ["Copied table as CSV"]);
+			assert.equal(state(body)?.pressed, undefined);
+		} finally {
+			host.dispose();
+		}
 	}
 });
 
@@ -408,6 +451,59 @@ test("a frozen foreign renderTable result renders instead of throwing", () => {
 	} finally {
 		installation.dispose();
 		proto.renderTable = native;
+	}
+});
+
+test("focus loss through the viewport patch repaints a hovered action without a selection", async (t) => {
+	const host = screen();
+	const tui = createLazyProxy(() => host.tui);
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function")
+						factory(tui, { fg: (_color: string, text: string) => text });
+				},
+				onTerminalInput() {
+					return () => {};
+				},
+			},
+		});
+		const component = assistant(TABLE, host.installation);
+		host.add(component);
+		const rows = host.plain();
+		const y = rows.findIndex((line) => line.includes("[Copy CSV]"));
+		const x = rows[y]!.indexOf("[Copy CSV]") + 2;
+		const body = (component as any).contentContainer.children.find(
+			(child: unknown) => child instanceof Markdown,
+		);
+		host.send("move", x, y);
+		host.tui.renderNow();
+		assert.ok(host.tui.getScreenLines()[y]!.includes(paint("text", "[Copy CSV]")));
+		assert.equal((host.tui as any).getSelectionBounds(), undefined);
+		assert.equal((host.tui as any).selectionPressActive, false);
+
+		const requests = t.mock.method(host.tui, "requestRender");
+		const doRender = (host.tui as any).doRender.bind(host.tui);
+		const repainted = new Promise<void>((resolve) => {
+			t.mock.method(host.tui as any, "doRender", () => {
+				doRender();
+				resolve();
+			});
+		});
+		(host.tui as any).handleViewportInput("\x1b[O");
+		assert.equal(state(body)?.hover, undefined);
+		assert.equal(requests.mock.callCount(), 1, "clearing a lit action requests a frame");
+		await repainted;
+		assert.ok(host.tui.getScreenLines()[y]!.includes(paint("dim", "[Copy CSV]")));
+		assert.ok(!host.tui.getScreenLines()[y]!.includes(paint("text", "[Copy CSV]")));
+		(host.tui as any).handleViewportInput("\x1b[O");
+		assert.equal(requests.mock.callCount(), 1, "repeated focus loss does not redraw again");
+	} finally {
+		teardownToolMouseInteraction();
+		host.dispose();
 	}
 });
 
