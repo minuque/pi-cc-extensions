@@ -1428,6 +1428,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			round.settleUntil = undefined;
 			pendingFoldRounds.delete(round);
 			renderRound(round);
+			// 收尾定时器可能是本轮最后一个事件；不请求重绘，live 槽位会留到用户输入后才消失。
+			try {
+				uiRef?.requestRender?.();
+			} catch {
+				/* 无 UI */
+			}
 		}, FOLD_SETTLE_MS);
 	};
 

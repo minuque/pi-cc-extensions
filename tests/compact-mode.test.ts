@@ -952,12 +952,14 @@ test("compact 面板收起时，卡内被点开的工具一起收回", async () 
 });
 
 test("compact live: one thinking preview, one tool slot, folds after the settle window", async () => {
+	let renderRequests = 0;
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const previousMode = config.mode;
 	config.mode = "compact";
 	const { pi, ctx, emit } = extensionRuntime();
+	ctx.ui.requestRender = () => renderRequests++;
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
@@ -966,6 +968,7 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 	});
 	emit("session_start", {}, ctx);
 	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	hooks.sync(ctx);
 	try {
 		// anchor：思考已收尾（末块是 toolCall），工具开始跑。
 		const message1 = {
@@ -1037,9 +1040,14 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
 		final.updateContent(finalMessage);
 		assert.match(renderText(assistant1).join("\n"), /plan-three/, "静默期内槽位保留");
+		const requestsBeforeFold = renderRequests;
 
-		// 静默期结束 → 整块收回收摘要行。
+		// 静默期结束 → 整块收回收摘要行，并请求一次 TUI 重绘。
 		await settleFold();
+		assert.ok(
+			renderRequests > requestsBeforeFold,
+			"结束态布局变更后必须主动请求重绘，不能依赖后续滚轮事件",
+		);
 		const folded = renderText(assistant1).join("\n");
 		assert.match(folded, /Ran for /, `回合结束应收回收摘要行: ${folded}`);
 		assert.doesNotMatch(folded, /plan-three/, `回合结束后思考预览应回收: ${folded}`);
