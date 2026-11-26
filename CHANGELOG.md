@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.23]
+
+### 修复 / Fixed
+
+- 表格复制的点击、选区与悬停更稳：缩放或拖动取消手势不再复制错格式，失焦后按钮立即熄灭。（#105，by @tarnish233）
+  Table copy clicks, selections and hover are steadier: a resize or a cancelled gesture no longer copies the wrong format, and a button goes dark right after focus loss. (#105, by @tarnish233)
+- 回合收尾后立即刷新画面，上一帧的工具块不再残留到下一次输入。（#108，by @chenyn273）
+  A finished round repaints at once, so the previous frame's tool block no longer lingers until the next input. (#108, by @chenyn273)
+
 ## [1.0.22]
 
 ### 体验优化 / Improvements
