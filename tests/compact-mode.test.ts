@@ -31,6 +31,7 @@ import {
 	buildMessageSummary,
 	installCompactMode,
 	isCompactAssistantComponent,
+	isCompactRoundTail,
 	markCompactRoundToolExpanded,
 	refreshCompactModeComponents,
 	setHoveredCompactAssistant,
@@ -3931,3 +3932,157 @@ for (const fullscreen of [false, true])
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+test("compact：静默期收拢后主动向真实 TUI 请求重绘（不依赖 ctx.ui.requestRender）", async () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	let renders = 0;
+	setToolMouseTui({
+		children: [chat],
+		requestRender: () => {
+			renders++;
+		},
+	});
+	// 真实 Pi 的 ExtensionUIContext 不提供 requestRender：只给 getToolsExpanded。
+	hooks.sync({ ui: { getToolsExpanded: () => false } });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo ok" } }],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "echo ok" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message as any, false);
+		bash.executionStarted = true;
+		bash.updateDisplay();
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "final answer" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		chat.addChild(final);
+		final.updateContent(finalMessage as any, false);
+
+		assert.match(renderText(chat).join("\n"), /↳/, "前置：静默期内槽位卡尚未收起");
+		renders = 0;
+		await settleFold();
+		assert.ok(renders > 0, "静默期定时器收拢后应请求真实 TUI 重绘");
+
+		const tail = chat.children.find((child: any) => isCompactRoundTail(child));
+		assert.ok(tail, "收拢后尾行仍在容器中");
+		assert.ok(
+			chat.children.indexOf(tail) < chat.children.indexOf(final),
+			"静默期收拢后尾行应回到最终正文之前",
+		);
+		const lines = renderText(chat);
+		assert.equal(
+			lines.some((line) => line.includes("↳")),
+			false,
+			`静默期结束后不应残留槽位卡: ${lines.join(" | ")}`,
+		);
+		assert.ok(
+			lines.some((line) => /Ran for .*bash×1/.test(line)),
+			`收拢后应显示摘要行: ${lines.join(" | ")}`,
+		);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：agent_end 收尾后立即收拢并归位，无需等静默期或滚动重绘", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	let renders = 0;
+	setToolMouseTui({
+		children: [chat],
+		requestRender: () => {
+			renders++;
+		},
+	});
+	hooks.sync({ ui: { getToolsExpanded: () => false } });
+	try {
+		const m1 = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo one" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "echo two" } },
+			],
+		};
+		const a1 = new AssistantMessageComponent(m1 as any, true) as any;
+		const b1 = tool("bash", "b1", { command: "echo one" });
+		const b2 = tool("bash", "b2", { command: "echo two" });
+		chat.addChild(a1);
+		chat.addChild(b1);
+		chat.addChild(b2);
+		a1.updateContent(m1 as any, false);
+		for (const item of [b1, b2]) {
+			item.executionStarted = true;
+			item.updateDisplay();
+			item.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		}
+
+		// 最终回答先思考后流式正文：流式期间留在回合内，尾行钉在正文下方；
+		// message_end 时进入静默期，此时尾行还挂在正文下方且带 live 槽位。
+		const finalAssistant = new AssistantMessageComponent(undefined as any, true) as any;
+		chat.addChild(finalAssistant);
+		const streamingThinking = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "thinking", thinking: "wrapping up" }],
+		};
+		finalAssistant.updateContent(streamingThinking as any, true);
+		const streamingAnswer = {
+			role: "assistant",
+			timestamp: 2,
+			content: [
+				{ type: "thinking", thinking: "wrapping up" },
+				{ type: "text", text: "最终回答正文" },
+			],
+		};
+		finalAssistant.updateContent(streamingAnswer as any, true);
+		finalAssistant.updateContent(streamingAnswer as any, false);
+
+		const tailBefore = chat.children.find((child: any) => isCompactRoundTail(child));
+		assert.ok(
+			tailBefore && chat.children.indexOf(tailBefore) > chat.children.indexOf(finalAssistant),
+			"前置：message_end 刚进静默期时尾行仍在最终正文下方",
+		);
+		assert.match(renderText(tailBefore).join("\n"), /↳/, "前置：静默期内尾行仍保留 live 槽位");
+
+		renders = 0;
+		hooks.settleFinishedRound();
+		assert.ok(renders > 0, "settleFinishedRound 立即收拢后应请求真实 TUI 重绘");
+
+		const tailAfter = chat.children.find((child: any) => isCompactRoundTail(child));
+		assert.ok(tailAfter, "收尾后尾行仍在容器中");
+		assert.ok(
+			chat.children.indexOf(tailAfter) < chat.children.indexOf(finalAssistant),
+			"agent_end 收尾后尾行应立即归位到最终正文之前",
+		);
+		const lines = renderText(chat);
+		const summaryAt = lines.findIndex((line) => /Ran for .*bash×2/.test(line));
+		const answerAt = lines.findIndex((line) => line.includes("最终回答正文"));
+		assert.ok(
+			summaryAt >= 0 && answerAt > summaryAt,
+			`摘要行应在最终正文之上: ${lines.join(" | ")}`,
+		);
+		assert.equal(
+			lines.some((line) => line.includes("↳")),
+			false,
+			`agent_end 收尾后不应残留上一帧槽位块: ${lines.join(" | ")}`,
+		);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});

@@ -1335,6 +1335,18 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		return false;
 	};
 
+	/** 请求 TUI 重绘：Pi 的 ctx.ui 无 requestRender，优先走 setWidget 捕获的真实 TUI，无则回退 uiRef 供单测。 */
+	const requestRender = (): void => {
+		try {
+			// 非 force：保留 fullscreen 布局缓存和差分绘制。
+			const tui = getToolMouseTui();
+			if (typeof tui?.requestRender === "function") tui.requestRender();
+			else uiRef?.requestRender?.();
+		} catch {
+			/* 无 UI */
+		}
+	};
+
 	// 自备 tick：getter 在 render 重算挂钟；兼驱动 Running 扫光（setCompactSummaryActive）。
 	const ensureRoundTick = (): void => {
 		if (roundTickTimer) return;
@@ -1345,12 +1357,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			}
 			for (const round of allRounds()) retryDeferredFinalize(round);
 			settleStrandedRounds();
-			try {
-				// 非 force：保留 fullscreen 布局缓存和差分绘制。
-				uiRef?.requestRender?.();
-			} catch {
-				/* 无 UI */
-			}
+			requestRender();
 		}, 250);
 	};
 
@@ -1427,7 +1434,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			round.foldTimer = undefined;
 			round.settleUntil = undefined;
 			pendingFoldRounds.delete(round);
+			if (!patch.active) return;
 			renderRound(round);
+			requestRender();
 		}, FOLD_SETTLE_MS);
 	};
 
@@ -2623,6 +2632,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		},
 		refreshToolCallMessage(toolCallId: string | undefined) {
 			if (!patch.active || typeof toolCallId !== "string" || !toolCallId) return;
+			let refreshed = false;
 			for (const component of [...trackedAssistantComponents]) {
 				const message = component.lastMessage;
 				const contains =
@@ -2631,10 +2641,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				if (!contains) continue;
 				try {
 					component.updateContent?.(message);
+					refreshed = true;
 				} catch {
 					trackedAssistantComponents.delete(component);
 				}
 			}
+			if (refreshed) requestRender();
 		},
 		settleIdleRound() {
 			if (!patch.active || config.mode !== "compact") return;
@@ -2642,11 +2654,18 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		},
 		settleFinishedRound() {
 			if (!patch.active || config.mode !== "compact") return;
+			let changed = pendingFoldRounds.size > 0;
+			// agent_end 意味着整轮已结束，不会再有新 toolCall：
+			// 已进静默期的回合直接收拢归位，避免尾行留在正文下方与 agent-summary 之间。
+			flushSettle();
 			const round = activeRound;
-			if (!round) return;
-			// 走静默期：摘要行当场翻成 Ran for，槽位卡多留一拍再收拢。
-			endRound(round, true);
-			renderRound(round);
+			if (round) {
+				// 活已干完直接定稿；仍在跑时 finalizeRound 会挂起 endRequest 维持 Running。
+				finalizeRound(round);
+				renderRound(round);
+				changed = true;
+			}
+			if (changed) requestRender();
 		},
 		shutdown() {
 			patch.dispose();
