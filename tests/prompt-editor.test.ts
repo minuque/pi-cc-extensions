@@ -1,8 +1,71 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
-import { applyPromptEditor, clearPromptEditor } from "../extensions/feature/shell/prompt-editor.ts";
+import {
+	applyPromptEditor,
+	clearPromptEditor,
+	PromptEditor,
+} from "../extensions/feature/shell/prompt-editor.ts";
+
+for (const { name, text, width, paddingX, x, y, expected } of [
+	{
+		name: "after the prefix",
+		text: "abcdefghi",
+		width: 30,
+		paddingX: 0,
+		x: 5,
+		y: 1,
+		expected: "abcXdefghi",
+	},
+	{
+		name: "on a wrapped wide character",
+		text: "abcde中fgh",
+		width: 11,
+		paddingX: 1,
+		x: 4,
+		y: 2,
+		expected: "abcdeX中fgh",
+	},
+	{
+		name: "when the terminal clamps the padding",
+		text: "abc",
+		width: 4,
+		paddingX: 0,
+		x: 1,
+		y: 1,
+		expected: "Xabc",
+	},
+]) {
+	test(`click positions the prompt cursor ${name}`, () => {
+		const tui = { terminal: { rows: 24 }, requestRender: () => {} } as unknown as TUI;
+		const theme = { borderColor: (text: string) => text } as EditorTheme;
+		const keybindings = { matches: () => false } as unknown as KeybindingsManager;
+		const editor = new PromptEditor(tui, theme, keybindings, { paddingX });
+		editor.setText(text);
+		const height = editor.render(width).length;
+		const event: TuiMouseEvent = {
+			type: "click",
+			button: "left",
+			x,
+			y,
+			screenX: x,
+			screenY: y,
+			width,
+			height,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		};
+		assert.equal(editor.handleMouse({ ...event, type: "drag" }), undefined);
+		assert.equal(editor.handleMouse(event)?.handled, true);
+		assert.equal(editor.getPaddingX(), paddingX);
+
+		editor.handleInput("X");
+		assert.equal(editor.getText(), expected);
+	});
+}
 
 type EditorFactory = (tui: unknown, theme: unknown, keybindings: unknown) => unknown;
 
