@@ -2,11 +2,10 @@
  * 输入框 `❯` 提示符（issue #68）。
  *
  * `PromptEditor` 继承 `CustomEditor`：pi 的 setCustomEditorComponent 会自动接线
- * onSubmit/onChange/actionHandlers/autocomplete/工作状态指示器，本扩展只管渲染。
+ * onSubmit/onChange/actionHandlers/autocomplete/工作状态指示器，本扩展只补充前缀布局。
  *
- * `❯ ` 恒占左侧 2 列：渲染前把 paddingX 抬到「用户值 + 2」（直接改字段绕过
- * setter，避免每帧 requestRender 自激），渲染后恢复。首内容行前两列换成
- * `❯ `，其后仍保留用户 editorPaddingX 的空格。
+ * `❯ ` 占左侧 2 列：渲染和鼠标定位都把 paddingX 临时抬到「用户值 + 2」。
+ * 首内容行前两列换成 `❯ `，其后仍保留用户 editorPaddingX 的空格。
  * `❯` 颜色直接用 `borderColor`，随 thinking 等级 / bash mode 自动联动。
  *
  * `userPaddingX` 记录渲染时读到的用户 editorPaddingX（pi 通过 setPaddingX
@@ -14,6 +13,7 @@
  * 前缀开 = userPaddingX + 2，关 = userPaddingX。
  */
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { setInjectedKeybindings } from "../../utils/keybindings.ts";
 
@@ -30,24 +30,34 @@ export function inputTextIndent(): number {
 }
 
 export class PromptEditor extends CustomEditor {
-	render(width: number): string[] {
-		// ❯ + 用户 padding：文本从 userPaddingX+2 列开始。
+	private withPromptPadding<T>(run: () => T): T {
+		// Pi 的 setter 会触发重绘。临时改字段，让基类自行处理窄窗口和补全菜单的几何。
 		const self = this as unknown as { paddingX: number };
 		const saved = self.paddingX;
-		userPaddingX = saved;
 		self.paddingX = saved + PROMPT_COLS;
 		try {
-			const lines = super.render(width);
-			// 布局：lines[0] 顶边框，lines[1..n-2] 内容，lines[n-1] 底边框（autocomplete 在底边框后追加，
-			// 首内容行恒为 index 1）。开头是 paddingX 个纯空格，前两列换成 ❯+空格，剩余 padding 保留；
-			// 续行不动——Claude Code 行为。
-			if (lines.length > 2 && lines[1].startsWith("  ")) {
-				lines[1] = this.borderColor(PROMPT_GLYPH) + " " + lines[1].slice(2);
-			}
-			return lines;
+			return run();
 		} finally {
 			self.paddingX = saved;
 		}
+	}
+
+	render(width: number): string[] {
+		userPaddingX = this.getPaddingX();
+		const lines = this.withPromptPadding(() => super.render(width));
+		// 首内容行之前是顶边框。只替换前两格，保留续行和补全菜单的缩进。
+		if (lines.length > 2 && lines[1].startsWith("  ")) {
+			return [
+				lines[0],
+				`${this.borderColor(PROMPT_GLYPH)} ${lines[1].slice(PROMPT_COLS)}`,
+				...lines.slice(2),
+			];
+		}
+		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		return this.withPromptPadding(() => super.handleMouse(event));
 	}
 }
 
